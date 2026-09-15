@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+// The `clauding` command, available on PATH inside every terminal the app
+// opens. It sends one JSON line to the running app's socket and prints the
+// reply. Usage:
+//   clauding open <path or URL>   open a tab in the right panel
+//   clauding panel show|hide      show or hide the right panel
+//   clauding tabs                 list the open tabs of this session
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+
+const socketPath = path.join(os.homedir(), "Library", "Application Support", "Clauding", "clauding.sock");
+const [commandName, ...commandArguments] = process.argv.slice(2);
+
+// One shape for every failure, so a session reading its own output cannot
+// mistake a refusal for a success: "clauding: could not open — <reason>".
+const FAILURE_VERBS = {
+  open: "could not open",
+  panel: "could not change the panel",
+  tabs: "could not list the tabs"
+};
+
+function failAndExit(reason) {
+  const verb = FAILURE_VERBS[commandName] || "could not run the command";
+  process.stderr.write(`clauding: ${verb} — ${reason}\n`);
+  process.exit(1);
+}
+
+function usage() {
+  process.stderr.write("usage: clauding open <path or URL> | clauding panel show|hide | clauding tabs\n");
+  process.exit(1);
+}
+
+function buildRequest() {
+  const base = {
+    terminalId: process.env.CLAUDING_TERMINAL_ID || null,
+    cwd: process.cwd()
+  };
+  if (commandName === "open") {
+    if (commandArguments.length !== 1) {
+      usage();
+    }
+    return { ...base, command: "open", target: commandArguments[0] };
+  }
+  if (commandName === "panel") {
+    if (commandArguments.length !== 1 || !["show", "hide"].includes(commandArguments[0])) {
+      usage();
+    }
+    return { ...base, command: "panel", action: commandArguments[0] };
+  }
+  if (commandName === "tabs") {
+    return { ...base, command: "tabs" };
+  }
+  return usage();
+}
+
+const request = buildRequest();
+const connection = net.connect(socketPath);
+let reply = "";
+connection.setEncoding("utf8");
+connection.on("connect", () => {
+  connection.write(`${JSON.stringify(request)}\n`);
+});
+connection.on("data", (chunk) => {
+  reply += chunk;
+  const newlineIndex = reply.indexOf("\n");
+  if (newlineIndex === -1) {
+    return;
+  }
+  let answer = null;
+  try {
+    answer = JSON.parse(reply.slice(0, newlineIndex));
+  } catch (error) {
+    connection.end();
+    failAndExit("the app sent an answer this command could not read.");
+    return;
+  }
+  connection.end();
+  if (answer.ok) {
+    process.stdout.write(`${answer.message}\n`);
+    process.exit(0);
+  }
+  failAndExit(answer.error || "the app refused the request without a reason.");
+});
+connection.on("error", (error) => {
+  if (error.code === "ENOENT" || error.code === "ECONNREFUSED") {
+    failAndExit(`the Clauding app is not running (no socket at ${socketPath}).`);
+  } else {
+    failAndExit(error.message);
+  }
+});
+connection.setTimeout(5000, () => {
+  failAndExit("the app did not answer within 5 s.");
+});

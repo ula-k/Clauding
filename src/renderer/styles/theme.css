@@ -1,0 +1,106 @@
+/* Every colour used by the app lives here. Graphite with a sage tint as the
+   base, lavender as the accent — dark but gentle, nothing neon. */
+:root {
+  --background: #171b18;
+  /* window backdrop: dark sage top-left flowing into dark lavender bottom-right */
+  --background-gradient: linear-gradient(135deg, #161b17 0%, #191b1d 45%, #1d1a27 100%);
+  /* side columns sit on the gradient as a faint translucent veil */
+  --column-veil: rgba(255, 255, 255, 0.035);
+  --surface: #1f2520;
+  --surface-raised: #262d27;
+  --surface-hover: #2b332c;
+  --border: #364038;
+  --border-soft: #2a322b;
+
+  --text: #e6ebe4;
+  --text-dim: #a0aa9e;
+  --text-faint: #6f7a6f;
+
+  /* primary: muted lavender — selection, links, active tab, buttons */
+  --accent: #b9a7e6;
+  --accent-strong: #c3b1f0;
+  --accent-soft: rgba(185, 167, 230, 0.16);
+  --accent-tint: rgba(185, 167, 230, 0.1);
+  --accent-outline: rgba(185, 167, 230, 0.45);
+  --accent-focus: rgba(185, 167, 230, 0.55);
+  --on-accent: #1f1a2c;
+  /* surfaces with a touch of lavender mixed into the graphite */
+  --surface-lavender: #252430;
+  --surface-lavender-raised: #2b2a38;
+  --border-lavender: rgba(185, 167, 230, 0.32);
+
+  /* secondary: light lavender — Running, success, subtle borders */
+  --secondary: #c9b6ec;
+  --secondary-soft: rgba(201, 182, 236, 0.16);
+  --secondary-outline: rgba(201, 182, 236, 0.4);
+
+  /* Waiting for you: soft sage-amber / dusty gold */
+  --gold: #d6c58f;
+  --gold-soft: rgba(214, 197, 143, 0.16);
+
+  /* ---- Session status colours -------------------------------------------
+     The one place the list's status colours are decided. The row shows a dot
+     in one of these three and nothing else; change them here and the whole
+     list follows (they are meant to be matched to the Claude Code agents
+     view). */
+  --status-working: var(--secondary);
+  --status-working-soft: var(--secondary-soft);
+  --status-waiting: var(--gold);
+  --status-waiting-soft: var(--gold-soft);
+  --status-idle: var(--text-faint);
+  --status-idle-soft: rgba(111, 122, 111, 0.18);
+
+  /* tertiary, rarely used: muted rose (destructive hover) and coral (errors) */
+  --rose: #d9a3b5;
+  --rose-soft: rgba(217, 163, 181, 0.16);
+  --coral: #d9968a;
+  --coral-soft: rgba(217, 150, 138, 0.16);
+
+  /* project dots: lavender, sage, dusty blue, mauve, sand and friends */
+  --project-color-0: #b9a7e6;
+  --project-color-1: #a9c7a4;
+  --project-color-2: #8fa9c9;
+  --project-color-3: #c49bb8;
+  --project-color-4: #d3bd97;
+  --project-color-5: #8fbcb4;
+  --project-color-6: #9aa3d9;
+  --project-color-7: #b3bd8a;
+  --project-color-8: #d0a0a8;
+  --project-color-9: #a8a0c0;
+
+  --code-background: #141814;
+  --code-border: #2a322b;
+
+  --shadow-soft: 0 6px 22px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.18);
+
+  --radius: 12px;
+  --radius-small: 10px;
+  --radius-pill: 999px;
+
+  --font-ui: -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, monospace;
+
+  --title-bar-height: 44px;
+
+  /* terminal (xterm) — read at runtime by terminalInstances.js */
+  --terminal-background: rgba(20, 24, 21, 0.55);
+  --terminal-selection: rgba(185, 167, 230, 0.32);
+  --terminal-selection-inactive: rgba(185, 167, 230, 0.18);
+  --terminal-black: #1b1f1c;
+  --terminal-red: #d9968a;
+  --terminal-green: #a9c7a4;
+  --terminal-yellow: #d6c58f;
+  --terminal-blue: #8fa9c9;
+  --terminal-magenta: #c49bb8;
+  --terminal-cyan: #8fbcb4;
+  --terminal-white: #d5dbd3;
+  --terminal-bright-black: #6f7a6f;
+  --terminal-bright-red: #e4a89c;
+  --terminal-bright-green: #b9d4b4;
+  --terminal-bright-yellow: #e2d3a4;
+  --terminal-bright-blue: #a4bbd6;
+  --terminal-bright-magenta: #d2b0c8;
+  --terminal-bright-cyan: #a6cdc5;
+  --terminal-bright-white: #eef2ec;
+}

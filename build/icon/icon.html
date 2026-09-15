@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:transparent}
+.tile{width:1024px;height:1024px;position:relative;overflow:hidden}
+.bg{position:absolute;inset:100px;border-radius:230px;
+  background:linear-gradient(160deg,#3a3352 0%,#2a2540 55%,#221d33 100%);
+  box-shadow:inset 0 0 0 6px rgba(201,182,236,.18)}
+.glow{position:absolute;left:290px;top:250px;width:440px;height:440px;border-radius:50%;
+  background:radial-gradient(circle,rgba(185,167,230,.45) 0%,rgba(185,167,230,0) 70%)}
+svg{position:absolute;left:212px;top:212px}
+</style></head><body><div class="tile"><div class="bg"></div><div class="glow"></div>
+<svg width="600" height="600" viewBox="0 0 100 100">
+  <g transform="translate(50 50)">
+    <g id="petals">
+      <ellipse cx="0" cy="-26" rx="12" ry="22" fill="#c9b6ec"/>
+      <ellipse cx="0" cy="-26" rx="12" ry="22" fill="#c9b6ec" transform="rotate(72)"/>
+      <ellipse cx="0" cy="-26" rx="12" ry="22" fill="#b9a7e6" transform="rotate(144)"/>
+      <ellipse cx="0" cy="-26" rx="12" ry="22" fill="#b9a7e6" transform="rotate(216)"/>
+      <ellipse cx="0" cy="-26" rx="12" ry="22" fill="#c9b6ec" transform="rotate(288)"/>
+    </g>
+    <circle r="13" fill="#9fbf9a"/>
+    <circle r="6" fill="#dff0d8" opacity=".9"/>
+    <circle cx="26" cy="-30" r="4" fill="#d6c58f"/>
+    <circle cx="-31" cy="22" r="3" fill="#d6c58f"/>
+  </g>
+</svg></div></body></html>

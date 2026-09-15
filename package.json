@@ -1,0 +1,44 @@
+{
+  "name": "clauding",
+  "version": "0.2.0",
+  "description": "A macOS desktop window around Claude Code sessions: your session list on the left, a real terminal running claude in the middle, a side panel with tabs on the right.",
+  "license": "MIT",
+  "author": "Ula Kuczyńska",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ula-k/clauding.git"
+  },
+  "homepage": "https://github.com/ula-k/clauding",
+  "type": "module",
+  "main": "electron/main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node scripts/start.js",
+    "build": "vite build",
+    "preview": "node scripts/start.js --built",
+    "check": "node scripts/check.js",
+    "postinstall": "node scripts/prepareNodePty.js",
+    "rebuild": "electron-rebuild --force --only node-pty && node scripts/prepareNodePty.js",
+    "install-app": "node scripts/installApp.js",
+    "uninstall-app": "node scripts/uninstallApp.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.270",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.0",
+    "node-pty": "^1.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "electron": "^44.0.0",
+    "vite": "^8.0.0"
+  }
+}
