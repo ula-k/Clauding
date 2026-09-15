@@ -36,7 +36,11 @@ export default function SessionsColumn({
   agents,
   agentActions,
   sessionAgents,
-  onRenameSession
+  onRenameSession,
+  definitionSuggestions,
+  onDismissSuggestion,
+  onCreateAgentFromSession,
+  onHarvestSkillsFromSession
 }) {
   const { translate, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState("sessions");
@@ -122,12 +126,16 @@ export default function SessionsColumn({
         {agentFormState && (
           <AgentForm
             agent={agents.find((agent) => agent.id === agentFormState.agentId) || null}
+            initialFolder={agentFormState.folder || null}
             onClose={() => setAgentFormState(null)}
             onSave={async (draft) => {
               const returning = agentFormState.returnToNewSession;
               const saved = agentFormState.agentId
                 ? await agentActions.updateAgent(agentFormState.agentId, draft)
                 : await agentActions.addAgent(draft);
+              if (agentFormState.folder && onDismissSuggestion) {
+                onDismissSuggestion(agentFormState.folder);
+              }
               setAgentFormState(null);
               if (returning) {
                 onOpenNewSheet(newSheetGroupId, saved ? saved.id : null);
@@ -162,6 +170,12 @@ export default function SessionsColumn({
           onAddAgent={() => setAgentFormState({ agentId: null, returnToNewSession: false })}
           onEditAgent={(agentId) => setAgentFormState({ agentId, returnToNewSession: false })}
           onDeleteAgent={agentActions.deleteAgent}
+          onRestoreBuiltin={agentActions.restoreBuiltin}
+          definitionSuggestions={definitionSuggestions}
+          onAddSuggestion={(suggestion) =>
+            setAgentFormState({ agentId: null, returnToNewSession: false, folder: suggestion })
+          }
+          onDismissSuggestion={onDismissSuggestion}
         />
       ) : (
         <div className="session-list">
@@ -226,6 +240,11 @@ export default function SessionsColumn({
                     onHide={groupActions.hideSession}
                     onUnhide={groupActions.unhideSession}
                     onRenameSession={onRenameSession}
+                    agents={agents}
+                    currentAgentId={session.agent ? session.agent.id : null}
+                    onAssignAgent={agentActions.assignSession}
+                    onCreateAgent={onCreateAgentFromSession}
+                    onHarvestSkills={onHarvestSkillsFromSession}
                   />
                 ))
               )}

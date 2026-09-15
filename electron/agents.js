@@ -87,6 +87,13 @@ function cleanColor(rawColor) {
   return AGENT_COLOR_TOKENS.includes(token) ? token : DEFAULT_AGENT_COLOR;
 }
 
+// The marker that says an agent came with the app rather than from the
+// user. Only a short slug is kept; anything else counts as "not built in".
+function cleanBuiltin(rawBuiltin) {
+  const marker = String(rawBuiltin || "").trim();
+  return /^[a-z][a-z0-9-]{0,40}$/.test(marker) ? marker : null;
+}
+
 function cleanFolder(rawFolder) {
   const folder = String(rawFolder || "").trim();
   return folder ? path.resolve(folder) : "";
@@ -126,7 +133,11 @@ function sanitizeAgent(entry) {
     color: cleanColor(entry.color),
     definitionFolder,
     definitionFile,
-    lastWorkingDirectory: lastWorkingDirectory || null
+    lastWorkingDirectory: lastWorkingDirectory || null,
+    // Which built-in this agent is ("agent-maker"), or null for the user's
+    // own. A built-in can be recoloured and renamed but never deleted, and
+    // the app puts a missing one back at the next start.
+    builtin: cleanBuiltin(entry.builtin)
   };
 }
 
@@ -149,6 +160,17 @@ function sanitize(saved) {
       }
     }
   }
+  // The agents that came with the app are always at the top of the list, in
+  // the order they were seeded; the user's own keep their own order under
+  // them. A plain stable sort does both.
+  state.agents = state.agents
+    .map((agent, position) => ({ agent, position }))
+    .sort((first, second) => {
+      const firstIsBuiltin = first.agent.builtin ? 0 : 1;
+      const secondIsBuiltin = second.agent.builtin ? 0 : 1;
+      return firstIsBuiltin - secondIsBuiltin || first.position - second.position;
+    })
+    .map((entry) => entry.agent);
   if (saved.sessionAgents && typeof saved.sessionAgents === "object") {
     for (const [sessionId, agentId] of Object.entries(saved.sessionAgents)) {
       if (typeof agentId === "string" && knownIds.has(agentId)) {
@@ -166,7 +188,11 @@ function headingName(definitionText) {
   if (!headingMatch) {
     return "";
   }
-  return cleanName(headingMatch[1].replace(/^agent\s*[::]\s*/i, ""));
+  const withoutPrefix = headingMatch[1].replace(/^agent\s*[::]\s*/i, "");
+  // A heading like "# 🚀 Launcher" already lends its emoji to the emoji field,
+  // so the name must not carry it a second time.
+  const withoutLeadingEmoji = withoutPrefix.replace(new RegExp("^" + EMOJI_PATTERN.source + "\\s*", "u"), "");
+  return cleanName(withoutLeadingEmoji);
 }
 
 function firstEmoji(definitionText) {
@@ -233,13 +259,22 @@ export function inspectDefinitionFile(rawFile) {
 
 // The one block of text a terminal running as an agent gets appended to the
 // CLI's system prompt: the app's own preamble first (it still runs inside
-// Clauding), then who it is, then the definition itself.
-export function buildAgentSystemPrompt(preamble, agent) {
+// Clauding), then who it is, then the definition itself — and, last, the one
+// job this particular terminal was opened for, if it has one ("Distil THIS
+// conversation into a new agent definition…"). A terminal with a task but no
+// agent (Harvest skills) gets the preamble and the task alone.
+export function buildAgentSystemPrompt(preamble, agent, taskPrompt) {
+  const task = String(taskPrompt || "").trim();
+  if (!agent) {
+    return [preamble, task ? "---" : "", task].filter(Boolean).join("\n\n");
+  }
   const definitionText = readTextQuietly(agent.definitionFile);
   const introduction =
     `You are running as the agent "${agent.name}". Your full definition follows; follow it. ` +
     `It lives at ${agent.definitionFile}; its folder ${agent.definitionFolder} holds your working files.`;
-  return [preamble, "---", introduction, definitionText].filter(Boolean).join("\n\n");
+  return [preamble, "---", introduction, definitionText, task ? "---" : "", task]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function createAgentStore({ storagePath, onChange, log }) {
@@ -320,6 +355,12 @@ export function createAgentStore({ storagePath, onChange, log }) {
     if (position === -1) {
       return get();
     }
+    // A built-in is part of the app, not of the user's list: the menu does
+    // not offer Delete for one, and a request that gets here anyway (an
+    // edited agents.json, a stale window) is ignored rather than obeyed.
+    if (state.agents[position].builtin) {
+      return get();
+    }
     state.agents.splice(position, 1);
     for (const [sessionId, linkedAgentId] of Object.entries(state.sessionAgents)) {
       if (linkedAgentId === agentId) {
@@ -328,6 +369,71 @@ export function createAgentStore({ storagePath, onChange, log }) {
     }
     announce();
     return get();
+  }
+
+  // The built-in agents the app ships with (see electron/builtins.js). Adds
+  // the agent when agents.json has none flagged with this marker, and puts
+  // its definition path back when the folder the app ships from has moved.
+  // `force` is the "Restore built-in" action: name, emoji, colour and paths
+  // all go back to what the app ships.
+  function ensureBuiltinAgent(draft, { force = false } = {}) {
+    const marker = cleanBuiltin(draft && draft.builtin);
+    if (!marker) {
+      throw new Error("A built-in agent needs its marker.");
+    }
+    const position = state.agents.findIndex((agent) => agent.builtin === marker);
+    if (position === -1) {
+      const agent = sanitizeAgent({ ...draft, builtin: marker, id: randomUUID() });
+      if (!agent) {
+        throw new Error("The built-in agent definition is not readable.");
+      }
+      // Built-ins first, always: the list is read top down and the Agent
+      // Maker is the one a new user needs before any agent of their own.
+      state.agents.unshift(agent);
+      announce();
+      return { status: "added", agent: { ...agent } };
+    }
+    const existing = state.agents[position];
+    const definitionMissing = !fs.existsSync(existing.definitionFile);
+    if (!force && !definitionMissing) {
+      return { status: "present", agent: { ...existing } };
+    }
+    const repaired = force
+      ? { ...draft, builtin: marker }
+      : { definitionFolder: draft.definitionFolder, definitionFile: draft.definitionFile };
+    const merged = sanitizeAgent({ ...existing, ...repaired, id: existing.id, builtin: marker });
+    if (!merged) {
+      return { status: "present", agent: { ...existing } };
+    }
+    state.agents[position] = merged;
+    announce();
+    return { status: force ? "restored" : "repaired", agent: { ...merged } };
+  }
+
+  // "Assign to agent" on a session row or in the terminal header — the way
+  // an older session, started long before its agent existed, is attached to
+  // one. A null agent id removes the link again.
+  function setSessionAgent(sessionId, agentId) {
+    if (!sessionId) {
+      return false;
+    }
+    if (!agentId) {
+      if (!(sessionId in state.sessionAgents)) {
+        return false;
+      }
+      delete state.sessionAgents[sessionId];
+      announce();
+      return true;
+    }
+    if (!state.agents.some((agent) => agent.id === agentId)) {
+      return false;
+    }
+    if (state.sessionAgents[sessionId] === agentId) {
+      return false;
+    }
+    state.sessionAgents[sessionId] = agentId;
+    announce();
+    return true;
   }
 
   // Called when a terminal's CLI finally registers its session id, so the
@@ -362,6 +468,8 @@ export function createAgentStore({ storagePath, onChange, log }) {
     addAgent,
     updateAgent,
     deleteAgent,
+    ensureBuiltinAgent,
+    setSessionAgent,
     linkSession,
     rememberWorkingDirectory
   };

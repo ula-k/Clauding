@@ -9,7 +9,12 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-const socketPath = path.join(os.homedir(), "Library", "Application Support", "Clauding", "clauding.sock");
+// The running app exports the path of its own socket into every terminal it
+// opens (CLAUDING_SOCKET); the default below is where the installed app keeps
+// it, for a shell that was not started by the app.
+const socketPath =
+  process.env.CLAUDING_SOCKET ||
+  path.join(os.homedir(), "Library", "Application Support", "Clauding", "clauding.sock");
 const [commandName, ...commandArguments] = process.argv.slice(2);
 
 // One shape for every failure, so a session reading its own output cannot

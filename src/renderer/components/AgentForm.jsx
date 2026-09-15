@@ -18,17 +18,26 @@ import {
 // The folder comes first in practice: picking it fills the file select, and
 // the file fills the name and the emoji, so in the normal case the user picks a
 // folder and presses Save.
-export default function AgentForm({ agent, onSave, onClose }) {
+// `initialFolder` is an inspection of a definition folder (the same shape
+// "Choose folder…" answers with): the form opens already filled in. That is
+// what "Add as agent" on a freshly written definition uses, so the user only
+// presses Save.
+export default function AgentForm({ agent, initialFolder = null, onSave, onClose }) {
   const { translate } = useTranslation();
-  const [name, setName] = useState(agent ? agent.name : "");
-  const [emoji, setEmoji] = useState(agent ? agent.emoji : DEFAULT_AGENT_EMOJI);
+  const prefill = agent ? null : initialFolder;
+  const [name, setName] = useState(agent ? agent.name : (prefill && prefill.name) || "");
+  const [emoji, setEmoji] = useState(agent ? agent.emoji : (prefill && prefill.emoji) || DEFAULT_AGENT_EMOJI);
   const [color, setColor] = useState(agent ? agent.color : DEFAULT_AGENT_COLOR);
-  const [definitionFolder, setDefinitionFolder] = useState(agent ? agent.definitionFolder : "");
-  const [definitionFile, setDefinitionFile] = useState(agent ? agent.definitionFile : "");
-  const [markdownFiles, setMarkdownFiles] = useState([]);
+  const [definitionFolder, setDefinitionFolder] = useState(
+    agent ? agent.definitionFolder : (prefill && prefill.definitionFolder) || ""
+  );
+  const [definitionFile, setDefinitionFile] = useState(
+    agent ? agent.definitionFile : (prefill && prefill.definitionFile) || ""
+  );
+  const [markdownFiles, setMarkdownFiles] = useState(prefill ? prefill.markdownFiles || [] : []);
   // The name the definition file suggested. Only a name the user has not touched
   // is replaced when another file is picked.
-  const [suggestedName, setSuggestedName] = useState(agent ? agent.name : "");
+  const [suggestedName, setSuggestedName] = useState(agent ? agent.name : (prefill && prefill.name) || "");
   // The built-in emoji list under the field (the fallback for the native panel).
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const formRef = useRef(null);

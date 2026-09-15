@@ -5,6 +5,7 @@ import englishStrings from "./locales/en.json";
 import polishStrings from "./locales/pl.json";
 import spanishStrings from "./locales/es.json";
 import simplifiedChineseStrings from "./locales/zh-CN.json";
+import { detectSystemLanguage as detectSystemLanguageFor } from "./languageDetection.js";
 
 export const LANGUAGES = [
   { code: "en", label: "English" },
@@ -22,34 +23,10 @@ const STRINGS_BY_LANGUAGE = {
 
 const STORAGE_KEY = "clauding.language";
 
-// What the operating system reports ("pl", "es-ES", "zh-Hans-CN") mapped onto
-// the codes above. Chinese needs the whole tag, not just the first two
-// letters, so every Simplified variant lands on one file. A Traditional tag
-// ("zh-TW", "zh-Hant") lands there too, through the bare "zh" entry: there is
-// no Traditional translation yet, and Simplified reads closer to it than
-// English does. Anything the app has no strings for falls back to English.
-const SYSTEM_LANGUAGE_ALIASES = {
-  zh: "zh-CN",
-  "zh-cn": "zh-CN",
-  "zh-hans": "zh-CN",
-  "zh-sg": "zh-CN"
-};
-
+// The system-language rule itself lives in languageDetection.js; the codes it
+// may answer with are the ones this file has a table for.
 export function detectSystemLanguage(candidate) {
-  const source = String(candidate || (typeof navigator !== "undefined" ? navigator.language : "en") || "en");
-  const fullTag = source.toLowerCase();
-  if (SYSTEM_LANGUAGE_ALIASES[fullTag]) {
-    return SYSTEM_LANGUAGE_ALIASES[fullTag];
-  }
-  // "zh-Hans-CN" and friends: try the language plus the script or region.
-  const [languagePart, secondPart] = fullTag.split("-");
-  if (secondPart && SYSTEM_LANGUAGE_ALIASES[`${languagePart}-${secondPart}`]) {
-    return SYSTEM_LANGUAGE_ALIASES[`${languagePart}-${secondPart}`];
-  }
-  if (SYSTEM_LANGUAGE_ALIASES[languagePart]) {
-    return SYSTEM_LANGUAGE_ALIASES[languagePart];
-  }
-  return STRINGS_BY_LANGUAGE[languagePart] ? languagePart : "en";
+  return detectSystemLanguageFor(candidate, Object.keys(STRINGS_BY_LANGUAGE));
 }
 
 export function loadSavedLanguage() {

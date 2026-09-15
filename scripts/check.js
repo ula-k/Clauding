@@ -5,7 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-const foldersToScan = ["electron", "scripts", "src"];
+const foldersToScan = ["electron", "scripts", "src", "test"];
 const bannedWords = /\b(ctx|opts|fn|tmp|cfg|msg|res|req|evt|dir|idx|len|arr|obj|str|num|val|params|args|cb|el|elem|btn|img)\b/;
 const singleLetterArrow = /\(\s*[a-zA-Z_]\s*\)\s*=>|\b[a-zA-Z_]\s*=>/;
 const singleLetterDeclaration = /\b(const|let|var|function)\s+[a-zA-Z_]\b/;

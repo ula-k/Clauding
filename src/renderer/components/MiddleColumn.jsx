@@ -1,10 +1,115 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { folderLabel } from "../paths.js";
 import TerminalPane from "./TerminalPane.jsx";
-import { FolderIcon, ForkIcon, PencilIcon } from "./Icons.jsx";
+import { DotsIcon, FolderIcon, ForkIcon, PencilIcon, SparkIcon } from "./Icons.jsx";
+import PopupMenu, { MenuItem, MenuLabel, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentChip } from "./AgentBadge.jsx";
 import { titleWithoutAgentEmoji } from "../agentConstants.js";
+
+// "Create agent from this conversation" and "Harvest skills": both fork the
+// conversation into a second terminal that does one job — the Agent Maker
+// distilling this conversation into a definition, or the skill-maker
+// looking for the procedures in it. Neither can run before the CLI has
+// registered a session id, because there is nothing to fork yet; until then
+// the buttons are disabled and say why.
+function MetaActionButtons({ sessionId, onCreateAgent, onHarvestSkills }) {
+  const { translate } = useTranslation();
+  const disabled = !sessionId;
+  return (
+    <>
+      <button
+        type="button"
+        className="fork-button"
+        disabled={disabled}
+        title={translate(disabled ? "meta.waitForSession" : "meta.createAgentTooltip")}
+        onClick={onCreateAgent}
+        data-create-agent-button
+      >
+        <SparkIcon />
+        {translate("meta.createAgent")}
+      </button>
+      <button
+        type="button"
+        className="fork-button"
+        disabled={disabled}
+        title={translate(disabled ? "meta.waitForSession" : "meta.harvestSkillsTooltip")}
+        onClick={onHarvestSkills}
+        data-harvest-skills-button
+      >
+        {translate("meta.harvestSkills")}
+      </button>
+    </>
+  );
+}
+
+// The header's own "…": which agent this session is assigned to, and the
+// two meta actions again, for the people who look for them in a menu.
+function HeaderMenuButton({ sessionId, agents, currentAgentId, onAssignAgent, onCreateAgent, onHarvestSkills }) {
+  const { translate } = useTranslation();
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const menuButtonRef = useRef(null);
+  return (
+    <>
+      <button
+        type="button"
+        className="row-menu-button is-header"
+        ref={menuButtonRef}
+        title={translate("header.menu")}
+        aria-label={translate("header.menu")}
+        data-header-menu-button
+        onClick={() => setMenuAnchor(menuButtonRef.current.getBoundingClientRect())}
+      >
+        <DotsIcon />
+      </button>
+      {menuAnchor && (
+        <PopupMenu anchor={menuAnchor} onClose={() => setMenuAnchor(null)}>
+          <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
+          {agents.map((agent) => (
+            <MenuItem
+              key={agent.id}
+              selected={agent.id === currentAgentId}
+              onClick={() => {
+                setMenuAnchor(null);
+                onAssignAgent(sessionId, agent.id);
+              }}
+            >
+              {`${agent.emoji} ${agent.name}`}
+            </MenuItem>
+          ))}
+          <MenuItem
+            selected={!currentAgentId}
+            onClick={() => {
+              setMenuAnchor(null);
+              onAssignAgent(sessionId, null);
+            }}
+          >
+            {translate("row.noAgent")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            disabled={!sessionId}
+            onClick={() => {
+              setMenuAnchor(null);
+              onCreateAgent();
+            }}
+          >
+            {translate("meta.createAgentLong")}
+          </MenuItem>
+          <MenuItem
+            disabled={!sessionId}
+            onClick={() => {
+              setMenuAnchor(null);
+              onHarvestSkills();
+            }}
+          >
+            {translate("meta.harvestSkills")}
+          </MenuItem>
+        </PopupMenu>
+      )}
+    </>
+  );
+}
 
 // "Start a copy of this conversation in a new terminal; this one stays as it
 // is." Shown wherever a session id is known: in a live terminal's header, and
@@ -111,13 +216,28 @@ function terminalStatusGroup(terminal, session) {
   return terminal.registryStatus === "idle" ? "waiting" : "running";
 }
 
-export default function MiddleColumn({ session, terminal, agent, panelOpen, onTogglePanel, onRename, onFork }) {
+export default function MiddleColumn({
+  session,
+  terminal,
+  agent,
+  agents,
+  panelOpen,
+  onTogglePanel,
+  onRename,
+  onFork,
+  onAssignAgent,
+  onCreateAgent,
+  onHarvestSkills,
+  windowTools
+}) {
   const { translate } = useTranslation();
   const mode = columnMode({ session, terminal });
+  const sessionId = (terminal && terminal.sessionId) || (session && session.sessionId) || null;
 
   if (!session && !terminal) {
     return (
       <div className="column column-middle">
+        <div className="middle-tools">{windowTools}</div>
         <div className="middle-centred">
           <div className="empty-card">
             <div className="empty-icon">✿</div>
@@ -136,6 +256,7 @@ export default function MiddleColumn({ session, terminal, agent, panelOpen, onTo
   if (mode !== "terminal") {
     return (
       <div className="column column-middle">
+        <div className="middle-tools">{windowTools}</div>
         <div className="middle-centred">
           <div className="elsewhere-note" data-elsewhere-note={mode === "elsewhere" ? "1" : "0"}>
             <div className="elsewhere-title">{title}</div>
@@ -163,6 +284,16 @@ export default function MiddleColumn({ session, terminal, agent, panelOpen, onTo
           <AgentChip agent={agent} />
           <StatusPill statusGroup={terminalStatusGroup(terminal, session)} />
           {onFork && terminal.sessionId && <ForkButton onFork={onFork} />}
+          <MetaActionButtons sessionId={sessionId} onCreateAgent={onCreateAgent} onHarvestSkills={onHarvestSkills} />
+          <HeaderMenuButton
+            sessionId={sessionId}
+            agents={agents || []}
+            currentAgentId={agent ? agent.id : null}
+            onAssignAgent={onAssignAgent}
+            onCreateAgent={onCreateAgent}
+            onHarvestSkills={onHarvestSkills}
+          />
+          {windowTools}
           <button type="button" className="panel-toggle" onClick={onTogglePanel}>
             {panelOpen ? translate("panel.hide") : translate("panel.show")}
           </button>

@@ -19,6 +19,7 @@
     "build": "vite build",
     "preview": "node scripts/start.js --built",
     "check": "node scripts/check.js",
+    "test": "node --test test/*.test.js",
     "postinstall": "node scripts/prepareNodePty.js",
     "rebuild": "electron-rebuild --force --only node-pty && node scripts/prepareNodePty.js",
     "install-app": "node scripts/installApp.js",

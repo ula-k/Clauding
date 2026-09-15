@@ -1348,7 +1348,8 @@ input:focus-visible {
 .transcript-header .header-top {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
 }
 
 .transcript-header h1 {
@@ -2138,4 +2139,253 @@ input:focus-visible {
 
 .panel-reading .markdown hr {
   margin: 2em 0;
+}
+
+/* ---------- The meta layer: window tools, skills, settings ---------- */
+
+/* Skills and the settings gear sit in the top-right of the middle column —
+   next to "Show panel" when a terminal is on screen, and on their own strip
+   when it is not, so they are reachable with nothing selected. */
+.middle-tools {
+  position: absolute;
+  top: calc(var(--title-bar-height) - 30px);
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 7;
+}
+
+.column-middle {
+  position: relative;
+}
+
+.header-tool-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.header-tool-button.is-icon {
+  padding: 5px 8px;
+}
+
+.header-tool-button svg {
+  color: var(--text-faint);
+}
+
+.header-tool-button:hover,
+.header-tool-button.is-open {
+  color: var(--accent-strong);
+  background: var(--accent-tint);
+  border-color: var(--border-lavender);
+}
+
+.header-tool-button:hover svg,
+.header-tool-button.is-open svg {
+  color: var(--accent);
+}
+
+/* The header's own "…" is always visible: unlike a row, the header has no
+   hover state to reveal it. */
+.row-menu-button.is-header {
+  position: static;
+  transform: none;
+  opacity: 1;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.fork-button:disabled,
+.header-tool-button:disabled {
+  color: var(--text-faint);
+  border-color: var(--border-soft);
+  background: transparent;
+  cursor: default;
+}
+
+.fork-button:disabled svg {
+  color: var(--text-faint);
+}
+
+/* The Skills and settings popovers: the same box as a "…" menu, wide enough
+   for a description and a folder path. */
+.popup-menu.is-wide {
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  max-width: 420px;
+  max-height: 76vh;
+}
+
+/* Only the rows scroll; the label above and the folder path below stay. */
+.skill-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.skill-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 7px;
+  text-align: left;
+}
+
+.skill-row:hover {
+  background: var(--accent-soft);
+}
+
+.skill-row-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.skill-row:hover .skill-row-name {
+  color: var(--accent-strong);
+}
+
+.skill-row-builtin,
+.agent-row-builtin {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.agent-row-builtin {
+  margin-left: 7px;
+  vertical-align: 1px;
+}
+
+.skill-row-description {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.skill-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 9px 5px;
+}
+
+.skill-footer-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.skill-footer-reveal {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.skill-footer-reveal:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.settings-block {
+  padding: 6px 9px 8px;
+}
+
+.settings-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-path {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.settings-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* A definition folder that turned up under the agents root while the app
+   was running: one line at the top of the Agents tab, and one click to fill
+   the form with it. */
+.agent-suggestion {
+  margin: 6px 2px 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--border-lavender);
+  background: var(--surface-lavender);
+}
+
+.agent-suggestion-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-suggestion-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.agent-suggestion-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.agent-suggestion-folder {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.agent-suggestion-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }

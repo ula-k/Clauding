@@ -3,9 +3,17 @@ import { LanguageContext, detectSystemLanguage, loadSavedLanguage, saveLanguage,
 import { folderLabel } from "./paths.js";
 import { disposeInstance, ensureInstance, hasInstance, lastTerminalDimensions, writeToInstance } from "./terminalInstances.js";
 import { groupIdForSession } from "./sessionGrouping.js";
+import { forkDisplayName } from "./forkName.js";
+import {
+  createAgentTaskPrompt,
+  harvestSkillsSessionName,
+  harvestSkillsTaskPrompt,
+  newAgentSessionName
+} from "./metaPrompts.js";
 import SessionsColumn from "./components/SessionsColumn.jsx";
 import MiddleColumn from "./components/MiddleColumn.jsx";
 import SidePanel from "./components/SidePanel.jsx";
+import WindowTools from "./components/WindowTools.jsx";
 
 const PAGE_SIZE = 60;
 const LEFT_WIDTH_MIN = 240;
@@ -19,20 +27,6 @@ const PANEL_WIDTH_STORAGE_KEY = "clauding.panelWidth";
 // inside the same limit on load, so the panel handle can never end up off
 // screen (it did: the panel then could not be moved at all).
 const MIDDLE_WIDTH_MIN = 480;
-// What a fork's `--name` looks like: the original title with a marker after
-// it, so the two rows are told apart at a glance. Left untranslated on
-// purpose — it becomes the session's stored display name, not a label the
-// app redraws when the interface language changes.
-const FORK_NAME_SUFFIX = " (fork)";
-const FORK_NAME_MAX_LENGTH = 90;
-
-function forkDisplayName(originalTitle) {
-  const cleaned = String(originalTitle || "").replace(/\s+/g, " ").trim();
-  const room = FORK_NAME_MAX_LENGTH - FORK_NAME_SUFFIX.length;
-  const shortened = cleaned.length > room ? `${cleaned.slice(0, room - 1)}…` : cleaned;
-  return `${shortened}${FORK_NAME_SUFFIX}`;
-}
-
 // Both handles clamp against the window, not only against their own limits.
 function clampPanelWidth(width, leftWidth, windowWidth) {
   const largest = Math.max(PANEL_WIDTH_MIN, Math.min(PANEL_WIDTH_MAX, windowWidth - leftWidth - MIDDLE_WIDTH_MIN));
@@ -77,6 +71,13 @@ const EMPTY_PANEL_STATE = { tabs: [], activeTabId: null, panelVisible: false };
 const INITIAL_GROUP_STATE = { groups: [{ id: "default", name: null, order: 0 }], membership: {}, hidden: [], collapsed: [] };
 // Until agents.json has been read: no agents, so no badges anywhere.
 const INITIAL_AGENT_STATE = { agents: [], sessionAgents: {} };
+// Until settings.json has been read. The real defaults are decided in the
+// main process (electron/settings.js); these only keep the menu from
+// drawing "undefined" for the few milliseconds before the answer arrives.
+const INITIAL_SETTINGS = { agentsRoot: "", skillsRoot: "" };
+// The agent that makes agents, by its built-in marker rather than by name:
+// the user may rename it.
+const AGENT_MAKER_MARKER = "agent-maker";
 
 // A row for a session a terminal of ours just started, shown until
 // listSessions() sees the transcript file on disk (written at the first prompt).
@@ -118,6 +119,15 @@ export default function App() {
   const [newSheetAgentId, setNewSheetAgentId] = useState(null);
   const [groupState, setGroupState] = useState(INITIAL_GROUP_STATE);
   const [agentState, setAgentState] = useState(INITIAL_AGENT_STATE);
+  const [settings, setSettings] = useState(INITIAL_SETTINGS);
+  // The Skills item in the macOS menu bar asks the window to open the same
+  // popover the Skills button opens.
+  const [skillsMenuOpen, setSkillsMenuOpen] = useState(false);
+  // Definition folders that appeared under the agents root while the app was
+  // running — what the Agent Maker leaves behind. Each one is offered as
+  // "Add as agent" at the top of the Agents tab until it is added or waved
+  // away.
+  const [definitionSuggestions, setDefinitionSuggestions] = useState([]);
   // Whether the panel is open belongs to the session on screen and comes
   // from the main process with that session's tabs (panel-tabs.json). This
   // one is only for the moments when no session is selected at all, so the
@@ -145,6 +155,9 @@ export default function App() {
   const selectedTerminalIdRef = useRef(null);
   const terminalsRef = useRef([]);
   const sessionsRef = useRef([]);
+  // sessionAgents as it is right now, for the callbacks that must not be
+  // rebuilt on every change of it (selecting a session, forking one).
+  const agentLinksRef = useRef({});
   const panelSessionKeyRef = useRef(null);
   // Read inside the pointer listeners, which are installed once per drag.
   const leftWidthRef = useRef(leftWidth);
@@ -156,6 +169,7 @@ export default function App() {
   panelOpenRef.current = panelOpen;
   selectedTerminalIdRef.current = selectedTerminalId;
   terminalsRef.current = terminals;
+  agentLinksRef.current = agentState.sessionAgents;
 
   const setLanguage = useCallback((languageCode) => {
     saveLanguage(languageCode);
@@ -294,6 +308,42 @@ export default function App() {
     });
   }, []);
 
+  // The app's own settings (settings.json): where new agent definitions are
+  // written, and the folder Claude Code reads skills from.
+  useEffect(() => {
+    window.clauding.getSettings().then(setSettings);
+    return window.clauding.onSettingsChanged(setSettings);
+  }, []);
+
+  // The Skills item in the macOS menu bar.
+  useEffect(() => {
+    return window.clauding.onShowSkills(() => {
+      setSkillsMenuOpen(true);
+    });
+  }, []);
+
+  // A definition folder that turned up under the agents root. The same
+  // folder is never offered twice, and one that is already an agent is not
+  // offered at all (the main process checks that too).
+  useEffect(() => {
+    return window.clauding.onAgentDefinitionFound((inspection) => {
+      if (!inspection || !inspection.definitionFile) {
+        return;
+      }
+      setDefinitionSuggestions((previous) =>
+        previous.some((known) => known.definitionFolder === inspection.definitionFolder)
+          ? previous
+          : previous.concat([inspection])
+      );
+    });
+  }, []);
+
+  const dismissDefinitionSuggestion = useCallback((suggestion) => {
+    setDefinitionSuggestions((previous) =>
+      previous.filter((known) => known.definitionFolder !== suggestion.definitionFolder)
+    );
+  }, []);
+
   // The linked sessions themselves, read by id in the main process. Asked
   // for again whenever the links change and whenever the session list does
   // (a title was edited, a new session appeared, one was resumed).
@@ -409,7 +459,8 @@ export default function App() {
     groupId = null,
     forkSession = false,
     sessionName = null,
-    agentId = null
+    agentId = null,
+    taskPrompt = null
   }) => {
     setNewSheetOpen(false);
     try {
@@ -420,6 +471,9 @@ export default function App() {
         forkSession,
         sessionName,
         agentId,
+        // The one job this terminal was opened for, if any: it goes at the
+        // end of the same prompt file the agent definition is written to.
+        taskPrompt,
         columns: dimensions.columns,
         rows: dimensions.rows,
         openedByClick
@@ -462,7 +516,15 @@ export default function App() {
     if (session.liveStatus && session.liveStatus.source !== "app") {
       return;
     }
-    openTerminal({ workingDirectory: session.workingDirectory, resumeSessionId: sessionId, openedByClick: true });
+    // Resume as the agent this session is assigned to: the definition goes
+    // into the system prompt of the resumed terminal, so an old session
+    // attached to an agent behaves as that agent from its next message on.
+    openTerminal({
+      workingDirectory: session.workingDirectory,
+      resumeSessionId: sessionId,
+      agentId: agentLinksRef.current[sessionId] || null,
+      openedByClick: true
+    });
   }, [openTerminal]);
 
   // Fork: a *new* terminal runs `claude --resume <id> --fork-session --name
@@ -556,6 +618,103 @@ export default function App() {
 
   // Everything the Agents tab and the agent form do. Each call returns the
   // new agents.json state; the main process also broadcasts it.
+  // "Assign to agent" from a row menu or from the terminal header. This is
+  // how a session started long before its agent existed is attached to one:
+  // agents.json gets the link, the badge appears at once, and the next
+  // `claude --resume` from the app carries that agent's definition.
+  //
+  // A session that is open in a terminal *right now* keeps the system prompt
+  // it started with until the CLI is restarted, so the user is offered that
+  // restart. The conversation itself is untouched — it is the same
+  // `--resume`, only with the definition appended this time.
+  const assignSessionToAgent = useCallback(
+    async (sessionId, agentId) => {
+      if (!sessionId) {
+        return;
+      }
+      const state = await window.clauding.assignSessionToAgent(sessionId, agentId || null);
+      setAgentState(state);
+      const agent = agentId ? state.agents.find((entry) => entry.id === agentId) : null;
+      const terminal = terminalsRef.current.find((record) => record.sessionId === sessionId && !record.exited);
+      if (!agent || !terminal) {
+        return;
+      }
+      const question = translateInLanguage(language, "agents.restartQuestion", { name: agent.name });
+      if (!window.confirm(question)) {
+        return;
+      }
+      const session = sessionsRef.current.find((record) => record.sessionId === sessionId) || null;
+      const workingDirectory = terminal.workingDirectory || (session && session.workingDirectory);
+      await window.clauding.closeTerminal(terminal.terminalId);
+      // The pty needs a moment to hang up before a second `claude --resume`
+      // takes the same session over.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      openTerminal({ workingDirectory, resumeSessionId: sessionId, agentId: agent.id });
+    },
+    [language, openTerminal]
+  );
+
+  // The two meta actions. Both fork the conversation into a second terminal
+  // that has one job, and leave the original exactly as it is — the same
+  // mechanism the Fork button uses, with a task added to the prompt file.
+  const forkForTask = useCallback(
+    ({ sessionId, agentId, sessionName, taskPrompt }) => {
+      const sourceSessionId = sessionId || (activeTerminal && activeTerminal.sessionId) || selectedSessionId;
+      if (!sourceSessionId) {
+        return null;
+      }
+      const sourceSession = sessionsRef.current.find((record) => record.sessionId === sourceSessionId) || null;
+      const owner = terminalsRef.current.find((record) => record.sessionId === sourceSessionId) || null;
+      const workingDirectory =
+        (owner && owner.workingDirectory) || (sourceSession && sourceSession.workingDirectory) || null;
+      if (!workingDirectory) {
+        return null;
+      }
+      const sourceTitle = sourceSession ? sourceSession.title : translateInLanguage(language, "newSession.untitled");
+      return openTerminal({
+        workingDirectory,
+        resumeSessionId: sourceSessionId,
+        forkSession: true,
+        sessionName: sessionName(sourceTitle),
+        agentId,
+        taskPrompt,
+        groupId: groupIdForSession(sourceSessionId, groupState.membership, groupState.groups)
+      });
+    },
+    [activeTerminal, selectedSessionId, language, groupState, openTerminal]
+  );
+
+  const createAgentFromConversation = useCallback(
+    (sessionId) => {
+      const agentMaker = agentState.agents.find((agent) => agent.builtin === AGENT_MAKER_MARKER) || null;
+      if (!agentMaker) {
+        window.alert(translateInLanguage(language, "meta.noAgentMaker"));
+        return null;
+      }
+      return forkForTask({
+        sessionId,
+        agentId: agentMaker.id,
+        sessionName: newAgentSessionName,
+        taskPrompt: createAgentTaskPrompt(settings.agentsRoot)
+      });
+    },
+    [agentState, settings, language, forkForTask]
+  );
+
+  // Harvesting skills needs no agent: the skill-maker skill is in the skills
+  // folder, and the fork is only told to run it over this conversation.
+  const harvestSkillsFromConversation = useCallback(
+    (sessionId) => {
+      return forkForTask({
+        sessionId,
+        agentId: null,
+        sessionName: harvestSkillsSessionName,
+        taskPrompt: harvestSkillsTaskPrompt(settings.skillsRoot)
+      });
+    },
+    [settings, forkForTask]
+  );
+
   const agentActions = useMemo(
     () => ({
       async addAgent(draft) {
@@ -572,9 +731,16 @@ export default function App() {
       },
       deleteAgent(agentId) {
         window.clauding.deleteAgent(agentId).then(setAgentState);
-      }
+      },
+      // An agent that came with the app: back to the definition, name,
+      // emoji and colour Clauding ships with (and the built-in skill is
+      // put back too if it is missing).
+      restoreBuiltin() {
+        window.clauding.restoreBuiltinAgents().then(setAgentState);
+      },
+      assignSession: assignSessionToAgent
     }),
-    []
+    [assignSessionToAgent]
   );
 
   // A session opened from a group header's "+" joins that group as soon as
@@ -785,16 +951,43 @@ export default function App() {
           agentActions={agentActions}
           sessionAgents={agentState.sessionAgents}
           onRenameSession={renameSession}
+          definitionSuggestions={definitionSuggestions}
+          onDismissSuggestion={dismissDefinitionSuggestion}
+          onCreateAgentFromSession={createAgentFromConversation}
+          onHarvestSkillsFromSession={harvestSkillsFromConversation}
         />
         <div className="resize-handle" data-resize-handle="left" onPointerDown={(event) => beginDrag(event, "left")} />
         <MiddleColumn
           session={selectedSession}
           terminal={activeTerminal}
           agent={selectedAgent}
+          agents={agentState.agents}
           panelOpen={panelOpen}
           onTogglePanel={() => setPanelVisible(!panelOpen)}
           onRename={handleRenameSelected}
           onFork={forkSelectedSession}
+          onAssignAgent={assignSessionToAgent}
+          onCreateAgent={() => createAgentFromConversation(null)}
+          onHarvestSkills={() => harvestSkillsFromConversation(null)}
+          windowTools={
+            <WindowTools
+              settings={settings}
+              skillsOpen={skillsMenuOpen}
+              onSkillsOpenChange={setSkillsMenuOpen}
+              onOpenSkill={(skill) => {
+                // With no session on screen there is no tab set to open it
+                // in; say so instead of failing silently.
+                panelActions.open(skill.filePath).catch((error) => {
+                  window.alert(
+                    translateInLanguage(language, "panel.loadError", {
+                      message: String(error && error.message ? error.message : error)
+                    })
+                  );
+                });
+              }}
+              onPickAgentsRoot={() => window.clauding.pickAgentsRoot().then(setSettings)}
+            />
+          }
         />
         <div
           className={panelOpen ? "resize-handle resize-handle-panel" : "resize-handle resize-handle-panel is-hidden"}

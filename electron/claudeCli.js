@@ -32,9 +32,11 @@ export function claudeExecutablePath() {
 // it skips its registry entry — so they never reach the pty.
 const NESTED_SESSION_VARIABLE = /^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_JOB_DIR$|CLAUDE_EFFORT$|AI_AGENT$)/;
 
-export function terminalEnvironment() {
+// `sourceEnvironment` is the app's own environment; it is a parameter only so
+// the dry tests can hand in one of their own instead of the real process.
+export function terminalEnvironment(sourceEnvironment = process.env) {
   const environment = {};
-  for (const [name, value] of Object.entries(process.env)) {
+  for (const [name, value] of Object.entries(sourceEnvironment)) {
     if (typeof value === "string" && !NESTED_SESSION_VARIABLE.test(name)) {
       environment[name] = value;
     }

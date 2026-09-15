@@ -87,8 +87,46 @@ contextBridge.exposeInMainWorld("clauding", {
   getLinkedAgentSessions() {
     return ipcRenderer.invoke(CHANNELS.agentsLinkedSessions);
   },
+  // "Assign to agent" on a row or in the terminal header; a null agent id
+  // removes the link. This is how a session that started long before its
+  // agent existed is attached to one.
+  assignSessionToAgent(sessionId, agentId) {
+    return ipcRenderer.invoke(CHANNELS.agentsAssignSession, { sessionId, agentId: agentId || null });
+  },
+  // Puts the app's own Agent Maker back (and re-seeds the built-in skill).
+  restoreBuiltinAgents() {
+    return ipcRenderer.invoke(CHANNELS.agentsRestoreBuiltin);
+  },
   onAgentsChanged(listener) {
     return subscribe(CHANNELS.agentsChanged, listener);
+  },
+  // A definition folder the Agent Maker (or anything else) just wrote under
+  // the agents root, ready to be added as an agent with one click.
+  onAgentDefinitionFound(listener) {
+    return subscribe(CHANNELS.agentsDefinitionFound, listener);
+  },
+  // The app's own settings (settings.json): where new agent definitions are
+  // written and where Claude Code reads skills from.
+  getSettings() {
+    return ipcRenderer.invoke(CHANNELS.settingsGet);
+  },
+  updateSettings(draft) {
+    return ipcRenderer.invoke(CHANNELS.settingsUpdate, draft || {});
+  },
+  pickAgentsRoot() {
+    return ipcRenderer.invoke(CHANNELS.settingsPickAgentsRoot);
+  },
+  onSettingsChanged(listener) {
+    return subscribe(CHANNELS.settingsChanged, listener);
+  },
+  // Every skill in the skills folder: name and description from the
+  // frontmatter of each <name>/SKILL.md. Read from disk on every call.
+  listSkills() {
+    return ipcRenderer.invoke(CHANNELS.skillsList);
+  },
+  // The Skills item in the macOS menu bar asking for the popover.
+  onShowSkills(listener) {
+    return subscribe(CHANNELS.skillsShow, listener);
   },
   getSystemLanguage() {
     return ipcRenderer.invoke(CHANNELS.systemLanguage);
@@ -97,6 +135,10 @@ contextBridge.exposeInMainWorld("clauding", {
   // the caller focuses its field first. Answers { supported, opened }.
   showEmojiPanel() {
     return ipcRenderer.invoke(CHANNELS.systemEmojiPanel);
+  },
+  // "Reveal in Finder" for a folder or a file.
+  revealInFinder(target) {
+    return ipcRenderer.invoke(CHANNELS.systemReveal, { target });
   },
   listRecentProjects() {
     return ipcRenderer.invoke(CHANNELS.projectsRecent);
@@ -119,6 +161,12 @@ contextBridge.exposeInMainWorld("clauding", {
   },
   replayTerminal(terminalId) {
     return ipcRenderer.invoke(CHANNELS.terminalReplay, { terminalId });
+  },
+  // Hangs one terminal up. The only thing that asks for this is "restart
+  // this terminal so it loads the agent definition"; nothing else closes a
+  // terminal by hand.
+  closeTerminal(terminalId) {
+    return ipcRenderer.invoke(CHANNELS.terminalClose, { terminalId });
   },
   onTerminalData(listener) {
     return subscribe(CHANNELS.terminalData, listener);

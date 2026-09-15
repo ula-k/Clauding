@@ -33,6 +33,12 @@ row is clicked.
 * **Fork.** Any conversation can be copied into a *new* terminal, with the
   original left exactly as it was — including a session that is busy
   somewhere else.
+* **An agent that makes agents, a skill that makes skills.** Both ship with
+  the app: **Agent Maker** is the first row of the Agents tab, **skill-maker**
+  is seeded into your skills folder. **Create agent** turns the conversation
+  you are in into a new agent definition, **Harvest skills** turns it into
+  skills, and **Skills** in the menu bar (and in the window's top-right)
+  lists every skill on the Mac with its description.
 * **`clauding open <path or URL>`.** A command on the PATH of every terminal
   the app opens, so the session itself can put a page in the panel. Every
   session is told about it through a preamble appended to its system prompt.
@@ -84,7 +90,9 @@ npm run build      # bundles the renderer into dist/renderer
 npm run preview    # Electron loading the built renderer
 npm run check      # syntax check + naming rules (no one-letter names, no jargon abbreviations)
 npm run rebuild    # compiles node-pty against this Electron (only if the prebuilt binary fails)
+npm test           # the test suites (see Tests below)
 ```
+
 
 ## How it works, in one page
 
@@ -105,6 +113,7 @@ transcripts, exactly as they do from Terminal.app.
 | `agents.json` | your agents and the session → agent links |
 | `panel-tabs.json` | each session's panel tabs and whether its panel is open |
 | `preamble.md` | the text appended to every session's system prompt |
+| `settings.json` | where new agent definitions are written, and the skills folder |
 | `clauding.sock` | the socket the `clauding` command talks to (mode 0600) |
 
 **The preamble.** `preamble.md` starts as a copy of
@@ -152,6 +161,11 @@ electron/channels.cjs      IPC channel names (shared by main + preload)
 electron/sessions.js       listSessions() + enrichment (title, folder label, colour, status, ownership)
 electron/sessionGroups.js  the user's own groups + hidden sessions (groups.json)
 electron/agents.js         the user's agents + session -> agent links (agents.json)
+electron/settings.js       settings.json: the agents root and the skills folder
+electron/skills.js         reads <skillsRoot>/*/SKILL.md (name + description)
+electron/builtins.js       seeding the built-in Agent Maker and skill-maker
+builtin/agents/agent-maker/agent-maker.md   the Agent Maker's own definition
+builtin/skills/skill-maker/SKILL.md         the skill-maker skill, as shipped
 electron/smokeAgents.js    CLAUDING_SMOKE_AGENTS automation for the agents (dev only)
 electron/smokeEmoji.js     CLAUDING_SMOKE_EMOJI: the agent form's emoji field (dev only)
 electron/smokeGroups.js    CLAUDING_SMOKE_GROUPS automation for the list (dev only)
@@ -177,6 +191,8 @@ src/renderer/components/AgentForm.jsx      add / edit an agent (name, emoji, col
 src/renderer/components/EmojiPicker.jsx    the built-in emoji list under the form's emoji field
 src/renderer/emojiChoices.js       the first-grapheme rule + the 64 curated emoji and their keywords
 src/renderer/components/AgentBadge.jsx     the emoji in its coloured circle (rows) and the header chip
+src/renderer/components/WindowTools.jsx    the Skills and settings popovers (top-right)
+src/renderer/metaPrompts.js        the task lines the two meta actions put in the prompt file
 src/renderer/agentConstants.js     the eight agent colour tokens and the small label helpers
 src/renderer/sessionGrouping.js    sessions + groups.json -> what the column draws
 src/renderer/groupConstants.js     the "default" group id and its translated label
@@ -758,6 +774,122 @@ badge on its row.
   links, so they do not appear under an agent either: a smoke run's
   conversations stay out of both places.
 
+## The meta layer: making agents and making skills
+
+An agent that makes agents is useless if every user has to write it first, so
+both halves of this ship **inside the app**, in `builtin/`:
+
+* `builtin/agents/agent-maker/agent-maker.md` — the **Agent Maker**: it turns a
+  conversation (or a description) into `<agents root>/<slug>/<slug>.md`, asks
+  two or three questions only when the role is ambiguous, shows the draft in
+  the side panel with `clauding open` and waits for a yes before saving. It
+  never describes *itself* when distilling a conversation and never invents a
+  rule that is not in it.
+* `builtin/skills/skill-maker/SKILL.md` — the **skill-maker** skill: it finds
+  the repeatable procedures in a conversation, lists the candidates, asks which
+  to keep, and writes each kept one as `~/.claude/skills/<slug>/SKILL.md`. One
+  procedure per skill, no duplicates of a skill that is already there, no
+  secrets.
+
+### Seeding (`electron/builtins.js`)
+
+At every start:
+
+* **The agent.** If `agents.json` holds no agent flagged `builtin:
+  "agent-maker"`, the Agent Maker is added as the **first** one (🧬,
+  `--project-color-0`), reading its definition straight out of `builtin/` —
+  a new version of the app is simply a new definition, with nothing to
+  migrate. Built-ins always sort above the user's own agents. Its emoji,
+  colour and name can be edited; **Delete** is not offered for it and is
+  refused by the store even if it is asked for, and the row menu has
+  **Restore built-in** instead, which puts the shipped name, emoji, colour and
+  definition back.
+* **The skill.** If `<skillsRoot>/skill-maker/SKILL.md` is missing it is
+  copied there, with a line in the log. If it is there and **differs** from
+  the shipped text, it is left exactly as it is (another log line) — the same
+  rule `preamble.md` follows, and the same list of SHA-256 hashes
+  (`PREVIOUS_BUILTIN_SKILL_HASHES`) that lets an untouched older copy be
+  refreshed.
+
+This folder is the one place the app writes under `~/.claude`, and it writes
+one file: Claude Code loads skills from there and nowhere else.
+
+### Settings (`settings.json`)
+
+Two folders, both shown under the **gear** next to the Skills button:
+
+| setting | default | |
+| --- | --- | --- |
+| `agentsRoot` | `~/Clauding/agents` | where a new agent definition is written, and the folder the app watches; a folder picker changes it |
+| `skillsRoot` | `~/.claude/skills` | where Claude Code reads skills from; shown, not changed here |
+
+### The Skills menu
+
+The same list in two places: a **Skills** menu in the macOS menu bar and a
+**Skills** button in the window's top-right, next to "Show panel". Both read
+`<skillsRoot>/*/SKILL.md` **every time they are opened** (the list is short and
+a session can write a skill at any moment) and show the `name` and
+`description` from each file's frontmatter, falling back to the folder name and
+the first paragraph. `skill-maker` is always first, the rest are alphabetical.
+Clicking a skill opens its `SKILL.md` in the side panel of the session on
+screen; the footer shows the folder path and reveals it in Finder. Nothing is
+created or edited here — a skill is written by running the skill-maker over a
+conversation.
+
+### Attaching a session to an agent
+
+A row's `…` menu and the terminal header's `…` both have **Assign to agent** —
+every agent, plus **No agent**. It writes `sessionAgents` in `agents.json`, so
+the badge appears at once and the session joins that agent's sub-list in the
+Agents tab. This is how sessions from long before an agent existed are
+attached to one.
+
+**Resume as agent.** From then on, every `claude --resume` the app starts for
+that session carries the agent's definition in the same combined prompt file a
+new agent session gets — which works only because every terminal is started
+with `--system-prompt-snapshot off`, so the system prompt is rendered fresh
+instead of being replayed from the conversation's first request. A session
+that is **already open** in a terminal keeps the prompt it started with, so the
+app offers **"Restart terminal to load the definition"**: a confirmation,
+SIGHUP, and a new `claude --resume` in the same folder. The conversation is
+untouched; the definition applies **from the next message on**. Assigning an
+agent never renames the session — the agent's name is only used for a session
+that is *starting*.
+
+### Create agent from this conversation
+
+A button in the terminal header (and an item in the row menu). It **forks** the
+session — `--fork-session`, name `<title> → new agent` — with the **Agent
+Maker** as its agent, so the fork's prompt file holds the preamble, the Agent
+Maker's definition and one task line:
+
+> Your task in this session: distil THIS conversation into a new agent
+> definition under `<agentsRoot>`. Describe the role, the steps and the rules
+> this conversation actually followed; do not describe the Agent Maker itself.
+> Show the draft in the side panel and wait for approval.
+
+The fork is linked to the Agent Maker in `sessionAgents` like any agent
+session, it lands in the original's group, and **the original is untouched**.
+
+The app **watches `agentsRoot`** while it runs: when a definition folder
+appears there (one the Agent Maker just wrote), a card at the top of the
+Agents tab says so and **Add as agent** opens the agent form already filled in
+from that folder — name, emoji, definition file — so the only thing left is
+Save. Folders that were already there when the app started are not offered;
+only what turns up while it is running.
+
+### Harvest skills
+
+The same mechanism with the skill, and no agent: a fork named `<title> →
+skills` whose prompt file ends with
+
+> Your task in this session: run the skill-maker skill over THIS
+> conversation: list candidate procedures, ask which to keep, then write them
+> under `<skillsRoot>`.
+
+Both buttons are **disabled until the session has an id** (there is nothing to
+fork before that), and say so in their tooltip.
+
 ## Scratch sessions are never listed
 
 `listSessionsPage()` drops every session whose `cwd` is a scratch folder,
@@ -926,6 +1058,15 @@ CLAUDING_SMOKE_RESIZE=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     embedder), so this hook proves the clamp and that both directions work —
     not the overlay itself.
 
+CLAUDING_DRY_SPAWN=1 npm run preview
+    every terminal is composed as usual — the arguments, the environment and
+    the whole prompt file — and then **not started**: the command line, the
+    working directory, the prompt file's path and its last line go into the
+    log instead of into a pty. It is how the two fork-based actions ("Create
+    agent from this conversation", "Harvest skills") are checked without
+    paying for a `claude` session. The terminal exists and can be closed, it
+    is simply silent.
+
 CLAUDING_SMOKE_AGENTS=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the agents, in the scratch folder only (CLAUDING_SMOKE_WORKING_DIRECTORY):
     inspects a definition folder (CLAUDING_SMOKE_AGENT_FOLDER; by default a
@@ -953,6 +1094,10 @@ CLAUDING_SMOKE_FORK=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     in use would show -> fork-busy.png. Exits every terminal and deletes the
     group it borrowed. On failure: fork-failed.png.
 ```
+
+## Tests
+
+`npm test` runs `node --test test/*.test.js`: dry unit tests of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, i18n key sets, the installer script). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-18`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
 
 ## License
 

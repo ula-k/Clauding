@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import nodePty from "node-pty";
 import channels from "./channels.cjs";
 import { claudeExecutablePath, supportsAppendSystemPromptFile, terminalEnvironment } from "./claudeCli.js";
+import { buildClaudeArguments, buildTerminalEnvironment } from "./lib/claudeArguments.js";
 import { buildAgentSystemPrompt } from "./agents.js";
 import { isProcessAlive } from "./liveStatus.js";
 
@@ -73,6 +74,54 @@ function registryEntryByFolder(workingDirectory, startedAt, claimedSessionIds) {
     return record;
   }
   return null;
+}
+
+// CLAUDING_DRY_SPAWN=1 (dev only): compose everything a terminal would be
+// started with, write the prompt file, print the whole command line — and
+// then do not start `claude` at all. It is how the fork-based actions
+// ("Create agent from this conversation", "Harvest skills") are checked
+// without paying for a real session; the terminal exists, it is simply
+// silent.
+const dryRunSpawn = process.env.CLAUDING_DRY_SPAWN === "1";
+
+function quoteForLog(argument) {
+  return /[\s"']/.test(argument) ? JSON.stringify(argument) : argument;
+}
+
+function dryRunChild(terminalId, commandArguments, workingDirectory, promptFilePath, logLine) {
+  const commandLine = [claudeExecutablePath()].concat(commandArguments).map(quoteForLog).join(" ");
+  logLine(`${terminalId}: DRY RUN, not spawning: ${commandLine}`);
+  logLine(`${terminalId}: DRY RUN cwd: ${workingDirectory}`);
+  if (promptFilePath) {
+    logLine(`${terminalId}: DRY RUN prompt file: ${promptFilePath}`);
+    try {
+      const promptText = fs.readFileSync(promptFilePath, "utf8");
+      const taskLine = promptText.split("\n").filter(Boolean).pop() || "";
+      logLine(`${terminalId}: DRY RUN prompt file ends with: ${taskLine}`);
+    } catch (error) {
+      logLine(`${terminalId}: DRY RUN could not read the prompt file: ${error.message}`);
+    }
+  }
+  // Enough of a pty for the registry to treat it like any other: it prints
+  // nothing, and a hang-up ends it the way a real one would, so "restart
+  // this terminal" can be tried in a dry run too.
+  let reportExit = null;
+  return {
+    pid: 0,
+    onData() {},
+    onExit(listener) {
+      reportExit = listener;
+    },
+    write() {},
+    resize() {},
+    kill() {
+      if (reportExit) {
+        const listener = reportExit;
+        reportExit = null;
+        setTimeout(() => listener({ exitCode: 0 }), 0);
+      }
+    }
+  };
 }
 
 // `readPreamble()` returns the text appended to the CLI's system prompt;
@@ -286,6 +335,7 @@ export function createTerminalRegistry({
     forkSession = false,
     sessionName = null,
     agentId = null,
+    taskPrompt = null,
     columns = 100,
     rows = 30,
     openedByClick = false
@@ -298,22 +348,15 @@ export function createTerminalRegistry({
     }
     const terminalId = randomUUID();
     const agent = agentId && resolveAgent ? resolveAgent(agentId) : null;
-    const commandArguments = resumeSessionId ? ["--resume", resumeSessionId] : [];
-    if (forkSession) {
-      commandArguments.push("--fork-session");
-    }
-    const cleanSessionName = typeof sessionName === "string" ? sessionName.replace(/\s+/g, " ").trim().slice(0, 120) : "";
-    // A name the user typed always wins; an agent session that has none is
-    // titled after the agent, so the CLI's own header says who is working.
-    const displayName = cleanSessionName || (agent ? `${agent.emoji} ${agent.name}`.trim() : "");
-    if (displayName) {
-      commandArguments.push("--name", displayName);
-    }
     const preamble = readPreamble ? readPreamble() : "";
+    const cleanTaskPrompt = typeof taskPrompt === "string" ? taskPrompt.trim() : "";
     // One append, always: the preamble alone, or the preamble followed by
-    // who this session is and its whole agent definition.
-    const appendedPrompt = agent ? buildAgentSystemPrompt(preamble, agent) : preamble;
-    let promptFilePath = agent ? writePromptFile(terminalId, appendedPrompt) : null;
+    // who this session is, its whole agent definition and — for a terminal
+    // opened to do one job, like "Create agent from this conversation" —
+    // that job.
+    const appendedPrompt =
+      agent || cleanTaskPrompt ? buildAgentSystemPrompt(preamble, agent, cleanTaskPrompt) : preamble;
+    let promptFilePath = agent || cleanTaskPrompt ? writePromptFile(terminalId, appendedPrompt) : null;
     if (promptFilePath && !supportsAppendSystemPromptFile(promptFilePath)) {
       try {
         fs.unlinkSync(promptFilePath);
@@ -322,32 +365,39 @@ export function createTerminalRegistry({
       }
       promptFilePath = null;
     }
-    if (appendedPrompt) {
-      if (promptFilePath) {
-        commandArguments.push("--append-system-prompt-file", promptFilePath);
-      } else {
-        commandArguments.push("--append-system-prompt", appendedPrompt);
-      }
-      // Without this the CLI records the system prompt on a conversation's
-      // first request and replays that recording on every `--resume`, so the
-      // preamble of a session that was not born inside Clauding never
-      // arrives — the session then does not know about the right panel at
-      // all (it published a claude.ai Artifact instead). "off" renders the
-      // prompt fresh on every request, so a resumed session gets it too.
-      commandArguments.push("--system-prompt-snapshot", "off");
-    }
-    const environment = terminalEnvironment();
-    environment.CLAUDING_TERMINAL_ID = terminalId;
-    if (commandDirectory) {
-      environment.PATH = [commandDirectory, environment.PATH || ""].filter(Boolean).join(path.delimiter);
-    }
-    const child = nodePty.spawn(claudeExecutablePath(), commandArguments, {
-      name: "xterm-256color",
-      cols: Math.max(20, Math.floor(columns)),
-      rows: Math.max(5, Math.floor(rows)),
-      cwd: workingDirectory,
-      env: environment
+    // A name the user typed always wins; an agent session that has none is
+    // titled after the agent, so the CLI's own header says who is working.
+    // `--system-prompt-snapshot off` rides along with every appended prompt:
+    // without it the CLI records the system prompt on a conversation's first
+    // request and replays that recording on every `--resume`, so the preamble
+    // of a session that was not born inside Clauding never arrives — the
+    // session then does not know about the right panel at all (it published a
+    // claude.ai Artifact instead). See lib/claudeArguments.js.
+    const { commandArguments, displayName } = buildClaudeArguments({
+      resumeSessionId,
+      forkSession,
+      sessionName,
+      // The agent only lends its name to a session that is *starting*: a
+      // plain `--resume` of a session the user assigned to an agent must
+      // not rename their conversation behind their back.
+      agent: resumeSessionId && !forkSession ? null : agent,
+      appendedPrompt,
+      promptFilePath
     });
+    const environment = buildTerminalEnvironment({
+      baseEnvironment: terminalEnvironment(),
+      terminalId,
+      commandDirectory
+    });
+    const child = dryRunSpawn
+      ? dryRunChild(terminalId, commandArguments, workingDirectory, promptFilePath, logLine)
+      : nodePty.spawn(claudeExecutablePath(), commandArguments, {
+          name: "xterm-256color",
+          cols: Math.max(20, Math.floor(columns)),
+          rows: Math.max(5, Math.floor(rows)),
+          cwd: workingDirectory,
+          env: environment
+        });
     const record = {
       terminalId,
       pid: child.pid,
@@ -480,6 +530,19 @@ export function createTerminalRegistry({
   // The renderer says which terminal is on screen, and every keystroke counts
   // too, so a `clauding` command with no terminal id of its own can still land
   // in the pane the user is looking at.
+  // "Assign to agent" on a session that is open in one of our terminals:
+  // the record follows, so the periodic re-linking in main.js cannot put the
+  // old agent back, and a restart of that terminal loads the new definition.
+  function setAgent(terminalId, agentId) {
+    const record = terminals.get(terminalId);
+    if (!record || record.exited || record.agentId === (agentId || null)) {
+      return false;
+    }
+    record.agentId = agentId || null;
+    announceChange();
+    return true;
+  }
+
   function markFocused(terminalId) {
     const record = terminals.get(terminalId);
     if (!record || record.exited) {
@@ -532,6 +595,7 @@ export function createTerminalRegistry({
     replay,
     refreshLinks,
     ownedStates,
+    setAgent,
     markFocused,
     mostRecentlyFocused,
     recentPlainOutput

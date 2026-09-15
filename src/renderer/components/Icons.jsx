@@ -70,6 +70,32 @@ export function PlusIcon() {
   );
 }
 
+// The Skills button: a small four-pointed spark, the "something was
+// distilled out of a conversation" mark.
+export function SparkIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 1.5c.6 3.2 1.3 3.9 4.5 4.5-3.2.6-3.9 1.3-4.5 4.5-.6-3.2-1.3-3.9-4.5-4.5C6.7 5.4 7.4 4.7 8 1.5Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path d="M12.2 10.2c.3 1.5.6 1.8 2.1 2.1-1.5.3-1.8.6-2.1 2.1-.3-1.5-.6-1.8-2.1-2.1 1.5-.3 1.8-.6 2.1-2.1Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// The settings gear next to it.
+export function GearIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.4" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="8" cy="8" r="5.2" stroke="currentColor" strokeWidth="1.3" strokeDasharray="1.7 1.35" />
+    </svg>
+  );
+}
+
 export function PencilIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">

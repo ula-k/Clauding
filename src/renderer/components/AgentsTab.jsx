@@ -49,7 +49,18 @@ function AgentSessionRow({ session, isSelected, onSelect, now }) {
 // One agent in the list: the emoji in its coloured circle, the name, and the
 // dim definition folder under it. Clicking the row opens the "+ New" sheet
 // with this agent already picked — the quickest way to put it to work.
-function AgentRow({ agent, sessions, hiddenCount, selectedSessionId, onSelectSession, now, onStartSession, onEdit, onDelete }) {
+function AgentRow({
+  agent,
+  sessions,
+  hiddenCount,
+  selectedSessionId,
+  onSelectSession,
+  now,
+  onStartSession,
+  onEdit,
+  onDelete,
+  onRestoreBuiltin
+}) {
   const { translate } = useTranslation();
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -73,6 +84,11 @@ function AgentRow({ agent, sessions, hiddenCount, selectedSessionId, onSelectSes
         <span className="agent-row-text">
           <span className="agent-row-name">
             {agent.name}
+            {agent.builtin && (
+              <span className="agent-row-builtin" data-agent-builtin={agent.builtin}>
+                {translate("agents.builtin")}
+              </span>
+            )}
             {sessions.length > 0 && <span className="agent-row-count" data-agent-session-count={agent.id}>{` · ${sessions.length}`}</span>}
           </span>
           <span className="agent-row-folder">{definitionFolderLabel(agent.definitionFolder)}</span>
@@ -116,9 +132,23 @@ function AgentRow({ agent, sessions, hiddenCount, selectedSessionId, onSelectSes
                 {translate("agents.edit")}
               </MenuItem>
               <MenuSeparator />
-              <MenuItem tone="danger" onClick={() => setConfirmingDelete(true)}>
-                {translate("agents.delete")}
-              </MenuItem>
+              {/* An agent that came with the app cannot be deleted — it is
+                  part of Clauding, not of the user's list. What it gets
+                  instead is a way back to the definition the app ships. */}
+              {agent.builtin ? (
+                <MenuItem
+                  onClick={() => {
+                    closeMenu();
+                    onRestoreBuiltin();
+                  }}
+                >
+                  {translate("agents.restoreBuiltin")}
+                </MenuItem>
+              ) : (
+                <MenuItem tone="danger" onClick={() => setConfirmingDelete(true)}>
+                  {translate("agents.delete")}
+                </MenuItem>
+              )}
             </>
           )}
         </PopupMenu>
@@ -159,7 +189,11 @@ export default function AgentsTab({
   onStartSession,
   onAddAgent,
   onEditAgent,
-  onDeleteAgent
+  onDeleteAgent,
+  onRestoreBuiltin,
+  definitionSuggestions,
+  onAddSuggestion,
+  onDismissSuggestion
 }) {
   const { translate } = useTranslation();
   return (
@@ -168,6 +202,35 @@ export default function AgentsTab({
         <PlusIcon />
         {translate("agents.add")}
       </button>
+      {/* A definition folder that turned up under the agents root while the
+          app was running — the Agent Maker just wrote one, most likely. One
+          click fills the form with it. */}
+      {(definitionSuggestions || []).map((suggestion) => (
+        <div className="agent-suggestion" key={suggestion.definitionFolder} data-agent-suggestion={suggestion.definitionFolder}>
+          <div className="agent-suggestion-text">
+            <span className="agent-suggestion-title">{translate("agents.definitionFound")}</span>
+            {/* The name is taken from the file's heading, which often ends
+                in the same emoji — do not print it twice. */}
+            <span className="agent-suggestion-name">
+              {suggestion.name.includes(suggestion.emoji) ? suggestion.name : `${suggestion.emoji} ${suggestion.name}`}
+            </span>
+            <span className="agent-suggestion-folder">{definitionFolderLabel(suggestion.definitionFolder)}</span>
+          </div>
+          <div className="agent-suggestion-actions">
+            <button
+              type="button"
+              className="button is-primary is-small"
+              onClick={() => onAddSuggestion(suggestion)}
+              data-agent-suggestion-add
+            >
+              {translate("agents.addAsAgent")}
+            </button>
+            <button type="button" className="button is-ghost is-small" onClick={() => onDismissSuggestion(suggestion)}>
+              {translate("agents.dismiss")}
+            </button>
+          </div>
+        </div>
+      ))}
       {agents.length === 0 ? (
         <div className="list-note">{translate("agents.empty")}</div>
       ) : (
@@ -190,6 +253,7 @@ export default function AgentsTab({
               onStartSession={onStartSession}
               onEdit={onEditAgent}
               onDelete={onDeleteAgent}
+              onRestoreBuiltin={onRestoreBuiltin}
             />
           );
         })

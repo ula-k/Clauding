@@ -37,6 +37,11 @@ export default function SessionRow({
   onHide,
   onUnhide,
   onRenameSession,
+  agents = [],
+  currentAgentId = null,
+  onAssignAgent,
+  onCreateAgent,
+  onHarvestSkills,
   hiddenVariant = false
 }) {
   const { translate } = useTranslation();
@@ -153,6 +158,56 @@ export default function SessionRow({
               {groupDisplayName(group, translate)}
             </MenuItem>
           ))}
+          {onAssignAgent && (
+            <>
+              <MenuSeparator />
+              <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
+              {agents.map((agent) => (
+                <MenuItem
+                  key={agent.id}
+                  selected={agent.id === currentAgentId}
+                  onClick={() => {
+                    setMenuAnchor(null);
+                    onAssignAgent(session.sessionId, agent.id);
+                  }}
+                >
+                  {`${agent.emoji} ${agent.name}`}
+                </MenuItem>
+              ))}
+              <MenuItem
+                selected={!currentAgentId}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onAssignAgent(session.sessionId, null);
+                }}
+              >
+                {translate("row.noAgent")}
+              </MenuItem>
+            </>
+          )}
+          {onCreateAgent && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                disabled={!session.sessionId}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onCreateAgent(session.sessionId);
+                }}
+              >
+                {translate("meta.createAgentLong")}
+              </MenuItem>
+              <MenuItem
+                disabled={!session.sessionId}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onHarvestSkills(session.sessionId);
+                }}
+              >
+                {translate("meta.harvestSkills")}
+              </MenuItem>
+            </>
+          )}
           <MenuSeparator />
           <MenuItem
             onClick={() => {

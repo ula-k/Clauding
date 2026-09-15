@@ -26,7 +26,11 @@ import { runAgentsSmoke } from "./smokeAgents.js";
 import { runEmojiSmoke } from "./smokeEmoji.js";
 import { createSessionGroupStore } from "./sessionGroups.js";
 import { createAgentStore, inspectDefinitionFolder, inspectDefinitionFile } from "./agents.js";
+import { createSettingsStore } from "./settings.js";
+import { listSkills } from "./skills.js";
+import { builtinAgentDraft, seedBuiltins } from "./builtins.js";
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
+import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
 import { createFileWatchRegistry } from "./fileWatch.js";
@@ -77,10 +81,18 @@ let stopCommandSocket = null;
 let panelTabs = null;
 let sessionGroups = null;
 let agents = null;
+let settings = null;
+let stopWatchingAgentsRoot = null;
 // ~/Library/Application Support/Clauding: panel-tabs.json, groups.json,
 // agents.json, preamble.md, clauding.sock, prompts/
 const userDataDirectory = app.getPath("userData");
 const preamblePath = path.join(userDataDirectory, "preamble.md");
+// The socket the `clauding` command talks to. It lives in this app's own
+// user-data folder, and the path is exported so every terminal's `clauding`
+// reaches *this* app — an instance started with its own --user-data-dir (the
+// automated tests) then never talks to the installed one.
+const commandSocketPath = path.join(userDataDirectory, "clauding.sock");
+process.env.CLAUDING_SOCKET = commandSocketPath;
 // One file per terminal running as an agent, holding the preamble plus that
 // agent's whole definition; written at spawn, deleted when the pty exits.
 const promptDirectory = path.join(userDataDirectory, "prompts");
@@ -150,115 +162,41 @@ const panelFileWatchers = createFileWatchRegistry((filePath) => {
   sendToWindow(CHANNELS.panelFileChanged, { filePath });
 });
 
-// The tab set a terminal's commands go to: its session id, or a temporary
-// key while the CLI has not registered the session yet.
-function panelKeyForTerminal(terminalId) {
-  const terminal = terminalId ? terminalRegistry.get(terminalId) : null;
-  if (!terminal) {
-    return null;
-  }
-  return terminal.sessionId || `terminal:${terminal.terminalId}`;
-}
-
 // What the renderer last reported as the session on screen: the terminal of
 // the selected pane (if it has one) and the tab-set key the panel is drawing.
 // A `clauding` command whose own terminal id is missing or stale lands here.
 let panelSelection = { terminalId: null, sessionKey: null };
 
-// Which tab set a `clauding` command goes to, in order:
-//   1. the terminal it was run in (CLAUDING_TERMINAL_ID from the pty),
-//   2. the session the user is looking at right now — the pane on screen,
-//   3. the terminal that was focused or typed into most recently.
-// `fallback` names the one that was used, so the confirmation line can say
-// where the tab actually went instead of letting an agent guess.
-function resolveCommandTarget(terminalId) {
-  const callerTerminal = terminalId ? terminalRegistry.get(terminalId) : null;
-  if (callerTerminal && !callerTerminal.exited) {
-    return {
-      sessionKey: panelKeyForTerminal(callerTerminal.terminalId),
-      workingDirectory: callerTerminal.workingDirectory,
-      fallback: null
-    };
+// The request handling itself (which tab set a command goes to, the exact
+// reply lines) lives in lib/commandRequests.js, so it can be exercised
+// against a fake app in test/commandProtocol.test.js.
+const commandRequests = createCommandRequestHandler({
+  terminals: terminalRegistry,
+  panelTabs: {
+    open(sessionKey, description, options) {
+      return panelTabs.open(sessionKey, description, options);
+    },
+    get(sessionKey) {
+      return panelTabs.get(sessionKey);
+    },
+    setVisible(sessionKey, visible) {
+      return panelTabs.setVisible(sessionKey, visible);
+    }
+  },
+  describeTarget,
+  readPanelSelection() {
+    return panelSelection;
+  },
+  onPanelCommand(notice) {
+    sendToWindow(CHANNELS.panelCommand, notice);
+  },
+  log(line) {
+    console.log(line);
   }
-  const selectedTerminal = panelSelection.terminalId ? terminalRegistry.get(panelSelection.terminalId) : null;
-  if (selectedTerminal && !selectedTerminal.exited) {
-    return {
-      sessionKey: panelKeyForTerminal(selectedTerminal.terminalId),
-      workingDirectory: selectedTerminal.workingDirectory,
-      fallback: "current session"
-    };
-  }
-  if (panelSelection.sessionKey) {
-    return { sessionKey: panelSelection.sessionKey, workingDirectory: null, fallback: "current session" };
-  }
-  const recentTerminal = terminalRegistry.mostRecentlyFocused();
-  if (recentTerminal) {
-    return {
-      sessionKey: panelKeyForTerminal(recentTerminal.terminalId),
-      workingDirectory: recentTerminal.workingDirectory,
-      fallback: "most recent terminal"
-    };
-  }
-  return { sessionKey: null, workingDirectory: null, fallback: null };
-}
+});
 
-// "Opened X in the Clauding panel." / "… (current session)." — one shape, so
-// the line is the same whether the caller's own terminal was used or not.
-function confirmationLine(text, fallback) {
-  return fallback ? `${text} (${fallback}).` : `${text}.`;
-}
-
-// Requests from bin/clauding (over the socket) and from the renderer share this.
-function openPanelTab({ sessionKey, terminalId, target, baseDirectory, reveal = true }) {
-  const key = sessionKey || panelKeyForTerminal(terminalId);
-  if (!key) {
-    throw new Error("This terminal is not known to the app (CLAUDING_TERMINAL_ID missing or stale).");
-  }
-  const terminal = terminalId ? terminalRegistry.get(terminalId) : null;
-  const description = describeTarget(target, baseDirectory || (terminal ? terminal.workingDirectory : null));
-  const tab = panelTabs.open(key, description, { reveal });
-  return { sessionKey: key, tab };
-}
-
-async function handleCommandRequest(request) {
-  if (request.command !== "open" && request.command !== "panel" && request.command !== "tabs") {
-    throw new Error(`Unknown command: ${request.command}`);
-  }
-  if (request.command === "panel" && request.action !== "show" && request.action !== "hide") {
-    throw new Error("Use: clauding panel show|hide");
-  }
-  const commandTarget = resolveCommandTarget(request.terminalId);
-  if (commandTarget.fallback) {
-    console.log(
-      `[socket] ${request.command}: no live terminal for id ${request.terminalId || "(none)"} — using the ${commandTarget.fallback} (${commandTarget.sessionKey})`
-    );
-  }
-  if (!commandTarget.sessionKey) {
-    throw new Error("This terminal is not known to the app (CLAUDING_TERMINAL_ID missing or stale).");
-  }
-  if (request.command === "open") {
-    const { tab } = openPanelTab({
-      sessionKey: commandTarget.sessionKey,
-      target: request.target,
-      baseDirectory: request.cwd || commandTarget.workingDirectory
-    });
-    return confirmationLine(`Opened ${tab.target} in the Clauding panel`, commandTarget.fallback);
-  }
-  if (request.command === "panel") {
-    // The flag belongs to the session the command came from; the renderer
-    // picks the change up through panel:changed and only acts on it when that
-    // session is the one on screen.
-    panelTabs.setVisible(commandTarget.sessionKey, request.action === "show");
-    sendToWindow(CHANNELS.panelCommand, { action: request.action, sessionKey: commandTarget.sessionKey });
-    return confirmationLine(request.action === "show" ? "Panel shown" : "Panel hidden", commandTarget.fallback);
-  }
-  const state = panelTabs.get(commandTarget.sessionKey);
-  if (state.tabs.length === 0) {
-    return confirmationLine("No tabs open for this session", commandTarget.fallback);
-  }
-  const lines = state.tabs.map((tab) => `${tab.tabId === state.activeTabId ? "*" : " "} [${tab.kind}] ${tab.target}`);
-  return commandTarget.fallback ? [`Tabs (${commandTarget.fallback}):`].concat(lines).join("\n") : lines.join("\n");
-}
+const openPanelTab = commandRequests.openPanelTab;
+const handleCommandRequest = commandRequests.handleCommandRequest;
 
 // A session the user hid comes back the moment the CLI registry shows it busy
 // again (or one of our own terminals picks it up): hiding is for a list that
@@ -485,6 +423,52 @@ async function captureScreenshotAndQuit() {
   app.quit();
 }
 
+// The Skills menu in the macOS menu bar. It is built from the skills folder
+// itself, so it says what is actually installed; picking a skill opens its
+// SKILL.md in the side panel of the session on screen, exactly like the
+// Skills popover in the window does. Rebuilt whenever the list might have
+// changed (a settings change, the popover asking for the list), because a
+// native menu cannot be filled while it is already open.
+function skillsMenuTemplate() {
+  const skillsRoot = settings ? settings.get().skillsRoot : null;
+  const skills = skillsRoot ? listSkills(skillsRoot) : [];
+  const items = [
+    {
+      label: "Show skills…",
+      click() {
+        sendToWindow(CHANNELS.skillsShow, {});
+      }
+    },
+    { type: "separator" }
+  ];
+  if (skills.length === 0) {
+    items.push({ label: "No skills in this folder", enabled: false });
+  }
+  for (const skill of skills) {
+    items.push({
+      label: skill.name,
+      click() {
+        try {
+          openPanelTab({ sessionKey: panelSelection.sessionKey, target: skill.filePath });
+        } catch (error) {
+          console.log(`[skills] could not open ${skill.filePath}: ${error.message}`);
+        }
+      }
+    });
+  }
+  items.push({ type: "separator" });
+  items.push({
+    label: "Reveal skills folder in Finder",
+    enabled: Boolean(skillsRoot),
+    click() {
+      if (skillsRoot) {
+        shell.showItemInFolder(skillsRoot);
+      }
+    }
+  });
+  return { label: "Skills", submenu: items };
+}
+
 // The Edit roles are what make Cmd+C / Cmd+V work inside the terminal:
 // Electron turns them into copy / paste events on xterm's hidden textarea.
 function installApplicationMenu() {
@@ -503,10 +487,88 @@ function installApplicationMenu() {
           { role: "selectAll" }
         ]
       },
+      skillsMenuTemplate(),
       { role: "viewMenu" },
       { role: "windowMenu" }
     ])
   );
+}
+
+// Definition folders under the agents root that the app has already seen.
+// Only a folder that turns up *after* the app started is announced: a folder
+// the user never turned into an agent should not nag them at every launch.
+let knownDefinitionFolders = new Set();
+
+function scanAgentsRoot({ announce }) {
+  if (!settings || !agents) {
+    return;
+  }
+  const agentsRoot = settings.get().agentsRoot;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(agentsRoot, { withFileTypes: true });
+  } catch (error) {
+    return;
+  }
+  const alreadyAgents = new Set(agents.get().agents.map((agent) => agent.definitionFolder));
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const folderPath = path.join(agentsRoot, entry.name);
+    if (knownDefinitionFolders.has(folderPath)) {
+      continue;
+    }
+    const inspection = inspectDefinitionFolder(folderPath);
+    if (!inspection.definitionFile) {
+      continue;
+    }
+    knownDefinitionFolders.add(folderPath);
+    if (alreadyAgents.has(folderPath) || !announce) {
+      continue;
+    }
+    console.log(`[agents] a new definition appeared: ${inspection.definitionFile}`);
+    sendToWindow(CHANNELS.agentsDefinitionFound, inspection);
+  }
+}
+
+// The agents root is watched so the definition the Agent Maker just wrote
+// can be offered as an agent with one click, without the user hunting for
+// the folder.
+function watchAgentsRoot() {
+  if (stopWatchingAgentsRoot) {
+    stopWatchingAgentsRoot();
+    stopWatchingAgentsRoot = null;
+  }
+  if (!settings) {
+    return;
+  }
+  const agentsRoot = settings.ensureAgentsRoot();
+  knownDefinitionFolders = new Set();
+  scanAgentsRoot({ announce: false });
+  let debounceTimer = null;
+  let watcher = null;
+  try {
+    watcher = fs.watch(agentsRoot, { persistent: false }, () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        scanAgentsRoot({ announce: true });
+      }, 500);
+    });
+    watcher.on("error", () => {});
+  } catch (error) {
+    console.log(`[agents] could not watch ${agentsRoot}: ${error.message}`);
+    return;
+  }
+  stopWatchingAgentsRoot = function stopWatching() {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    watcher.close();
+  };
 }
 
 // Every session agents.json links to an agent, read by id.
@@ -628,6 +690,12 @@ function registerIpc() {
     return terminalRegistry.replay(terminalId);
   });
 
+  // Only "restart this terminal so it loads the agent definition" asks for
+  // this: SIGHUP, and the renderer opens a new one with --resume.
+  ipcMain.handle(CHANNELS.terminalClose, async (event, { terminalId }) => {
+    return terminalRegistry.close(terminalId);
+  });
+
   ipcMain.handle(CHANNELS.groupsGet, async () => {
     return sessionGroups.get();
   });
@@ -690,6 +758,58 @@ function registerIpc() {
     return inspectDefinitionFile(definitionFile);
   });
 
+  // "Assign to agent" — the way an old session is attached to an agent. A
+  // session open in one of our terminals also tells that terminal, so the
+  // periodic re-linking cannot undo the change and a restart of the
+  // terminal picks the new definition up.
+  ipcMain.handle(CHANNELS.agentsAssignSession, async (event, { sessionId, agentId }) => {
+    agents.setSessionAgent(sessionId, agentId || null);
+    for (const terminal of terminalRegistry.list()) {
+      if (terminal.sessionId === sessionId) {
+        terminalRegistry.setAgent(terminal.terminalId, agentId || null);
+      }
+    }
+    forgetLinkedSessions();
+    return agents.get();
+  });
+
+  // "Restore built-in": the Agent Maker goes back to the name, emoji,
+  // colour and definition the app ships with (and the built-in skill is
+  // seeded again if it is missing).
+  ipcMain.handle(CHANNELS.agentsRestoreBuiltin, async () => {
+    agents.ensureBuiltinAgent(builtinAgentDraft(), { force: true });
+    seedBuiltins({ agentStore: agents, skillsRoot: settings.get().skillsRoot, log: (line) => console.log(line) });
+    installApplicationMenu();
+    return agents.get();
+  });
+
+  ipcMain.handle(CHANNELS.settingsGet, async () => {
+    return settings.get();
+  });
+
+  ipcMain.handle(CHANNELS.settingsUpdate, async (event, draft) => {
+    return settings.update(draft || {});
+  });
+
+  ipcMain.handle(CHANNELS.settingsPickAgentsRoot, async () => {
+    const picked = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
+    if (picked.canceled || picked.filePaths.length === 0) {
+      return settings.get();
+    }
+    return settings.update({ agentsRoot: picked.filePaths[0] });
+  });
+
+  // The Skills popover. The folder is read every time it is opened: a
+  // session can write a skill at any moment, and the list is short.
+  ipcMain.handle(CHANNELS.skillsList, async () => {
+    const skillsRoot = settings.get().skillsRoot;
+    const skills = listSkills(skillsRoot);
+    // The native Skills menu says the same thing, so it is refreshed here
+    // rather than on a timer.
+    installApplicationMenu();
+    return { skillsRoot, skills };
+  });
+
   ipcMain.handle(CHANNELS.agentsPickFolder, async () => {
     const picked = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
     if (picked.canceled || picked.filePaths.length === 0) {
@@ -705,6 +825,16 @@ function registerIpc() {
   // The macOS character palette, the same one ⌃⌘Space opens. It inserts into
   // whatever element has focus, so the renderer focuses the emoji field
   // before asking for it. Nothing happens on a system that has no panel.
+  // "Reveal in Finder" under the Skills popover and the settings menu.
+  ipcMain.handle(CHANNELS.systemReveal, async (event, { target }) => {
+    const wanted = String(target || "").trim();
+    if (!wanted || !fs.existsSync(wanted)) {
+      return { revealed: false };
+    }
+    shell.showItemInFolder(wanted);
+    return { revealed: true };
+  });
+
   ipcMain.handle(CHANNELS.systemEmojiPanel, async () => {
     const supported = typeof app.isEmojiPanelSupported === "function" && app.isEmojiPanelSupported();
     if (!supported || typeof app.showEmojiPanel !== "function") {
@@ -863,7 +993,6 @@ app.whenReady().then(() => {
   if (app.dock && fs.existsSync(applicationIconPath)) {
     app.dock.setIcon(applicationIconPath);
   }
-  installApplicationMenu();
   fs.mkdirSync(userDataDirectory, { recursive: true });
   clearStalePromptFiles();
   // A preamble.md that is still one of our own old defaults is brought up to
@@ -889,6 +1018,25 @@ app.whenReady().then(() => {
       console.log(line);
     }
   });
+  settings = createSettingsStore({
+    storagePath: path.join(userDataDirectory, "settings.json"),
+    onChange(state) {
+      sendToWindow(CHANNELS.settingsChanged, state);
+      // A new agents root is a new folder to watch, and the Skills menu may
+      // now be reading a different skills folder.
+      watchAgentsRoot();
+      installApplicationMenu();
+    },
+    log(line) {
+      console.log(line);
+    }
+  });
+  // The agent that makes agents and the skill that makes skills ship with
+  // the app, so they exist for everyone: the Agent Maker goes into
+  // agents.json as the first agent, skill-maker into the skills folder
+  // Claude Code reads (a copy the user edited is never overwritten).
+  seedBuiltins({ agentStore: agents, skillsRoot: settings.get().skillsRoot, log: (line) => console.log(line) });
+  watchAgentsRoot();
   panelTabs = createPanelTabStore({
     storagePath: path.join(userDataDirectory, "panel-tabs.json"),
     onChange(change) {
@@ -896,12 +1044,15 @@ app.whenReady().then(() => {
     }
   });
   stopCommandSocket = startCommandSocket({
-    socketPath: path.join(userDataDirectory, "clauding.sock"),
+    socketPath: commandSocketPath,
     handleRequest: handleCommandRequest,
     log(line) {
       console.log(line);
     }
   });
+  // The menu is built after the stores, because the Skills menu is filled
+  // from the skills folder named in settings.json.
+  installApplicationMenu();
   lockDownWebviews();
   registerIpc();
   createWindow();
@@ -941,5 +1092,9 @@ app.on("before-quit", () => {
   }
   if (stopWatchingProjects) {
     stopWatchingProjects();
+  }
+  if (stopWatchingAgentsRoot) {
+    stopWatchingAgentsRoot();
+    stopWatchingAgentsRoot = null;
   }
 });

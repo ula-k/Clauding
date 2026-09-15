@@ -37,7 +37,7 @@ Paths and URLs you print are also clickable and open in the same panel.
 //
 // When the default changes, add the hash of the text being replaced here:
 //   shasum -a 256 electron/preamble-default.md
-const PREVIOUS_DEFAULT_PREAMBLE_HASHES = [
+export const PREVIOUS_DEFAULT_PREAMBLE_HASHES = [
   // The first default: one paragraph about `clauding open`.
   "e20d26345578584cd8d76981e8a0333606ce1b98ddb459b433a67340cdd7725d",
   // Added `clauding tabs`, the "not an Artifact" warning and the translated
@@ -45,7 +45,7 @@ const PREVIOUS_DEFAULT_PREAMBLE_HASHES = [
   "072c3abb262e05532ce7642b54fe365d361ae90ac17344db66d25bc685634324"
 ];
 
-function hashOf(text) {
+export function hashOf(text) {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
@@ -76,7 +76,9 @@ export function readPreamble(preamblePath) {
 // defaults is brought up to date (otherwise every session opened before this
 // version would keep the old text forever); a file the user edited is never
 // overwritten, only mentioned in the log.
-export function refreshStoredPreamble(preamblePath, log) {
+// `previousDefaultHashes` is a parameter only so the dry tests can hand in the
+// hash of a default text of their own; the app always uses the list above.
+export function refreshStoredPreamble(preamblePath, log, previousDefaultHashes = PREVIOUS_DEFAULT_PREAMBLE_HASHES) {
   function report(line) {
     if (log) {
       log(`[preamble] ${line}`);
@@ -102,7 +104,7 @@ export function refreshStoredPreamble(preamblePath, log) {
   if (stored === current) {
     return { status: "current" };
   }
-  if (PREVIOUS_DEFAULT_PREAMBLE_HASHES.includes(hashOf(stored))) {
+  if (previousDefaultHashes.includes(hashOf(stored))) {
     try {
       fs.writeFileSync(preamblePath, current);
       report(`replaced the previous default preamble in ${preamblePath} with the new default`);

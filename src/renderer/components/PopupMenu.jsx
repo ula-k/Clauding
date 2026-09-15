@@ -8,7 +8,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 // `anchor` is a DOMRect-like { left, right, top, bottom }.
 const MENU_MARGIN_PIXELS = 6;
 
-export default function PopupMenu({ anchor, align = "right", onClose, children }) {
+// `variant` "wide" is the Skills and settings popovers: the same box, wide
+// enough for a skill's description and a folder path.
+export default function PopupMenu({ anchor, align = "right", variant = "menu", onClose, children }) {
   const menuRef = useRef(null);
   const [position, setPosition] = useState({ left: 0, top: 0, visible: false });
 
@@ -53,7 +55,7 @@ export default function PopupMenu({ anchor, align = "right", onClose, children }
 
   return (
     <div
-      className="popup-menu"
+      className={variant === "wide" ? "popup-menu is-wide" : "popup-menu"}
       ref={menuRef}
       style={{ left: `${position.left}px`, top: `${position.top}px`, visibility: position.visible ? "visible" : "hidden" }}
       data-popup-menu
