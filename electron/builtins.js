@@ -14,7 +14,11 @@
 //                   deleting it is refused (electron/agents.js) and
 //                   "Restore built-in" puts a missing one back.
 //   * the skill   — copied into <skillsRoot>/skill-maker/SKILL.md, because
-//                   Claude Code only loads skills from there. A file that is
+//                   Claude Code only loads skills from there. This is the
+//                   ONE file the app writes under ~/.claude, so it is not
+//                   written until the user has been asked: the first start
+//                   shows a small sheet and the answer is remembered in
+//                   settings.json (`skillMakerSeeding`). A file that is
 //                   already there and byte-identical to something this app
 //                   shipped is refreshed; a file the user edited is left
 //                   exactly as it is and only mentioned in the log. That is
@@ -134,10 +138,13 @@ export function seedBuiltinSkill(skillsRoot, log) {
   return { status: "kept", filePath: targetFile };
 }
 
-// Both of them, at startup and behind "Restore built-in".
-export function seedBuiltins({ agentStore, skillsRoot, log }) {
+// Both of them, at startup and behind "Restore built-in". `skillAnswer` is
+// what settings.json remembers about the question above: only "installed"
+// lets the skill be written. "Restore built-in" passes "installed" itself —
+// asking for the built-ins back is an answer.
+export function seedBuiltins({ agentStore, skillsRoot, log, skillAnswer = "installed" }) {
   return {
     agent: seedBuiltinAgent(agentStore, log),
-    skill: seedBuiltinSkill(skillsRoot, log)
+    skill: skillAnswer === "installed" ? seedBuiltinSkill(skillsRoot, log) : { status: "not-asked", filePath: null }
   };
 }

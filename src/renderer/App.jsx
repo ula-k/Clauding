@@ -14,6 +14,8 @@ import SessionsColumn from "./components/SessionsColumn.jsx";
 import MiddleColumn from "./components/MiddleColumn.jsx";
 import SidePanel from "./components/SidePanel.jsx";
 import WindowTools from "./components/WindowTools.jsx";
+import SkillsScanSheet from "./components/SkillsScanSheet.jsx";
+import BuiltinSkillSheet from "./components/BuiltinSkillSheet.jsx";
 
 const PAGE_SIZE = 60;
 const LEFT_WIDTH_MIN = 240;
@@ -74,7 +76,7 @@ const INITIAL_AGENT_STATE = { agents: [], sessionAgents: {} };
 // Until settings.json has been read. The real defaults are decided in the
 // main process (electron/settings.js); these only keep the menu from
 // drawing "undefined" for the few milliseconds before the answer arrives.
-const INITIAL_SETTINGS = { agentsRoot: "", skillsRoot: "" };
+const INITIAL_SETTINGS = { agentsRoot: "", skillsRoot: "", skillScanRoots: [], skillMakerSeeding: "installed" };
 // The agent that makes agents, by its built-in marker rather than by name:
 // the user may rename it.
 const AGENT_MAKER_MARKER = "agent-maker";
@@ -123,6 +125,13 @@ export default function App() {
   // The Skills item in the macOS menu bar asks the window to open the same
   // popover the Skills button opens.
   const [skillsMenuOpen, setSkillsMenuOpen] = useState(false);
+  // "Scan for skills…": the sheet that lists every skill-looking folder on
+  // the Mac and lets the user pick which ones to copy into the skills folder.
+  const [skillsScanOpen, setSkillsScanOpen] = useState(false);
+  // The page the middle column is showing instead of the terminal: a skill's
+  // SKILL.md or an agent's definition, { kind, name, filePath, folder }. The
+  // terminal underneath keeps running; null means "show the terminal".
+  const [reader, setReader] = useState(null);
   // Definition folders that appeared under the agents root while the app was
   // running — what the Agent Maker leaves behind. Each one is offered as
   // "Add as agent" at the top of the Agents tab until it is added or waved
@@ -159,6 +168,13 @@ export default function App() {
   // rebuilt on every change of it (selecting a session, forking one).
   const agentLinksRef = useRef({});
   const panelSessionKeyRef = useRef(null);
+  // Counts the panel states the main process has pushed at us. The answer to
+  // a getPanelTabs() we sent earlier must not overwrite a newer push: when a
+  // terminal registers its session id, the key changes, we ask for the new
+  // key's tabs, and the main process moves the old key's tabs over a moment
+  // later — so the answer in flight is the state from *before* the move, and
+  // applying it late put the panel away again with the page in it.
+  const panelStateStampRef = useRef(0);
   // Read inside the pointer listeners, which are installed once per drag.
   const leftWidthRef = useRef(leftWidth);
   const panelWidthRef = useRef(panelWidth);
@@ -315,10 +331,24 @@ export default function App() {
     return window.clauding.onSettingsChanged(setSettings);
   }, []);
 
-  // The Skills item in the macOS menu bar.
+  // The Skills item in the macOS menu bar, and "Scan for skills…" next to it.
   useEffect(() => {
-    return window.clauding.onShowSkills(() => {
+    return window.clauding.onShowSkills((request) => {
+      if (request && request.scan) {
+        setSkillsScanOpen(true);
+        return;
+      }
       setSkillsMenuOpen(true);
+    });
+  }, []);
+
+  // One skill picked straight from the macOS Skills menu: the same reader a
+  // click in the popover opens.
+  useEffect(() => {
+    return window.clauding.onReadSkill((skill) => {
+      if (skill && skill.filePath) {
+        setReader({ kind: "skill", name: skill.name, filePath: skill.filePath, folder: skill.folder });
+      }
     });
   }, []);
 
@@ -463,6 +493,8 @@ export default function App() {
     taskPrompt = null
   }) => {
     setNewSheetOpen(false);
+    // A terminal the user just asked for is what they want to look at.
+    setReader(null);
     try {
       const dimensions = lastTerminalDimensions();
       const record = await window.clauding.openTerminal({
@@ -502,6 +534,9 @@ export default function App() {
   // read-only preview, and anything else gets `claude --resume` right away.
   const selectSession = useCallback((sessionId) => {
     setNewSheetOpen(false);
+    // Picking another conversation leaves whatever page was being read: the
+    // reader belongs to the moment, not to the session.
+    setReader(null);
     setSelectedSessionId(sessionId);
     const owner = terminalsRef.current.find((record) => record.sessionId === sessionId);
     if (owner) {
@@ -847,6 +882,7 @@ export default function App() {
         setPanelOpenWithoutSession(Boolean(visible));
         return;
       }
+      panelStateStampRef.current += 1;
       setPanelState((current) => ({ ...current, panelVisible: Boolean(visible) }));
       window.clauding.setPanelVisible(panelSessionKey, Boolean(visible));
     },
@@ -860,8 +896,9 @@ export default function App() {
       return;
     }
     setPanelOpenWithoutSession(false);
+    const stampWhenAsked = panelStateStampRef.current;
     window.clauding.getPanelTabs(panelSessionKey).then((state) => {
-      if (panelSessionKeyRef.current === panelSessionKey) {
+      if (panelSessionKeyRef.current === panelSessionKey && panelStateStampRef.current === stampWhenAsked) {
         setPanelState(state);
       }
     });
@@ -874,6 +911,7 @@ export default function App() {
       }
       // The state carries this session's own panelVisible, so a `reveal`
       // needs nothing extra here.
+      panelStateStampRef.current += 1;
       setPanelState(state);
     });
     // `clauding panel show|hide` for a session that is on screen arrives as
@@ -897,8 +935,18 @@ export default function App() {
       : null;
   const panelActions = useMemo(
     () => ({
-      open(target) {
-        return window.clauding.openPanelTab({ sessionKey: panelSessionKey, target, baseDirectory: panelBaseDirectory });
+      // Opening a page is asking to see it, so the panel of this session is
+      // put up here as well. The main process already sets the same flag,
+      // but a page that lands in a panel the user hid earlier looked like
+      // nothing happening at all — this window does not wait to be told.
+      async open(target) {
+        const opened = await window.clauding.openPanelTab({
+          sessionKey: panelSessionKey,
+          target,
+          baseDirectory: panelBaseDirectory
+        });
+        setPanelVisible(true);
+        return opened;
       },
       close(tabId) {
         return window.clauding.closePanelTab(panelSessionKey, tabId);
@@ -914,6 +962,53 @@ export default function App() {
       }
     }),
     [panelSessionKey, panelBaseDirectory, setPanelVisible]
+  );
+
+  // A skill or an agent definition opens in the middle column, over the
+  // terminal — the place the user is already looking. The side panel stays
+  // one click away ("Open in side panel"), which is what somebody who wants
+  // the page *next to* the conversation reaches for.
+  const openReader = useCallback((page) => {
+    setNewSheetOpen(false);
+    setSkillsMenuOpen(false);
+    setReader(page);
+  }, []);
+
+  // The same reader for an agent: what the definition actually says is the
+  // one thing a row cannot show, and it is what decides whether an agent is
+  // the right one for the job.
+  const readAgentDefinition = useCallback(
+    (agent) => {
+      if (!agent || !agent.definitionFile) {
+        window.alert(translateInLanguage(language, "agents.noDefinitionFile"));
+        return;
+      }
+      openReader({
+        kind: "agent",
+        name: `${agent.emoji} ${agent.name}`,
+        filePath: agent.definitionFile,
+        folder: agent.definitionFolder
+      });
+    },
+    [language, openReader]
+  );
+
+  const openReaderInPanel = useCallback(
+    (page) => {
+      panelActions
+        .open(page.filePath)
+        .then(() => {
+          setReader(null);
+        })
+        .catch((error) => {
+          window.alert(
+            translateInLanguage(language, "panel.loadError", {
+              message: String(error && error.message ? error.message : error)
+            })
+          );
+        });
+    },
+    [panelActions, language]
   );
 
   return (
@@ -955,6 +1050,7 @@ export default function App() {
           onDismissSuggestion={dismissDefinitionSuggestion}
           onCreateAgentFromSession={createAgentFromConversation}
           onHarvestSkillsFromSession={harvestSkillsFromConversation}
+          onReadAgentDefinition={readAgentDefinition}
         />
         <div className="resize-handle" data-resize-handle="left" onPointerDown={(event) => beginDrag(event, "left")} />
         <MiddleColumn
@@ -969,22 +1065,26 @@ export default function App() {
           onAssignAgent={assignSessionToAgent}
           onCreateAgent={() => createAgentFromConversation(null)}
           onHarvestSkills={() => harvestSkillsFromConversation(null)}
+          reader={reader}
+          onCloseReader={() => setReader(null)}
+          onOpenReaderInPanel={openReaderInPanel}
           windowTools={
             <WindowTools
               settings={settings}
               skillsOpen={skillsMenuOpen}
               onSkillsOpenChange={setSkillsMenuOpen}
-              onOpenSkill={(skill) => {
-                // With no session on screen there is no tab set to open it
-                // in; say so instead of failing silently.
-                panelActions.open(skill.filePath).catch((error) => {
-                  window.alert(
-                    translateInLanguage(language, "panel.loadError", {
-                      message: String(error && error.message ? error.message : error)
-                    })
-                  );
-                });
-              }}
+              onOpenSkill={(skill) =>
+                openReader({
+                  kind: "skill",
+                  name: skill.name,
+                  description: skill.description,
+                  filePath: skill.filePath,
+                  folder: skill.folder
+                })
+              }
+              onScanForSkills={() => setSkillsScanOpen(true)}
+              skillMakerSeeding={settings.skillMakerSeeding}
+              onInstallBuiltinSkill={() => window.clauding.answerBuiltinSkill(true).then(setSettings)}
               onPickAgentsRoot={() => window.clauding.pickAgentsRoot().then(setSettings)}
             />
           }
@@ -995,6 +1095,22 @@ export default function App() {
           onPointerDown={(event) => beginDrag(event, "panel")}
         />
         <SidePanel open={panelOpen} sessionKey={panelSessionKey} panelState={panelState} actions={panelActions} />
+        {skillsScanOpen && (
+          <SkillsScanSheet
+            onClose={() => setSkillsScanOpen(false)}
+            onSkillsAdded={() => window.clauding.getSettings().then(setSettings)}
+          />
+        )}
+        {/* Asked once, on the first start: may the built-in skill-maker be
+            written into the skills folder? Until it is answered nothing is
+            written there. The settings carry the question, so it cannot be
+            missed by a window that was still mounting. */}
+        {settings.askAboutBuiltinSkill && (
+          <BuiltinSkillSheet
+            skillsRoot={settings.skillsRoot}
+            onAnswer={(install) => window.clauding.answerBuiltinSkill(install).then(setSettings)}
+          />
+        )}
         {draggingHandle ? <div className="drag-overlay" data-drag-overlay /> : null}
       </div>
     </LanguageContext.Provider>

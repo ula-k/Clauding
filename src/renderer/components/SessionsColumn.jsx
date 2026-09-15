@@ -40,7 +40,8 @@ export default function SessionsColumn({
   definitionSuggestions,
   onDismissSuggestion,
   onCreateAgentFromSession,
-  onHarvestSkillsFromSession
+  onHarvestSkillsFromSession,
+  onReadAgentDefinition
 }) {
   const { translate, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState("sessions");
@@ -171,6 +172,7 @@ export default function SessionsColumn({
           onEditAgent={(agentId) => setAgentFormState({ agentId, returnToNewSession: false })}
           onDeleteAgent={agentActions.deleteAgent}
           onRestoreBuiltin={agentActions.restoreBuiltin}
+          onReadDefinition={onReadAgentDefinition}
           definitionSuggestions={definitionSuggestions}
           onAddSuggestion={(suggestion) =>
             setAgentFormState({ agentId: null, returnToNewSession: false, folder: suggestion })

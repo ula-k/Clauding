@@ -11,9 +11,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+// fileURLToPath, not `new URL(...).pathname`: a checkout under a path with
+// a space or a non-ASCII character comes back percent-encoded from the URL
+// and `npm install` then fails on a folder that does not exist.
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nodePtyRoot = path.join(projectRoot, "node_modules", "node-pty");
 const prebuildFolder = path.join(nodePtyRoot, "prebuilds", `${process.platform}-${process.arch}`);
 const releaseFolder = path.join(nodePtyRoot, "build", "Release");

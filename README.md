@@ -11,7 +11,7 @@ output look exactly like the CLI draws them. Clicking a session **is** a
 terminal — `claude --resume` starts in that session's folder the moment the
 row is clicked.
 
-![The three columns: sessions, a real terminal, the side panel](docs/screenshots/three-columns.png)
+![The three columns: the session list, a real terminal running claude, and a skill open in the side panel](docs/screenshots/three-columns.png)
 
 ## What it does
 
@@ -38,22 +38,26 @@ row is clicked.
   is seeded into your skills folder. **Create agent** turns the conversation
   you are in into a new agent definition, **Harvest skills** turns it into
   skills, and **Skills** in the menu bar (and in the window's top-right)
-  lists every skill on the Mac with its description.
+  lists every skill on the Mac with its description. Clicking one **reads it
+  over the terminal** — the terminal keeps running underneath — and **Scan
+  for skills…** looks through the rest of the Mac for skills worth copying
+  into your skills folder.
 * **`clauding open <path or URL>`.** A command on the PATH of every terminal
   the app opens, so the session itself can put a page in the panel. Every
   session is told about it through a preamble appended to its system prompt.
 * **Four interface languages**: English, Polski, Español, 简体中文. The app
   follows the system language on first start and remembers what you pick.
 
-![The session list: your own groups, hidden rows, search](docs/screenshots/session-groups.png)
+![The session list: your own groups, one of them folded shut, and the search box](docs/screenshots/session-groups.png)
 
 ## Screenshots
 
-`docs/screenshots/` holds the two pictures above:
-`three-columns.png` (a session with a page open in the panel) and
-`session-groups.png` (the list with your own groups, a search and hidden
-rows). They are captured with the dev screenshot hook described under
-**Dev-only hooks**.
+`docs/screenshots/` holds the two pictures above: `three-columns.png` (a
+terminal in a scratch folder with a skill open in the side panel) and
+`session-groups.png` (the list with two groups of its own, one folded shut).
+Both are captured with the dev screenshot hook described under **Dev-only
+hooks**, against a throw-away `--user-data-dir`, so the groups and agents in
+them are demo state and nothing real was touched.
 
 ## Requirements
 
@@ -62,7 +66,9 @@ rows). They are captured with the dev screenshot hook described under
 * **Claude Code CLI**, installed and already logged in — the app never asks
   for credentials, it only starts `claude` the way your terminal does. It
   uses `~/.local/bin/claude` when that file exists, otherwise `claude` from
-  your PATH.
+  your PATH. Set **`CLAUDING_CLAUDE_BIN=/path/to/claude`** to point it at a
+  different binary — a second install, a version manager, a wrapper script —
+  without touching your PATH; it wins over both.
 
 ## Install
 
@@ -101,9 +107,13 @@ the transcripts under `~/.claude/projects/*` (through
 `@anthropic-ai/claude-agent-sdk`: `listSessions`, `getSessionInfo`,
 `renameSession`), the per-process registry `~/.claude/sessions/<pid>.json`
 and the background-job registry `~/.claude/jobs/<shortId>/state.json`, which
-together give the Running / Waiting colours. The app writes nothing under
-`~/.claude`; the `claude` processes in its terminals write their own
-transcripts, exactly as they do from Terminal.app.
+together give the Running / Waiting colours. The app writes **one** file
+under `~/.claude`, and only after you have said yes to it:
+`<skillsRoot>/skill-maker/SKILL.md`, the built-in skill (see **Seeding**) —
+Claude Code loads skills from that folder and nowhere else, so there is
+nowhere else to put it. Everything else under `~/.claude` is written by the
+`claude` processes in its terminals — their own transcripts and registry
+entries, exactly as from Terminal.app.
 
 **What it writes**, all in `~/Library/Application Support/Clauding/`:
 
@@ -192,6 +202,10 @@ src/renderer/components/EmojiPicker.jsx    the built-in emoji list under the for
 src/renderer/emojiChoices.js       the first-grapheme rule + the 64 curated emoji and their keywords
 src/renderer/components/AgentBadge.jsx     the emoji in its coloured circle (rows) and the header chip
 src/renderer/components/WindowTools.jsx    the Skills and settings popovers (top-right)
+src/renderer/components/DocumentReader.jsx a skill / an agent definition read over the terminal
+src/renderer/components/SkillsScanSheet.jsx  "Scan for skills…": candidates found on the Mac
+src/renderer/components/BuiltinSkillSheet.jsx  the first-run question about the built-in skill
+electron/skillsScan.js     where skills hide on a Mac, and copying one into the skills folder
 src/renderer/metaPrompts.js        the task lines the two meta actions put in the prompt file
 src/renderer/agentConstants.js     the eight agent colour tokens and the small label helpers
 src/renderer/sessionGrouping.js    sessions + groups.json -> what the column draws
@@ -203,9 +217,10 @@ src/renderer/locales/      en.json, pl.json, es.json, zh-CN.json — every UI st
 The SDK (`@anthropic-ai/claude-agent-sdk`) is only used for reading:
 `listSessions` and `getSessionInfo` — and `renameSession` for the editable
 title. (`getSessionMessages` went with the read-only preview: the app does
-not read a transcript any more.) Nothing under `~/.claude` is written by the app
-itself; the `claude` processes in the terminals write their own transcripts
-and registry entries, like they do from Terminal.app.
+not read a transcript any more.) The only thing the app itself writes under
+`~/.claude` is the built-in skill, once you have agreed to it (see
+**Seeding**); the `claude` processes in the terminals write their own
+transcripts and registry entries, like they do from Terminal.app.
 
 Electron runs as ESM (`"type": "module"`); the preload script is CommonJS
 (`electron/preload.cjs`) because Electron loads preload files through its own
@@ -804,7 +819,15 @@ At every start:
   refused by the store even if it is asked for, and the row menu has
   **Restore built-in** instead, which puts the shipped name, emoji, colour and
   definition back.
-* **The skill.** If `<skillsRoot>/skill-maker/SKILL.md` is missing it is
+* **The skill — only after you say yes.** Writing into somebody's own
+  `~/.claude` without telling them is not something an app should do
+  quietly, so the **first start asks**: a small sheet, *"Install the built-in
+  skill-maker?"*, with **Install** and **Not now**. The answer is remembered
+  in `settings.json` as `skillMakerSeeding` (`"unanswered"` → `"installed"` /
+  `"declined"`) and the question is never asked again; somebody who said no
+  gets **Install built-in skill-maker** at the bottom of the Skills popover,
+  and **Restore built-in** counts as a yes. Until then nothing is written.
+  Once installed: if `<skillsRoot>/skill-maker/SKILL.md` is missing it is
   copied there, with a line in the log. If it is there and **differs** from
   the shipped text, it is left exactly as it is (another log line) — the same
   rule `preamble.md` follows, and the same list of SHA-256 hashes
@@ -822,6 +845,8 @@ Two folders, both shown under the **gear** next to the Skills button:
 | --- | --- | --- |
 | `agentsRoot` | `~/Clauding/agents` | where a new agent definition is written, and the folder the app watches; a folder picker changes it |
 | `skillsRoot` | `~/.claude/skills` | where Claude Code reads skills from; shown, not changed here |
+| `skillScanRoots` | `[]` | extra folders **Scan for skills…** looks through, added with a folder picker |
+| `skillMakerSeeding` | `"unanswered"` | whether the built-in skill may be written into `skillsRoot`: asked once on the first start, then `"installed"` or `"declined"` |
 
 ### The Skills menu
 
@@ -831,10 +856,72 @@ The same list in two places: a **Skills** menu in the macOS menu bar and a
 a session can write a skill at any moment) and show the `name` and
 `description` from each file's frontmatter, falling back to the folder name and
 the first paragraph. `skill-maker` is always first, the rest are alphabetical.
-Clicking a skill opens its `SKILL.md` in the side panel of the session on
-screen; the footer shows the folder path and reveals it in Finder. Nothing is
-created or edited here — a skill is written by running the skill-maker over a
-conversation.
+Clicking a skill **reads it in the middle column** (see below); the footer
+shows the folder path and reveals it in Finder. Nothing is created or edited
+here — a skill is written by running the skill-maker over a conversation.
+
+### Reading a skill or an agent definition
+
+Clicking a skill — in the popover or in the macOS **Skills** menu — opens its
+`SKILL.md` **over the terminal**, in the middle column, the way an editor
+opens a file. The same reader shows an agent's definition: the Agents tab
+gives every row a small **read** icon and a **Read definition** item in its
+`…` menu.
+
+It replaces the terminal *view* only. The pty keeps running and the xterm
+instance is never unmounted — MiddleColumn hides its wrapper — so the
+scrollback is exactly where it was when the page closes. It closes with the
+prominent **Back to terminal** button, with **Escape**, and by picking
+another session.
+
+The header carries the kind (`SKILL` / `AGENT DEFINITION`), the name, the
+frontmatter description, the folder path (click it to copy) and **Open in
+side panel**, which adds the same Markdown tab the panel has always drawn.
+The page itself is rendered by the app's Markdown pipeline in the reading
+style — serif, 17px, 46rem wide — with the YAML frontmatter taken off first,
+because Markdown would otherwise turn it into a rule and a huge heading.
+
+This is the answer to a plain complaint: *"clicking a skill should open it so
+I can read it — right now I see nothing."* A page that opens into a side
+panel the session has hidden looks like nothing happening at all.
+
+### Scan for skills…
+
+One main skills folder — but skills end up all over a Mac, and **not
+everything that looks like a skill is one**. **Scan for skills…**, at the
+bottom of the Skills popover and in the macOS Skills menu, walks the places
+they turn up in (`electron/skillsScan.js`) and lists what it found, grouped
+by where it came from, with a search box and a checkbox per row:
+
+| Where | Depth |
+| --- | --- |
+| `*/.claude/skills/*` under `~/Documents`, `~/Desktop`, `~/projects`, `~/Developer`, `~/src`, `~/code`, `~/work` | 6 |
+| `~/.claude/plugins/**/skills/*` | 8 |
+| `~/Library/Application Support/Claude/**/skills/*` (Claude Desktop) | 8 |
+| `~/.hermes/skills/**` | 6 |
+| anything added with **Add another place…** (`skillScanRoots`) | 6 |
+
+`skillsRoot` itself is never scanned — it is what things are copied *to* —
+and it is skipped even when it turns up inside another root. The walk is
+plain `fs.readdirSync`, never `mdfind`: Spotlight does not index dot folders,
+which is where nearly every skill lives. `node_modules`, `.git`, build
+output, `Caches` and friends are never descended into.
+
+A **candidate** is a folder holding a readable `SKILL.md`; its `name` and
+`description` come from the frontmatter. Under the Hermes root a folder with
+a single bare `.md` counts too, and anything without frontmatter is shown
+with a **Hermes format** mark rather than hidden. Claude Desktop keeps
+several identical copies of the same skill, so candidates with the same name
+**and** the same content hash collapse into one row that says how many more
+copies there are; the same name with *different* contents stays as two rows,
+because that is a real choice. A candidate whose name is already in
+`skillsRoot` is marked **already added**, and **differs from source** when
+the contents are not the same.
+
+**Add selected** copies the whole folder (no symlinks) into `skillsRoot` and
+writes `.clauding-source.json` inside the copy — the source path, its hash
+and the date — so a later scan can tell that the original has moved on. A
+folder that is already there is never replaced without a confirmation.
 
 ### Attaching a session to an agent
 
@@ -975,6 +1062,10 @@ out of the app's own list (see **Scratch sessions are never listed**).
 CLAUDING_SCREENSHOT=/path/out.png npm run preview        # capture after ~4 s and quit
 CLAUDING_SCREENSHOT_SELECT=elsewhere ...                 # click the first row running outside the app
 CLAUDING_SCREENSHOT_NEW=1 ...                            # open the "+ New" sheet first
+CLAUDING_SCREENSHOT_TERMINAL=/some/folder ...            # open a terminal in that folder first
+                                                         # (a scratch folder, never a real project),
+                                                         # for anything that needs a live session
+CLAUDING_SCREENSHOT_WAIT=20000 ...                       # wait this many ms more before the shutter
 CLAUDING_SCREENSHOT_CLICK='[data-agents-tab]>>[data-add-agent]' ...
                                                          # click these selectors in order first
                                                          # (a tab, a sheet, a menu item), so any

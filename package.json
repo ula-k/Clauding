@@ -6,9 +6,9 @@
   "author": "Ula Kuczyńska",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ula-k/clauding.git"
+    "url": "https://github.com/ula-k/Clauding.git"
   },
-  "homepage": "https://github.com/ula-k/clauding",
+  "homepage": "https://github.com/ula-k/Clauding",
   "type": "module",
   "main": "electron/main.js",
   "engines": {

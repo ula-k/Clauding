@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { relativeTime } from "../time.js";
-import { DotsIcon, PlusIcon } from "./Icons.jsx";
+import { DotsIcon, PlusIcon, ReadIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentBadge } from "./AgentBadge.jsx";
 import { definitionFolderLabel, titleWithoutAgentEmoji } from "../agentConstants.js";
@@ -59,7 +59,8 @@ function AgentRow({
   onStartSession,
   onEdit,
   onDelete,
-  onRestoreBuiltin
+  onRestoreBuiltin,
+  onReadDefinition
 }) {
   const { translate } = useTranslation();
   const [menuAnchor, setMenuAnchor] = useState(null);
@@ -94,6 +95,18 @@ function AgentRow({
           <span className="agent-row-folder">{definitionFolderLabel(agent.definitionFolder)}</span>
         </span>
       </button>
+      {/* The definition is what the agent *is*, so it is one click away on
+          the row itself — not only inside the "…" menu. */}
+      <button
+        type="button"
+        className="row-read-button"
+        title={translate("agents.readDefinitionHint")}
+        aria-label={translate("agents.readDefinition")}
+        data-agent-read-button={agent.id}
+        onClick={() => onReadDefinition(agent)}
+      >
+        <ReadIcon />
+      </button>
       <button
         type="button"
         className="row-menu-button"
@@ -123,6 +136,14 @@ function AgentRow({
             </>
           ) : (
             <>
+              <MenuItem
+                onClick={() => {
+                  closeMenu();
+                  onReadDefinition(agent);
+                }}
+              >
+                {translate("agents.readDefinition")}
+              </MenuItem>
               <MenuItem
                 onClick={() => {
                   closeMenu();
@@ -191,6 +212,7 @@ export default function AgentsTab({
   onEditAgent,
   onDeleteAgent,
   onRestoreBuiltin,
+  onReadDefinition,
   definitionSuggestions,
   onAddSuggestion,
   onDismissSuggestion
@@ -254,6 +276,7 @@ export default function AgentsTab({
               onEdit={onEditAgent}
               onDelete={onDeleteAgent}
               onRestoreBuiltin={onRestoreBuiltin}
+              onReadDefinition={onReadDefinition}
             />
           );
         })

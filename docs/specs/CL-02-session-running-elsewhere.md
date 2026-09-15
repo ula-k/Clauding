@@ -1,5 +1,5 @@
 # CL-02 · List · a session running outside the app
-Priority: P1 · Verified by: dry test `test/liveStatus.test.js`, Playwright spec `test/specs/cl02-running-elsewhere.spec.js` + manual
+Priority: P1 · Verified by: dry test `test/liveStatus.test.js` + manual
 
 ## Goal
 A session that a terminal or a background job outside Clauding is running is
@@ -39,12 +39,10 @@ starts no `claude` at all.
     and "what the registry says about our own terminal still decides its
     colour" — the difference between *ours* and *elsewhere*, which is what
     decides between a terminal and the note.
-- Playwright spec `test/specs/cl02-running-elsewhere.spec.js` — "clicking a
-  session that runs elsewhere shows the note and Fork, not a terminal": drives
-  the real window against a fixture home, and asserts that the fake `claude`
-  recorded no invocation at all.
-- Manual, with screenshots: the note itself (step 2) and the resume after the
-  other terminal has finished (steps 3–4).
+- Manual: clicking a session that runs elsewhere must show the note and Fork
+  and must NOT start a terminal — no new `claude` process appears. Then, with
+  screenshots: the note itself (step 2) and the resume after the other
+  terminal has finished (steps 3–4).
 
 ## Out of scope
 - Forking such a session: CL-09.

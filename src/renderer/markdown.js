@@ -36,6 +36,15 @@ const renderer = {
 
 marked.use({ renderer, gfm: true, breaks: false });
 
+// A SKILL.md — and many an agent definition — opens with a YAML
+// frontmatter block. Markdown has no idea what that is: `---` becomes a
+// rule and the line under it a giant heading, so the page starts with its
+// own metadata shouted at the reader. It is taken off before rendering;
+// what it says (the name, the description) is already in the header above.
+export function withoutFrontmatter(text) {
+  return String(text || "").replace(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/, "");
+}
+
 export function renderMarkdown(text) {
   try {
     return marked.parse(text || "");

@@ -13,7 +13,7 @@ elsewhere"), never the exact wording on screen — wording is quoted only as
   real `claude`: it exercises the same modules the app uses, with its files in
   a throw-away folder under the system temporary folder. It costs nothing and
   can be run at any time.
-- **manual** — Ula, clicking, with a screenshot. Everything that needs a real
+- **manual** — the maintainer, clicking, with a screenshot. Everything that needs a real
   window, a real pty, a real Claude Code session or a second instance of the
   app.
 - **smoke hook `CLAUDING_SMOKE_*`** — the app's own dev-only automations (see

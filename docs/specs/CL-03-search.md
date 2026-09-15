@@ -1,5 +1,5 @@
 # CL-03 · List · search
-Priority: P2 · Verified by: dry test `test/sessionGrouping.test.js`, Playwright spec `test/specs/cl03-search.spec.js` + manual
+Priority: P2 · Verified by: dry test `test/sessionGrouping.test.js` + manual
 
 ## Goal
 The search box finds a session by everything the user might remember about it
@@ -39,11 +39,10 @@ nothing on disk.
     searching" — the rule that search wins over folding.
   - "search is case-insensitive and ignores the spaces around the query".
   - "a hidden session stays hidden while searching".
-- Playwright spec `test/specs/cl03-search.spec.js` — "the search box matches
-  the name, the folder, the first prompt and the agent": the real box in the
-  real window, one query per line of this specification.
-- The folded-group half is also asserted in `test/specs/cl06-collapsing.spec.js`.
-- Manual, with a screenshot: a query that matches nothing.
+- Manual: the real box in the real window, one query per line of this
+  specification — the name, the folder, the first prompt and the agent — plus
+  the folded-group rule (a match inside a folded group opens it). With a
+  screenshot: a query that matches nothing.
 
 ## Out of scope
 - Folding and unfolding themselves: CL-06.

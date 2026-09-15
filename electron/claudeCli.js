@@ -20,9 +20,15 @@ export function ensureShellPath() {
   process.env.PATH = missing.concat(currentFolders).join(path.delimiter);
 }
 
-// ~/.local/bin/claude when it exists (the same binary as in the terminal),
-// otherwise whatever `claude` resolves to on PATH.
+// CLAUDING_CLAUDE_BIN wins over everything: it is how a second install, a
+// version manager or a wrapper script is pointed at without touching PATH.
+// After that, ~/.local/bin/claude when it exists (the same binary as in the
+// terminal), otherwise whatever `claude` resolves to on PATH.
 export function claudeExecutablePath() {
+  const chosen = String(process.env.CLAUDING_CLAUDE_BIN || "").trim();
+  if (chosen) {
+    return chosen;
+  }
   return fs.existsSync(localClaudeBinary) ? localClaudeBinary : "claude";
 }
 

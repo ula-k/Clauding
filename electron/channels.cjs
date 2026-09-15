@@ -36,6 +36,17 @@ const CHANNELS = {
   skillsList: "skills:list",
   // The native Skills menu asking the window to open the skills popover.
   skillsShow: "skills:show",
+  // The native Skills menu asking the window to read one skill in the
+  // middle column, the same thing a click in the popover does.
+  skillsRead: "skills:read",
+  // "Scan for skills…": look through the Mac for skill folders, then copy
+  // the picked ones into the main skills folder.
+  skillsScan: "skills:scan",
+  skillsScanAdd: "skills:scan-add",
+  skillsScanAddRoot: "skills:scan-add-root",
+  // The answer to the first-run question about the built-in skill-maker.
+  // The question itself rides along in the settings (askAboutBuiltinSkill).
+  skillsSeedAnswer: "skills:seed-answer",
   systemLanguage: "system:language",
   systemEmojiPanel: "system:emoji-panel",
   systemReveal: "system:reveal",

@@ -7,12 +7,25 @@
 //                Default: ~/Clauding/agents.
 //   skillsRoot   where Claude Code reads skills from. Default
 //                ~/.claude/skills, which is the CLI's own folder — the app
-//                only reads it (and seeds the built-in skill-maker into it),
-//                so the menu shows this path without offering to change it.
+//                only reads it (and, once the user has said yes, seeds the
+//                built-in skill-maker into it), so the menu shows this path
+//                without offering to change it.
+//
+// Two more settings are remembered next to them:
+//
+//   skillScanRoots      extra folders "Scan for skills…" looks through, on
+//                       top of the places it knows about. Added with a
+//                       folder picker, never guessed.
+//   skillMakerSeeding   "unanswered" until the user has been asked whether
+//                       the built-in skill-maker may be written into their
+//                       skills folder, then "installed" or "declined". The
+//                       one file the app writes under ~/.claude is not
+//                       written behind the user's back.
 //
 // File shape (version 1):
 //   { "version": 1, "agentsRoot": "/Users/<you>/Clauding/agents",
-//     "skillsRoot": "/Users/<you>/.claude/skills" }
+//     "skillsRoot": "/Users/<you>/.claude/skills",
+//     "skillScanRoots": [], "skillMakerSeeding": "unanswered" }
 //
 // Anything unexpected in the file is replaced by the default, exactly like
 // groups.json and agents.json: a broken settings.json must never keep the
@@ -40,12 +53,42 @@ function cleanFolder(rawFolder, fallback) {
   return path.isAbsolute(expanded) ? path.normalize(expanded) : fallback;
 }
 
+export const SKILL_SEEDING_ANSWERS = ["unanswered", "installed", "declined"];
+
+// Folders the user added by hand: anything that is not an absolute path is
+// dropped, and the same folder is never kept twice.
+function cleanFolderList(rawList) {
+  if (!Array.isArray(rawList)) {
+    return [];
+  }
+  const folders = [];
+  for (const entry of rawList) {
+    const folder = cleanFolder(entry, "");
+    if (folder && !folders.includes(folder)) {
+      folders.push(folder);
+    }
+  }
+  return folders;
+}
+
 function sanitize(saved) {
   const source = saved && typeof saved === "object" ? saved : {};
+  const seeding = String(source.skillMakerSeeding || "");
   return {
     agentsRoot: cleanFolder(source.agentsRoot, defaultAgentsRoot()),
-    skillsRoot: cleanFolder(source.skillsRoot, defaultSkillsRoot())
+    skillsRoot: cleanFolder(source.skillsRoot, defaultSkillsRoot()),
+    skillScanRoots: cleanFolderList(source.skillScanRoots),
+    skillMakerSeeding: SKILL_SEEDING_ANSWERS.includes(seeding) ? seeding : "unanswered"
   };
+}
+
+function sameSettings(first, second) {
+  return (
+    first.agentsRoot === second.agentsRoot &&
+    first.skillsRoot === second.skillsRoot &&
+    first.skillMakerSeeding === second.skillMakerSeeding &&
+    first.skillScanRoots.join("\n") === second.skillScanRoots.join("\n")
+  );
 }
 
 export function createSettingsStore({ storagePath, onChange, log }) {
@@ -85,7 +128,13 @@ export function createSettingsStore({ storagePath, onChange, log }) {
   }
 
   function get() {
-    return { ...state };
+    return { ...state, skillScanRoots: state.skillScanRoots.slice() };
+  }
+
+  // One more folder for "Scan for skills…" to look through. Adding the same
+  // one twice is not an error, it simply changes nothing.
+  function addSkillScanRoot(folder) {
+    return update({ skillScanRoots: state.skillScanRoots.concat([folder]) });
   }
 
   // The agents root is created when it is read, so the watcher has something
@@ -104,7 +153,7 @@ export function createSettingsStore({ storagePath, onChange, log }) {
 
   function update(draft) {
     const merged = sanitize({ ...state, ...(draft || {}) });
-    if (merged.agentsRoot === state.agentsRoot && merged.skillsRoot === state.skillsRoot) {
+    if (sameSettings(merged, state)) {
       return get();
     }
     state = merged;
@@ -115,5 +164,5 @@ export function createSettingsStore({ storagePath, onChange, log }) {
     return get();
   }
 
-  return { get, update, ensureAgentsRoot };
+  return { get, update, ensureAgentsRoot, addSkillScanRoot };
 }

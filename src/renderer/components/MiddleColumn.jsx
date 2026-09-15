@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { folderLabel } from "../paths.js";
 import TerminalPane from "./TerminalPane.jsx";
+import DocumentReader from "./DocumentReader.jsx";
 import { DotsIcon, FolderIcon, ForkIcon, PencilIcon, SparkIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuLabel, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentChip } from "./AgentBadge.jsx";
@@ -228,22 +229,36 @@ export default function MiddleColumn({
   onAssignAgent,
   onCreateAgent,
   onHarvestSkills,
+  reader,
+  onCloseReader,
+  onOpenReaderInPanel,
   windowTools
 }) {
   const { translate } = useTranslation();
   const mode = columnMode({ session, terminal });
   const sessionId = (terminal && terminal.sessionId) || (session && session.sessionId) || null;
+  // With the reader open the window tools move into its header, so they are
+  // rendered once and stay in the same corner of the window.
+  const readerPane = reader ? (
+    <DocumentReader reader={reader} onClose={onCloseReader} onOpenInPanel={onOpenReaderInPanel} windowTools={windowTools} />
+  ) : null;
+  const underTools = reader ? null : windowTools;
 
   if (!session && !terminal) {
     return (
       <div className="column column-middle">
-        <div className="middle-tools">{windowTools}</div>
-        <div className="middle-centred">
-          <div className="empty-card">
-            <div className="empty-icon">✿</div>
-            {translate("transcript.empty")}
-          </div>
-        </div>
+        {readerPane}
+        {!reader && (
+          <>
+            <div className="middle-tools">{underTools}</div>
+            <div className="middle-centred">
+              <div className="empty-card">
+                <div className="empty-icon">✿</div>
+                {translate("transcript.empty")}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -256,63 +271,74 @@ export default function MiddleColumn({
   if (mode !== "terminal") {
     return (
       <div className="column column-middle">
-        <div className="middle-tools">{windowTools}</div>
-        <div className="middle-centred">
-          <div className="elsewhere-note" data-elsewhere-note={mode === "elsewhere" ? "1" : "0"}>
-            <div className="elsewhere-title">{title}</div>
-            <div className="elsewhere-folder" title={workingDirectoryShort}>
-              <FolderIcon />
-              {projectLabel}
+        {readerPane}
+        {!reader && (
+          <>
+            <div className="middle-tools">{underTools}</div>
+            <div className="middle-centred">
+              <div className="elsewhere-note" data-elsewhere-note={mode === "elsewhere" ? "1" : "0"}>
+                <div className="elsewhere-title">{title}</div>
+                <div className="elsewhere-folder" title={workingDirectoryShort}>
+                  <FolderIcon />
+                  {projectLabel}
+                </div>
+                <p className="elsewhere-text">
+                  {mode === "elsewhere" ? translate("middle.runningElsewhere") : translate("middle.opening")}
+                </p>
+                {mode === "elsewhere" && onFork && session && session.sessionId && <ForkButton onFork={onFork} standalone />}
+              </div>
             </div>
-            <p className="elsewhere-text">
-              {mode === "elsewhere" ? translate("middle.runningElsewhere") : translate("middle.opening")}
-            </p>
-            {mode === "elsewhere" && onFork && session && session.sessionId && <ForkButton onFork={onFork} standalone />}
-          </div>
-        </div>
+          </>
+        )}
       </div>
     );
   }
 
   const projectColorIndex = session ? session.projectColorIndex : 0;
 
+  // The terminal stays mounted while the reader is on top of it: unmounting
+  // TerminalPane would detach the xterm instance and the scrollback would
+  // scroll back into view from the top. Only its wrapper is hidden.
   return (
     <div className="column column-middle">
-      <header className="transcript-header">
-        <div className="header-top">
-          <EditableTitle title={title} onRename={session ? onRename : null} />
-          <AgentChip agent={agent} />
-          <StatusPill statusGroup={terminalStatusGroup(terminal, session)} />
-          {onFork && terminal.sessionId && <ForkButton onFork={onFork} />}
-          <MetaActionButtons sessionId={sessionId} onCreateAgent={onCreateAgent} onHarvestSkills={onHarvestSkills} />
-          <HeaderMenuButton
-            sessionId={sessionId}
-            agents={agents || []}
-            currentAgentId={agent ? agent.id : null}
-            onAssignAgent={onAssignAgent}
-            onCreateAgent={onCreateAgent}
-            onHarvestSkills={onHarvestSkills}
-          />
-          {windowTools}
-          <button type="button" className="panel-toggle" onClick={onTogglePanel}>
-            {panelOpen ? translate("panel.hide") : translate("panel.show")}
-          </button>
-        </div>
-        <div className="header-meta">
-          <span className="meta-item" title={workingDirectoryShort}>
-            <span className="project-dot" style={{ background: `var(--project-color-${projectColorIndex})` }} />
-            <FolderIcon />
-            {projectLabel}
-          </span>
-          {session && session.gitBranch && (
-            <span className="meta-item">
-              <span className="meta-label">{translate("header.branch")}</span>
-              <code>{session.gitBranch}</code>
+      {readerPane}
+      <div className={reader ? "terminal-stack is-hidden" : "terminal-stack"} data-terminal-stack={reader ? "hidden" : "shown"}>
+        <header className="transcript-header">
+          <div className="header-top">
+            <EditableTitle title={title} onRename={session ? onRename : null} />
+            <AgentChip agent={agent} />
+            <StatusPill statusGroup={terminalStatusGroup(terminal, session)} />
+            {onFork && terminal.sessionId && <ForkButton onFork={onFork} />}
+            <MetaActionButtons sessionId={sessionId} onCreateAgent={onCreateAgent} onHarvestSkills={onHarvestSkills} />
+            <HeaderMenuButton
+              sessionId={sessionId}
+              agents={agents || []}
+              currentAgentId={agent ? agent.id : null}
+              onAssignAgent={onAssignAgent}
+              onCreateAgent={onCreateAgent}
+              onHarvestSkills={onHarvestSkills}
+            />
+            {underTools}
+            <button type="button" className="panel-toggle" onClick={onTogglePanel}>
+              {panelOpen ? translate("panel.hide") : translate("panel.show")}
+            </button>
+          </div>
+          <div className="header-meta">
+            <span className="meta-item" title={workingDirectoryShort}>
+              <span className="project-dot" style={{ background: `var(--project-color-${projectColorIndex})` }} />
+              <FolderIcon />
+              {projectLabel}
             </span>
-          )}
-        </div>
-      </header>
-      <TerminalPane terminalId={terminal.terminalId} />
+            {session && session.gitBranch && (
+              <span className="meta-item">
+                <span className="meta-label">{translate("header.branch")}</span>
+                <code>{session.gitBranch}</code>
+              </span>
+            )}
+          </div>
+        </header>
+        <TerminalPane terminalId={terminal.terminalId} />
+      </div>
     </div>
   );
 }

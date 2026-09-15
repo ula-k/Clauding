@@ -147,3 +147,35 @@ export function MarkdownIcon() {
     </svg>
   );
 }
+
+// "Read this here": an open page with lines of text. Marks the rows that
+// open the middle-column reader — a skill, an agent definition.
+export function ReadIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2 3.5h4a2 2 0 0 1 2 2v7a1.6 1.6 0 0 0-1.6-1.4H2V3.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M14 3.5h-4a2 2 0 0 0-2 2v7a1.6 1.6 0 0 1 1.6-1.4H14V3.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// The reader's way back to the terminal.
+export function ArrowLeftIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M10 3 5 8l5 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// A magnifying glass over a folder: "look through this Mac for skills".
+export function ScanIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M1.5 4.2A1.2 1.2 0 0 1 2.7 3h2.6l1.2 1.4H12a1.2 1.2 0 0 1 1.2 1.2v1.1" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M1.5 4.2v7.1A1.2 1.2 0 0 0 2.7 12.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <circle cx="10.6" cy="10.1" r="2.8" stroke="currentColor" strokeWidth="1.3" />
+      <path d="m12.7 12.2 1.8 1.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}

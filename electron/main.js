@@ -28,7 +28,8 @@ import { createSessionGroupStore } from "./sessionGroups.js";
 import { createAgentStore, inspectDefinitionFolder, inspectDefinitionFile } from "./agents.js";
 import { createSettingsStore } from "./settings.js";
 import { listSkills } from "./skills.js";
-import { builtinAgentDraft, seedBuiltins } from "./builtins.js";
+import { copySkillCandidate, scanForSkillCandidates } from "./skillsScan.js";
+import { builtinAgentDraft, seedBuiltinSkill, seedBuiltins } from "./builtins.js";
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
@@ -65,6 +66,7 @@ app.on("second-instance", () => {
   }
 });
 const screenshotSelect = process.env.CLAUDING_SCREENSHOT_SELECT || null;
+const screenshotTerminalFolder = process.env.CLAUDING_SCREENSHOT_TERMINAL || null;
 const smokeTerminalMode = process.env.CLAUDING_SMOKE_TERMINAL === "1";
 const smokeGroupsMode = process.env.CLAUDING_SMOKE_GROUPS === "1";
 const smokeForkMode = process.env.CLAUDING_SMOKE_FORK === "1";
@@ -73,6 +75,16 @@ const smokePreambleMode = process.env.CLAUDING_SMOKE_PREAMBLE === "1";
 const smokeResizeMode = process.env.CLAUDING_SMOKE_RESIZE === "1";
 const smokeAgentsMode = process.env.CLAUDING_SMOKE_AGENTS === "1";
 const smokeEmojiMode = process.env.CLAUDING_SMOKE_EMOJI === "1";
+// Any automation at all: the first-run questions stay out of its way.
+const anySmokeMode =
+  smokeTerminalMode ||
+  smokeGroupsMode ||
+  smokeForkMode ||
+  smokeCollapseMode ||
+  smokePreambleMode ||
+  smokeResizeMode ||
+  smokeAgentsMode ||
+  smokeEmojiMode;
 
 let mainWindow = null;
 let stopWatchingLiveStatus = null;
@@ -106,6 +118,20 @@ function clearStalePromptFiles() {
   } catch (error) {
     console.log(`[agents] could not clear ${promptDirectory}: ${error.message}`);
   }
+}
+
+// The one file this app writes under ~/.claude is the built-in skill-maker
+// skill, and it is not written until the user has said yes. The window asks
+// when the settings it reads say the question is still open — carried in the
+// settings themselves rather than pushed, because a push sent while the
+// renderer is still mounting reaches nobody. A screenshot or smoke run is
+// never asked: it would photograph the sheet instead of the app.
+function settingsForRenderer() {
+  const current = settings.get();
+  return {
+    ...current,
+    askAboutBuiltinSkill: current.skillMakerSeeding === "unanswered" && !screenshotPath && !anySmokeMode
+  };
 }
 
 function sendToWindow(channel, payload) {
@@ -379,10 +405,27 @@ function createWindow() {
 //       runs in a terminal or job outside the app (the only click that is
 //       guaranteed NOT to spawn a `claude` process, see README)
 //   CLAUDING_SCREENSHOT_NEW=1              open the "+ New" sheet first
+//   CLAUDING_SCREENSHOT_TERMINAL=<folder>  open a terminal in that folder
+//       first (a scratch folder, never a real project) so a picture can be
+//       taken of anything that needs a live session
+//   CLAUDING_SCREENSHOT_WAIT=<ms>          wait this much longer before the shutter
 //   CLAUDING_SCREENSHOT_CLICK=a>>b         click these selectors, in order,
 //       before the capture (a sheet, a tab, a menu item)
 async function captureScreenshotAndQuit() {
-  const waitMilliseconds = 4000;
+  // CLAUDING_SCREENSHOT_TERMINAL=<folder>: open a terminal in that folder
+  // first, so a picture can be taken of something that needs a live session
+  // (the reader over a running terminal) without a smoke run of its own and
+  // without touching one of the user's real sessions.
+  if (screenshotTerminalFolder && mainWindow) {
+    try {
+      const record = terminalRegistry.open({ workingDirectory: screenshotTerminalFolder, columns: 110, rows: 32 });
+      sendToWindow(CHANNELS.smokeCommand, { action: "show-terminal", terminalId: record.terminalId });
+      console.log(`[screenshot] opened a terminal in ${screenshotTerminalFolder}`);
+    } catch (error) {
+      console.log(`[screenshot] could not open a terminal in ${screenshotTerminalFolder}: ${error.message}`);
+    }
+  }
+  const waitMilliseconds = screenshotTerminalFolder ? 9000 : 4000;
   await new Promise((resolve) => setTimeout(resolve, waitMilliseconds));
   if (screenshotSelect === "elsewhere" && mainWindow) {
     await mainWindow.webContents.executeJavaScript(
@@ -415,6 +458,12 @@ async function captureScreenshotAndQuit() {
     );
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
+  // CLAUDING_SCREENSHOT_WAIT=<milliseconds>: a last pause before the shutter,
+  // for a view that is still filling itself in (the skills scan reads folders).
+  const extraWait = Number(process.env.CLAUDING_SCREENSHOT_WAIT || 0);
+  if (extraWait > 0) {
+    await new Promise((resolve) => setTimeout(resolve, extraWait));
+  }
   if (mainWindow) {
     const image = await mainWindow.webContents.capturePage();
     fs.writeFileSync(screenshotPath, image.toPNG());
@@ -425,10 +474,10 @@ async function captureScreenshotAndQuit() {
 
 // The Skills menu in the macOS menu bar. It is built from the skills folder
 // itself, so it says what is actually installed; picking a skill opens its
-// SKILL.md in the side panel of the session on screen, exactly like the
-// Skills popover in the window does. Rebuilt whenever the list might have
-// changed (a settings change, the popover asking for the list), because a
-// native menu cannot be filled while it is already open.
+// SKILL.md in the reader in the middle column, exactly like a click in the
+// Skills popover does. Rebuilt whenever the list might have changed (a
+// settings change, the popover asking for the list), because a native menu
+// cannot be filled while it is already open.
 function skillsMenuTemplate() {
   const skillsRoot = settings ? settings.get().skillsRoot : null;
   const skills = skillsRoot ? listSkills(skillsRoot) : [];
@@ -448,15 +497,20 @@ function skillsMenuTemplate() {
     items.push({
       label: skill.name,
       click() {
-        try {
-          openPanelTab({ sessionKey: panelSelection.sessionKey, target: skill.filePath });
-        } catch (error) {
-          console.log(`[skills] could not open ${skill.filePath}: ${error.message}`);
-        }
+        // The window reads it in the middle column: it needs no session and
+        // no tab set, so this cannot fail silently the way a panel tab
+        // could when nothing was selected.
+        sendToWindow(CHANNELS.skillsRead, { name: skill.name, filePath: skill.filePath, folder: skill.folder });
       }
     });
   }
   items.push({ type: "separator" });
+  items.push({
+    label: "Scan for skills…",
+    click() {
+      sendToWindow(CHANNELS.skillsShow, { scan: true });
+    }
+  });
   items.push({
     label: "Reveal skills folder in Finder",
     enabled: Boolean(skillsRoot),
@@ -778,25 +832,29 @@ function registerIpc() {
   // seeded again if it is missing).
   ipcMain.handle(CHANNELS.agentsRestoreBuiltin, async () => {
     agents.ensureBuiltinAgent(builtinAgentDraft(), { force: true });
+    // Asking for the built-ins back is itself a yes to the one file under
+    // ~/.claude, so the skill is written whatever the stored answer was.
+    settings.update({ skillMakerSeeding: "installed" });
     seedBuiltins({ agentStore: agents, skillsRoot: settings.get().skillsRoot, log: (line) => console.log(line) });
     installApplicationMenu();
     return agents.get();
   });
 
   ipcMain.handle(CHANNELS.settingsGet, async () => {
-    return settings.get();
+    return settingsForRenderer();
   });
 
   ipcMain.handle(CHANNELS.settingsUpdate, async (event, draft) => {
-    return settings.update(draft || {});
+    settings.update(draft || {});
+    return settingsForRenderer();
   });
 
   ipcMain.handle(CHANNELS.settingsPickAgentsRoot, async () => {
     const picked = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
-    if (picked.canceled || picked.filePaths.length === 0) {
-      return settings.get();
+    if (!picked.canceled && picked.filePaths.length > 0) {
+      settings.update({ agentsRoot: picked.filePaths[0] });
     }
-    return settings.update({ agentsRoot: picked.filePaths[0] });
+    return settingsForRenderer();
   });
 
   // The Skills popover. The folder is read every time it is opened: a
@@ -808,6 +866,59 @@ function registerIpc() {
     // rather than on a timer.
     installApplicationMenu();
     return { skillsRoot, skills };
+  });
+
+  // "Scan for skills…": every skill-looking folder on this Mac. The scan
+  // only reports; nothing is copied until the user picks candidates and
+  // presses Add.
+  ipcMain.handle(CHANNELS.skillsScan, async () => {
+    const current = settings.get();
+    const found = scanForSkillCandidates({
+      homeDirectory: os.homedir(),
+      skillsRoot: current.skillsRoot,
+      extraRoots: current.skillScanRoots
+    });
+    console.log(`[skills] scan found ${found.candidates.length} candidate(s) in ${found.sources.length} place(s)`);
+    return { ...found, skillsRoot: current.skillsRoot, extraRoots: current.skillScanRoots };
+  });
+
+  // Copies the picked folders into the skills folder. An existing folder of
+  // the same name is reported back rather than replaced, unless the window
+  // asks again with overwrite after the user has confirmed.
+  ipcMain.handle(CHANNELS.skillsScanAdd, async (event, { candidates, overwrite }) => {
+    const skillsRoot = settings.get().skillsRoot;
+    const results = [];
+    for (const candidate of candidates || []) {
+      try {
+        results.push({ name: candidate.name, ...copySkillCandidate({ candidate, skillsRoot, overwrite }) });
+      } catch (error) {
+        console.log(`[skills] could not copy ${candidate.folder}: ${error.message}`);
+        results.push({ name: candidate.name, copied: false, skipped: true, reason: error.message });
+      }
+    }
+    installApplicationMenu();
+    return { results };
+  });
+
+  ipcMain.handle(CHANNELS.skillsScanAddRoot, async () => {
+    const picked = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+    if (!picked.canceled && picked.filePaths.length > 0) {
+      settings.addSkillScanRoot(picked.filePaths[0]);
+    }
+    return settingsForRenderer();
+  });
+
+  // The first-run question about the built-in skill-maker. Only a yes
+  // writes the one file this app puts under ~/.claude.
+  ipcMain.handle(CHANNELS.skillsSeedAnswer, async (event, { install }) => {
+    const current = settings.update({ skillMakerSeeding: install ? "installed" : "declined" });
+    if (install) {
+      seedBuiltinSkill(current.skillsRoot, (line) => console.log(line));
+      installApplicationMenu();
+    } else {
+      console.log("[builtin] the user declined the built-in skill-maker; nothing was written under ~/.claude");
+    }
+    return settingsForRenderer();
   });
 
   ipcMain.handle(CHANNELS.agentsPickFolder, async () => {
@@ -1020,8 +1131,8 @@ app.whenReady().then(() => {
   });
   settings = createSettingsStore({
     storagePath: path.join(userDataDirectory, "settings.json"),
-    onChange(state) {
-      sendToWindow(CHANNELS.settingsChanged, state);
+    onChange() {
+      sendToWindow(CHANNELS.settingsChanged, settingsForRenderer());
       // A new agents root is a new folder to watch, and the Skills menu may
       // now be reading a different skills folder.
       watchAgentsRoot();
@@ -1033,9 +1144,16 @@ app.whenReady().then(() => {
   });
   // The agent that makes agents and the skill that makes skills ship with
   // the app, so they exist for everyone: the Agent Maker goes into
-  // agents.json as the first agent, skill-maker into the skills folder
-  // Claude Code reads (a copy the user edited is never overwritten).
-  seedBuiltins({ agentStore: agents, skillsRoot: settings.get().skillsRoot, log: (line) => console.log(line) });
+  // agents.json as the first agent. The skill is different — it is written
+  // into the user's own ~/.claude/skills, so it waits for a yes (the window
+  // asks once, see settingsForRenderer); a copy the user edited is never
+  // overwritten either way.
+  seedBuiltins({
+    agentStore: agents,
+    skillsRoot: settings.get().skillsRoot,
+    log: (line) => console.log(line),
+    skillAnswer: settings.get().skillMakerSeeding
+  });
   watchAgentsRoot();
   panelTabs = createPanelTabStore({
     storagePath: path.join(userDataDirectory, "panel-tabs.json"),

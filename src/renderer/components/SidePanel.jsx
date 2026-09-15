@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
-import { renderMarkdown } from "../markdown.js";
+import { renderMarkdown, withoutFrontmatter } from "../markdown.js";
 import { CloseIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon } from "./Icons.jsx";
 
 // The right panel: Hermes-style tabs next to the terminal. Each tab is a
@@ -133,7 +133,7 @@ function MarkdownTab({ tab, active, reloadCounter }) {
     };
   }, [tab.target, reloadCounter]);
 
-  const html = useMemo(() => (text === null ? "" : renderMarkdown(text)), [text]);
+  const html = useMemo(() => (text === null ? "" : renderMarkdown(withoutFrontmatter(text))), [text]);
 
   return (
     <div className={active ? "panel-tab-content panel-reading" : "panel-tab-content panel-reading is-hidden"}>
@@ -324,8 +324,8 @@ export default function SidePanel({ open, sessionKey, panelState, actions }) {
               <ReloadIcon />
               <span>{translate("panel.reload")}</span>
             </button>
-            <button type="button" className="panel-tool" onClick={openExternally} disabled={!activeTab} title={translate("panel.openInChrome")}>
-              <span>{translate("panel.openInChrome")}</span>
+            <button type="button" className="panel-tool" onClick={openExternally} disabled={!activeTab} title={translate("panel.openInBrowser")}>
+              <span>{translate("panel.openInBrowser")}</span>
             </button>
             <button type="button" className="panel-tool" onClick={actions.hide} title={translate("panel.hide")}>
               <span>{translate("panel.hide")}</span>

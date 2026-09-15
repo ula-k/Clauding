@@ -128,6 +128,31 @@ contextBridge.exposeInMainWorld("clauding", {
   onShowSkills(listener) {
     return subscribe(CHANNELS.skillsShow, listener);
   },
+  // One skill picked in the macOS Skills menu: the window reads it in the
+  // middle column, exactly as a click in the popover does.
+  onReadSkill(listener) {
+    return subscribe(CHANNELS.skillsRead, listener);
+  },
+  // "Scan for skills…": every skill-looking folder on this Mac, grouped by
+  // where it was found. Nothing is copied by the scan itself.
+  scanForSkills(options) {
+    return ipcRenderer.invoke(CHANNELS.skillsScan, options || {});
+  },
+  // Copies the picked candidates into the main skills folder. A folder that
+  // is already there is only replaced when `overwrite` says so.
+  addScannedSkills(candidates, overwrite) {
+    return ipcRenderer.invoke(CHANNELS.skillsScanAdd, { candidates, overwrite: Boolean(overwrite) });
+  },
+  // "Add another place…": one more folder for the scan to look through,
+  // remembered in settings.json.
+  addSkillScanRoot() {
+    return ipcRenderer.invoke(CHANNELS.skillsScanAddRoot);
+  },
+  // The answer to the first-run question about the built-in skill-maker
+  // skill. The question itself is `askAboutBuiltinSkill` in the settings.
+  answerBuiltinSkill(install) {
+    return ipcRenderer.invoke(CHANNELS.skillsSeedAnswer, { install: Boolean(install) });
+  },
   getSystemLanguage() {
     return ipcRenderer.invoke(CHANNELS.systemLanguage);
   },

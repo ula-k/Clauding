@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import PopupMenu from "./PopupMenu.jsx";
-import { GearIcon, SparkIcon } from "./Icons.jsx";
+import { GearIcon, ScanIcon, SparkIcon } from "./Icons.jsx";
 
 // The two window-wide buttons in the top-right of the middle column, next to
 // "Show panel": **Skills** and the settings gear. Neither belongs to a
@@ -13,7 +13,18 @@ import { GearIcon, SparkIcon } from "./Icons.jsx";
 // skill-maker over a conversation ("Harvest skills"), which is a job for a
 // session, not for a form.
 
-function SkillsPopover({ anchor, skillsRoot, skills, loading, onOpenSkill, onReveal, onClose }) {
+function SkillsPopover({
+  anchor,
+  skillsRoot,
+  skills,
+  loading,
+  onOpenSkill,
+  onScanForSkills,
+  onReveal,
+  onClose,
+  skillMakerSeeding,
+  onInstallBuiltinSkill
+}) {
   const { translate } = useTranslation();
   return (
     <PopupMenu anchor={anchor} variant="wide" onClose={onClose}>
@@ -44,6 +55,36 @@ function SkillsPopover({ anchor, skillsRoot, skills, loading, onOpenSkill, onRev
         ))}
       </div>
       <div className="popup-menu-separator" />
+      {/* One main skills folder — but skills are scattered all over a Mac,
+          and this is how the ones worth keeping get into it. */}
+      <button
+        type="button"
+        className="skill-scan-button"
+        onClick={() => {
+          onClose();
+          onScanForSkills();
+        }}
+        data-skills-scan-button
+      >
+        <ScanIcon />
+        {translate("skills.scan")}
+      </button>
+      {/* Offered only to somebody who said "not now" when the app first
+          asked whether it may write the built-in skill. */}
+      {skillMakerSeeding === "declined" && (
+        <button
+          type="button"
+          className="skill-scan-button"
+          onClick={() => {
+            onClose();
+            onInstallBuiltinSkill();
+          }}
+          data-skills-install-builtin
+        >
+          <SparkIcon />
+          {translate("skills.installBuiltin")}
+        </button>
+      )}
       <div className="skill-footer">
         <span className="skill-footer-path" title={skillsRoot}>
           {skillsRoot}
@@ -93,7 +134,16 @@ function SettingsPopover({ anchor, settings, onPickAgentsRoot, onReveal, onClose
   );
 }
 
-export default function WindowTools({ settings, skillsOpen, onSkillsOpenChange, onOpenSkill, onPickAgentsRoot }) {
+export default function WindowTools({
+  settings,
+  skillsOpen,
+  onSkillsOpenChange,
+  onOpenSkill,
+  onScanForSkills,
+  onInstallBuiltinSkill,
+  skillMakerSeeding,
+  onPickAgentsRoot
+}) {
   const { translate } = useTranslation();
   const [skillsAnchor, setSkillsAnchor] = useState(null);
   const [settingsAnchor, setSettingsAnchor] = useState(null);
@@ -168,6 +218,9 @@ export default function WindowTools({ settings, skillsOpen, onSkillsOpenChange, 
           skills={skills}
           loading={loadingSkills}
           onOpenSkill={onOpenSkill}
+          onScanForSkills={onScanForSkills}
+          skillMakerSeeding={skillMakerSeeding}
+          onInstallBuiltinSkill={onInstallBuiltinSkill}
           onReveal={(target) => window.clauding.revealInFinder(target)}
           onClose={closeSkills}
         />
