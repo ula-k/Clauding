@@ -13,7 +13,7 @@
 //                   to migrate. The user may change its emoji and colour;
 //                   deleting it is refused (electron/agents.js) and
 //                   "Restore built-in" puts a missing one back.
-//   * the skill   — copied into <skillsRoot>/skill-maker/SKILL.md, because
+//   * the skills  — copied into <skillsRoot>/<name>/SKILL.md, because
 //                   Claude Code only loads skills from there. This is the
 //                   ONE file the app writes under ~/.claude, so it is not
 //                   written until the user has been asked: the first start
@@ -27,7 +27,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { BUILTIN_SKILL_NAME } from "./skills.js";
+import { BUILTIN_SKILL_NAMES } from "./skills.js";
 
 const electronFolder = path.dirname(fileURLToPath(import.meta.url));
 const builtinFolder = path.join(electronFolder, "..", "builtin");
@@ -44,7 +44,10 @@ export const AGENT_MAKER = {
   definitionFile: path.join(builtinFolder, "agents", "agent-maker", "agent-maker.md")
 };
 
-export const SKILL_MAKER_SOURCE = path.join(builtinFolder, "skills", BUILTIN_SKILL_NAME, "SKILL.md");
+// Where a shipped skill is read from before it is copied into skillsRoot.
+export function builtinSkillSource(skillName) {
+  return path.join(builtinFolder, "skills", skillName, "SKILL.md");
+}
 
 // Every skill-maker text this app has ever seeded, as a SHA-256 of the exact
 // bytes. A file on disk that still hashes to one of them was never touched,
@@ -86,23 +89,24 @@ export function seedBuiltinAgent(agentStore, log) {
   return outcome;
 }
 
-// Puts <skillsRoot>/skill-maker/SKILL.md in place. Returns one of
+// Puts <skillsRoot>/<skillName>/SKILL.md in place. Returns one of
 // "created", "current", "refreshed", "kept" (the user edited it) or
 // "failed" — the same vocabulary refreshStoredPreamble() uses.
-export function seedBuiltinSkill(skillsRoot, log) {
+export function seedBuiltinSkill(skillsRoot, skillName, log) {
   function report(line) {
     if (log) {
       log(`[builtin] ${line}`);
     }
   }
+  const sourceFile = builtinSkillSource(skillName);
   let shipped = "";
   try {
-    shipped = fs.readFileSync(SKILL_MAKER_SOURCE, "utf8");
+    shipped = fs.readFileSync(sourceFile, "utf8");
   } catch (error) {
-    report(`could not read the built-in skill at ${SKILL_MAKER_SOURCE}: ${error.message}`);
-    return { status: "failed", filePath: null };
+    report(`could not read the built-in skill at ${sourceFile}: ${error.message}`);
+    return { status: "failed", skillName, filePath: null };
   }
-  const targetFolder = path.join(skillsRoot, BUILTIN_SKILL_NAME);
+  const targetFolder = path.join(skillsRoot, skillName);
   const targetFile = path.join(targetFolder, "SKILL.md");
   let stored = null;
   try {
@@ -114,37 +118,45 @@ export function seedBuiltinSkill(skillsRoot, log) {
     try {
       fs.mkdirSync(targetFolder, { recursive: true });
       fs.writeFileSync(targetFile, shipped);
-      report(`wrote the built-in skill-maker skill to ${targetFile}`);
-      return { status: "created", filePath: targetFile };
+      report(`wrote the built-in ${skillName} skill to ${targetFile}`);
+      return { status: "created", skillName, filePath: targetFile };
     } catch (writeError) {
       report(`could not write ${targetFile}: ${writeError.message}`);
-      return { status: "failed", filePath: targetFile };
+      return { status: "failed", skillName, filePath: targetFile };
     }
   }
   if (stored === shipped) {
-    return { status: "current", filePath: targetFile };
+    return { status: "current", skillName, filePath: targetFile };
   }
   if (PREVIOUS_BUILTIN_SKILL_HASHES.includes(hashOf(stored))) {
     try {
       fs.writeFileSync(targetFile, shipped);
-      report(`replaced the previous built-in skill-maker in ${targetFile} with the new one`);
-      return { status: "refreshed", filePath: targetFile };
+      report(`replaced the previous built-in ${skillName} in ${targetFile} with the new one`);
+      return { status: "refreshed", skillName, filePath: targetFile };
     } catch (writeError) {
       report(`could not refresh ${targetFile}: ${writeError.message}`);
-      return { status: "failed", filePath: targetFile };
+      return { status: "failed", skillName, filePath: targetFile };
     }
   }
-  report(`${targetFile} differs from the built-in skill-maker — left untouched (the shipped text is in ${SKILL_MAKER_SOURCE})`);
-  return { status: "kept", filePath: targetFile };
+  report(`${targetFile} differs from the built-in ${skillName} — left untouched (the shipped text is in ${sourceFile})`);
+  return { status: "kept", skillName, filePath: targetFile };
 }
 
-// Both of them, at startup and behind "Restore built-in". `skillAnswer` is
+// Every skill the app ships with, in one go.
+export function seedBuiltinSkills(skillsRoot, log) {
+  return BUILTIN_SKILL_NAMES.map((skillName) => seedBuiltinSkill(skillsRoot, skillName, log));
+}
+
+// All of them, at startup and behind "Restore built-in". `skillAnswer` is
 // what settings.json remembers about the question above: only "installed"
-// lets the skill be written. "Restore built-in" passes "installed" itself —
+// lets the skills be written. "Restore built-in" passes "installed" itself —
 // asking for the built-ins back is an answer.
 export function seedBuiltins({ agentStore, skillsRoot, log, skillAnswer = "installed" }) {
   return {
     agent: seedBuiltinAgent(agentStore, log),
-    skill: skillAnswer === "installed" ? seedBuiltinSkill(skillsRoot, log) : { status: "not-asked", filePath: null }
+    skills:
+      skillAnswer === "installed"
+        ? seedBuiltinSkills(skillsRoot, log)
+        : BUILTIN_SKILL_NAMES.map((skillName) => ({ status: "not-asked", skillName, filePath: null }))
   };
 }

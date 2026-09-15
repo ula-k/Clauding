@@ -1466,6 +1466,19 @@ input:focus-visible {
   background: var(--gold-soft);
 }
 
+/* A fork that was opened to do one job types its own first message; when
+   the CLI never got to its prompt, this says so next to the status. */
+.kickoff-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  white-space: nowrap;
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
 /* Fork: next to the status pill, and on the note for a session running
    outside the app (where it is the only thing you can do with it). */
 .fork-button {

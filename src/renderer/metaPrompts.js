@@ -30,6 +30,22 @@ export function harvestSkillsSessionName(originalTitle) {
   return withSuffix(originalTitle, SKILLS_SUFFIX);
 }
 
+// The system prompt says who the fork is; it does not make it start
+// working. The CLI comes up at an empty prompt, so the app types the job in
+// as the *first user message* too (electron/lib/terminalKickoff.js). These
+// are those messages: English like the task lines above, because they are
+// written to Claude and never shown on screen.
+//
+// Both of them open by saying where the session now is. A conversation can
+// have been started in a plain terminal and only taken over by Clauding at
+// the fork, in which case nothing in it has ever mentioned the app or the
+// `clauding` command.
+const INSIDE_CLAUDING =
+  "You are now inside Clauding, a desktop app around Claude Code: your terminal is the middle column, " +
+  "a side panel on the right shows HTML/Markdown/URL tabs, and the `clauding` command is on your PATH " +
+  "(`clauding open <path|url>` shows a page there, `clauding agent add <folder>` registers an agent " +
+  "definition in the app, `clauding tabs`, `clauding panel hide`).";
+
 // "Create agent from this conversation": the fork runs as the Agent Maker,
 // so its definition is already in the prompt; this is only the job.
 export function createAgentTaskPrompt(agentsRoot) {
@@ -46,5 +62,26 @@ export function harvestSkillsTaskPrompt(skillsRoot) {
   return (
     "Your task in this session: run the skill-maker skill over THIS conversation: " +
     `list candidate procedures, ask which to keep, then write them under ${skillsRoot}.`
+  );
+}
+
+// The first message typed into a "Create agent from this conversation" fork.
+export function createAgentKickoffMessage(agentsRoot) {
+  return (
+    `${INSIDE_CLAUDING} ` +
+    `Distil this conversation into a new agent definition under ${agentsRoot}: ` +
+    `propose the agent's name and slug, write ${agentsRoot}/<slug>/<slug>.md following the Agent Maker rules, ` +
+    "show the draft in the side panel with clauding open, and wait for my approval before finalising. " +
+    "Do not describe the Agent Maker itself."
+  );
+}
+
+// The first message typed into a "Harvest skills" fork.
+export function harvestSkillsKickoffMessage(skillsRoot) {
+  return (
+    `${INSIDE_CLAUDING} ` +
+    "Run the skill-maker skill over this conversation: read it whole, " +
+    "list the candidate procedures with one line each, ask me which to keep, " +
+    `then write the kept ones under ${skillsRoot} (one folder per skill with SKILL.md) and show me the list.`
   );
 }

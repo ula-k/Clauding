@@ -17,7 +17,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// The skills the app ships with (builtin/skills/<name>/SKILL.md). They are
+// listed first in the Skills menu and marked as the app's own.
 export const BUILTIN_SKILL_NAME = "skill-maker";
+export const BUILTIN_SKILL_NAMES = [BUILTIN_SKILL_NAME, "clauding-agents"];
 
 const DESCRIPTION_MAX_CHARACTERS = 300;
 const READ_MAX_CHARACTERS = 20000;
@@ -82,11 +85,11 @@ function describeSkill(folderPath) {
     description: description.slice(0, DESCRIPTION_MAX_CHARACTERS),
     folder: folderPath,
     filePath,
-    builtin: folderName === BUILTIN_SKILL_NAME
+    builtin: BUILTIN_SKILL_NAMES.includes(folderName)
   };
 }
 
-// Every <skillsRoot>/<folder>/SKILL.md, the built-in skill-maker first and
+// Every <skillsRoot>/<folder>/SKILL.md, the built-in ones first and
 // the rest by name. Read from disk on every call: the list is short, a
 // session can write a new skill at any moment, and a stale menu would be
 // worse than the read.

@@ -5,7 +5,9 @@ import { disposeInstance, ensureInstance, hasInstance, lastTerminalDimensions, w
 import { groupIdForSession } from "./sessionGrouping.js";
 import { forkDisplayName } from "./forkName.js";
 import {
+  createAgentKickoffMessage,
   createAgentTaskPrompt,
+  harvestSkillsKickoffMessage,
   harvestSkillsSessionName,
   harvestSkillsTaskPrompt,
   newAgentSessionName
@@ -490,7 +492,8 @@ export default function App() {
     forkSession = false,
     sessionName = null,
     agentId = null,
-    taskPrompt = null
+    taskPrompt = null,
+    kickoffMessage = null
   }) => {
     setNewSheetOpen(false);
     // A terminal the user just asked for is what they want to look at.
@@ -506,6 +509,9 @@ export default function App() {
         // The one job this terminal was opened for, if any: it goes at the
         // end of the same prompt file the agent definition is written to.
         taskPrompt,
+        // …and the message the app types in for it once the CLI is at its
+        // prompt, because a system prompt alone starts no turn.
+        kickoffMessage,
         columns: dimensions.columns,
         rows: dimensions.rows,
         openedByClick
@@ -693,7 +699,7 @@ export default function App() {
   // that has one job, and leave the original exactly as it is — the same
   // mechanism the Fork button uses, with a task added to the prompt file.
   const forkForTask = useCallback(
-    ({ sessionId, agentId, sessionName, taskPrompt }) => {
+    ({ sessionId, agentId, sessionName, taskPrompt, kickoffMessage }) => {
       const sourceSessionId = sessionId || (activeTerminal && activeTerminal.sessionId) || selectedSessionId;
       if (!sourceSessionId) {
         return null;
@@ -713,6 +719,7 @@ export default function App() {
         sessionName: sessionName(sourceTitle),
         agentId,
         taskPrompt,
+        kickoffMessage,
         groupId: groupIdForSession(sourceSessionId, groupState.membership, groupState.groups)
       });
     },
@@ -730,7 +737,8 @@ export default function App() {
         sessionId,
         agentId: agentMaker.id,
         sessionName: newAgentSessionName,
-        taskPrompt: createAgentTaskPrompt(settings.agentsRoot)
+        taskPrompt: createAgentTaskPrompt(settings.agentsRoot),
+        kickoffMessage: createAgentKickoffMessage(settings.agentsRoot)
       });
     },
     [agentState, settings, language, forkForTask]
@@ -744,7 +752,8 @@ export default function App() {
         sessionId,
         agentId: null,
         sessionName: harvestSkillsSessionName,
-        taskPrompt: harvestSkillsTaskPrompt(settings.skillsRoot)
+        taskPrompt: harvestSkillsTaskPrompt(settings.skillsRoot),
+        kickoffMessage: harvestSkillsKickoffMessage(settings.skillsRoot)
       });
     },
     [settings, forkForTask]

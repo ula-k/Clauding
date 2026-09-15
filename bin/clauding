@@ -5,6 +5,10 @@
 //   clauding open <path or URL>   open a tab in the right panel
 //   clauding panel show|hide      show or hide the right panel
 //   clauding tabs                 list the open tabs of this session
+//   clauding agent add <folder>   register an agent definition in the app
+//                                 (--name, --emoji, --color override what
+//                                 the app would suggest from the folder)
+//   clauding agent list           the agents registered in the app
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -22,18 +26,43 @@ const [commandName, ...commandArguments] = process.argv.slice(2);
 const FAILURE_VERBS = {
   open: "could not open",
   panel: "could not change the panel",
-  tabs: "could not list the tabs"
+  tabs: "could not list the tabs",
+  "agent add": "could not add agent",
+  "agent list": "could not list the agents"
 };
 
 function failAndExit(reason) {
-  const verb = FAILURE_VERBS[commandName] || "could not run the command";
+  const subcommand = `${commandName} ${commandArguments[0] || ""}`.trim();
+  const verb = FAILURE_VERBS[subcommand] || FAILURE_VERBS[commandName] || "could not run the command";
   process.stderr.write(`clauding: ${verb} — ${reason}\n`);
   process.exit(1);
 }
 
 function usage() {
-  process.stderr.write("usage: clauding open <path or URL> | clauding panel show|hide | clauding tabs\n");
+  process.stderr.write(
+    "usage: clauding open <path or URL> | clauding panel show|hide | clauding tabs\n" +
+      '       clauding agent add <definition folder> [--name "…"] [--emoji "…"] [--color <token>] | clauding agent list\n'
+  );
   process.exit(1);
+}
+
+// `--name "Release Notes Writer" --emoji 📝 --color --project-color-3`:
+// everything the app would otherwise suggest from the definition folder.
+// The value of --color is itself a token starting with two dashes, so a flag
+// always takes the next argument as its value, whatever it looks like.
+const AGENT_FLAGS = { "--name": "name", "--emoji": "emoji", "--color": "color" };
+
+function readAgentFlags(flagArguments) {
+  const values = {};
+  for (let position = 0; position < flagArguments.length; position += 2) {
+    const field = AGENT_FLAGS[flagArguments[position]];
+    const value = flagArguments[position + 1];
+    if (!field || typeof value !== "string") {
+      usage();
+    }
+    values[field] = value;
+  }
+  return values;
 }
 
 function buildRequest() {
@@ -55,6 +84,23 @@ function buildRequest() {
   }
   if (commandName === "tabs") {
     return { ...base, command: "tabs" };
+  }
+  if (commandName === "agent") {
+    const [action, ...rest] = commandArguments;
+    if (action === "list") {
+      if (rest.length > 0) {
+        usage();
+      }
+      return { ...base, command: "agent", action: "list" };
+    }
+    if (action === "add") {
+      const [definitionFolder, ...flagArguments] = rest;
+      if (!definitionFolder) {
+        usage();
+      }
+      return { ...base, command: "agent", action: "add", definitionFolder, ...readAgentFlags(flagArguments) };
+    }
+    return usage();
   }
   return usage();
 }

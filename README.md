@@ -163,6 +163,7 @@ bin/clauding               the `clauding` command put on every terminal's PATH
 electron/smokeFolder.js    where the dev smoke runs work (and what the list hides)
 electron/smokeTerminal.js  CLAUDING_SMOKE_TERMINAL automation (dev only)
 electron/smokeFork.js      CLAUDING_SMOKE_FORK automation for the Fork button (dev only)
+electron/smokeKickoff.js   CLAUDING_SMOKE_KICKOFF: the two meta actions start on their own (dev only)
 electron/smokePreamble.js  CLAUDING_SMOKE_PREAMBLE: the preamble on a resumed session (dev only)
 electron/smokeResize.js    CLAUDING_SMOKE_RESIZE: the two drag handles (dev only)
 electron/recentProjects.js recent project folders from ~/.claude.json for "+ New"
@@ -173,9 +174,11 @@ electron/sessionGroups.js  the user's own groups + hidden sessions (groups.json)
 electron/agents.js         the user's agents + session -> agent links (agents.json)
 electron/settings.js       settings.json: the agents root and the skills folder
 electron/skills.js         reads <skillsRoot>/*/SKILL.md (name + description)
-electron/builtins.js       seeding the built-in Agent Maker and skill-maker
+electron/builtins.js       seeding the built-in Agent Maker and the built-in skills
+electron/lib/terminalKickoff.js  when a fork may be typed into, and what counts as typing
 builtin/agents/agent-maker/agent-maker.md   the Agent Maker's own definition
 builtin/skills/skill-maker/SKILL.md         the skill-maker skill, as shipped
+builtin/skills/clauding-agents/SKILL.md     the `clauding` command, as a skill
 electron/smokeAgents.js    CLAUDING_SMOKE_AGENTS automation for the agents (dev only)
 electron/smokeEmoji.js     CLAUDING_SMOKE_EMOJI: the agent form's emoji field (dev only)
 electron/smokeGroups.js    CLAUDING_SMOKE_GROUPS automation for the list (dev only)
@@ -509,7 +512,21 @@ app opens:
 clauding open <path or URL>     open a tab in the right panel (relative paths: against the caller's cwd)
 clauding panel show|hide        show or hide the panel
 clauding tabs                   list this session's tabs ("*" marks the active one)
+clauding agent add <folder>     register an agent definition in the app
+                                [--name "…"] [--emoji "…"] [--color <token>]
+clauding agent list             the agents registered in the app
 ```
+
+`clauding agent add` is how a session that has just written a definition gets
+it into the Agents tab without the user going through the form: the folder is
+read exactly as the form reads it (definition file `<folder>/<folder>.md`,
+else `README.md`, else the only `.md` there; the name from the `# Agent: …`
+heading, the emoji from the file) and the colour is the **next free** palette
+token, so two agents added in a row never look alike. The three flags
+override those suggestions. A folder that is already registered is refused
+and the refusal names the agent it belongs to, so a repeated call cannot
+produce a second copy. It prints `Added agent "<name>" to Clauding.`, or
+`clauding: could not add agent — <reason>`.
 
 It sends one JSON line to the app's Unix domain socket at
 `~/Library/Application Support/Clauding/clauding.sock` (`net.createServer` in
@@ -535,7 +552,8 @@ wrong: `Opened /path/page.html in the Clauding panel.` from its own terminal,
 `Opened /path/page.html in the Clauding panel (current session).` or
 `(most recent terminal)` from a fallback. Every failure has one shape:
 `clauding: could not open — <reason>` (and `could not change the panel` /
-`could not list the tabs`), on stderr, exit code 1.
+`could not list the tabs` / `could not add agent` / `could not list the
+agents`), on stderr, exit code 1.
 
 The default preamble (`preamble.md`, from `electron/preamble-default.md`)
 tells the session it runs inside Clauding, describes the panel, and says to
@@ -805,6 +823,12 @@ both halves of this ship **inside the app**, in `builtin/`:
   to keep, and writes each kept one as `~/.claude/skills/<slug>/SKILL.md`. One
   procedure per skill, no duplicates of a skill that is already there, no
   secrets.
+* `builtin/skills/clauding-agents/SKILL.md` — the **clauding-agents** skill:
+  what the `clauding` command is for. It tells a session how to register a
+  definition it has just written (`clauding agent add <folder>`, after the
+  user has approved it), that the definition folder is where an agent *reads
+  itself from* and not where it works, and that anything the user has to read
+  goes into the panel with `clauding open`.
 
 ### Seeding (`electron/builtins.js`)
 
@@ -819,23 +843,25 @@ At every start:
   refused by the store even if it is asked for, and the row menu has
   **Restore built-in** instead, which puts the shipped name, emoji, colour and
   definition back.
-* **The skill — only after you say yes.** Writing into somebody's own
+* **The skills — only after you say yes.** Writing into somebody's own
   `~/.claude` without telling them is not something an app should do
   quietly, so the **first start asks**: a small sheet, *"Install the built-in
-  skill-maker?"*, with **Install** and **Not now**. The answer is remembered
+  skills?"*, naming both files, with **Install** and **Not now**. The answer is remembered
   in `settings.json` as `skillMakerSeeding` (`"unanswered"` → `"installed"` /
   `"declined"`) and the question is never asked again; somebody who said no
-  gets **Install built-in skill-maker** at the bottom of the Skills popover,
+  gets **Install built-in skills** at the bottom of the Skills popover,
   and **Restore built-in** counts as a yes. Until then nothing is written.
-  Once installed: if `<skillsRoot>/skill-maker/SKILL.md` is missing it is
-  copied there, with a line in the log. If it is there and **differs** from
+  Once installed: every `<skillsRoot>/<name>/SKILL.md` that is missing
+  (`BUILTIN_SKILL_NAMES` in `electron/skills.js`) is copied there, with a line
+  in the log. If it is there and **differs** from
   the shipped text, it is left exactly as it is (another log line) — the same
   rule `preamble.md` follows, and the same list of SHA-256 hashes
   (`PREVIOUS_BUILTIN_SKILL_HASHES`) that lets an untouched older copy be
   refreshed.
 
 This folder is the one place the app writes under `~/.claude`, and it writes
-one file: Claude Code loads skills from there and nowhere else.
+only its own skills there: Claude Code loads skills from there and nowhere
+else.
 
 ### Settings (`settings.json`)
 
@@ -846,7 +872,7 @@ Two folders, both shown under the **gear** next to the Skills button:
 | `agentsRoot` | `~/Clauding/agents` | where a new agent definition is written, and the folder the app watches; a folder picker changes it |
 | `skillsRoot` | `~/.claude/skills` | where Claude Code reads skills from; shown, not changed here |
 | `skillScanRoots` | `[]` | extra folders **Scan for skills…** looks through, added with a folder picker |
-| `skillMakerSeeding` | `"unanswered"` | whether the built-in skill may be written into `skillsRoot`: asked once on the first start, then `"installed"` or `"declined"` |
+| `skillMakerSeeding` | `"unanswered"` | whether the built-in skills may be written into `skillsRoot`: asked once on the first start, then `"installed"` or `"declined"` |
 
 ### The Skills menu
 
@@ -976,6 +1002,19 @@ skills` whose prompt file ends with
 
 Both buttons are **disabled until the session has an id** (there is nothing to
 fork before that), and say so in their tooltip.
+
+**The kickoff is typed in automatically.** A task in the system prompt gives
+the fork its role but starts no turn — the CLI would come up at an empty
+prompt and wait, which is exactly what "Harvest skills does nothing" was — so
+the app waits for that prompt (session registered, registry idle, no dialog on
+screen; `electron/lib/terminalKickoff.js`) and then types the job in as the
+**first user message**, text first and Enter a moment later, because the CLI
+treats a long chunk as a paste. Both messages open by saying that the session
+is now inside Clauding and what `clauding open` / `clauding agent add` do, so
+a conversation that started in a plain terminal still knows where it is. A
+dialog is waited out, never answered; if the prompt is still not ready after
+60 s nothing is typed and the header says **Type a message to start**. A user
+who types first wins: the kickoff is dropped rather than pasted on top.
 
 ## Scratch sessions are never listed
 
@@ -1184,6 +1223,17 @@ CLAUDING_SMOKE_FORK=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     prints the fork's output tail so any CLI warning about the session being
     in use would show -> fork-busy.png. Exits every terminal and deletes the
     group it borrowed. On failure: fork-failed.png.
+
+CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
+    the two meta actions, in the scratch folder only: opens a terminal, gets
+    a "pong" out of it, then presses the real Harvest skills button
+    ([data-harvest-skills-button]) and waits for the fork to type its own
+    first message (kickoffState "sent") and go busy with nobody touching the
+    keyboard -> harvest-kickoff.png; then back to the original and the same
+    for Create agent ([data-create-agent-button]) -> create-agent-kickoff.png.
+    Run it with its own profile (`--user-data-dir`) whose `agentsRoot` and
+    `skillsRoot` point inside the scratch folder, so the forks write nowhere
+    near the real ones. Exits every terminal. On failure: kickoff-failed.png.
 ```
 
 ## Tests

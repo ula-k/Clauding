@@ -27,8 +27,13 @@ the app has you in the first row of the Agents tab.
    the side panel, and say in one or two sentences what the agent is for.
 6. **Wait for approval.** Do not save the final file until the user says yes.
    Apply their corrections to the same file and let the panel reload it.
-7. **Say where it landed** and remind the user to add it in the Agents tab
-   ("+ Add agent" → pick the folder) if the app has not offered that already.
+7. **Register it.** Once the user has approved the draft, run
+   `clauding agent add <definition folder>` and **report the line it printed**
+   (`Added agent "<name>" to Clauding.`, or the refusal). Add `--name`,
+   `--emoji` or `--color` only when the user asked for something the app would
+   not suggest by itself.
+8. **Say where it landed** — the definition path and the name it is registered
+   under.
 
 ## The sections every definition has
 
@@ -81,8 +86,9 @@ The file starts with `# Agent: <Name> <emoji>` and then:
 ## Out of scope
 
 * Editing the user's existing agents without being asked.
-* Registering the agent in Clauding: the app watches the agents root and
-  offers "Add as agent" itself.
+* Registering an agent the user has not approved. Registering an approved one
+  is your job (`clauding agent add`); the app also watches the agents root and
+  offers "Add as agent" for anything that appears there.
 * Writing skills. Repeatable procedures belong to the **skill-maker** skill,
   and "Harvest skills" runs it over a conversation.
 
@@ -91,3 +97,5 @@ The file starts with `# Agent: <Name> <emoji>` and then:
 * **skill-maker** — when the conversation also contains a repeatable
   procedure, mention it and suggest Harvest skills; do not write the skill
   yourself.
+* **clauding-agents** — the `clauding` command itself: registering a finished
+  definition and showing pages in the side panel.

@@ -123,6 +123,7 @@
   "row.assignToAgent": "Przypisz do agenta",
   "row.noAgent": "Bez agenta",
   "header.menu": "Działania na sesji",
+  "kickoff.typeToStart": "Napisz wiadomość, żeby zacząć",
   "meta.createAgent": "Zrób agenta",
   "meta.createAgentLong": "Zrób agenta z tej rozmowy",
   "meta.createAgentTooltip": "Skopiuj tę rozmowę do nowego terminala i pozwól Twórcy Agentów wydestylować z niej definicję agenta.",
@@ -160,9 +161,9 @@
   "skills.scanSourceClaudeDesktop": "Claude Desktop",
   "skills.scanSourceHermes": "Hermes",
   "skills.scanSourceAdded": "Miejsca dodane przez Ciebie",
-  "skills.installBuiltin": "Zainstaluj wbudowany skill-maker",
-  "builtinSkill.title": "Zainstalować wbudowany skill-maker?",
-  "builtinSkill.text": "Clauding ma w sobie umiejętność, która zamienia rozmowę w umiejętności. Claude Code wczytuje je tylko z Twojego folderu umiejętności, więc musi tam trafić — to jedyny plik, jaki ta aplikacja zapisuje w ~/.claude. Możesz odmówić i zainstalować ją później z menu Umiejętności.",
+  "skills.installBuiltin": "Zainstaluj wbudowane umiejętności",
+  "builtinSkill.title": "Zainstalować wbudowane umiejętności?",
+  "builtinSkill.text": "Clauding ma dwie własne umiejętności: jedna zamienia rozmowę w umiejętności, druga tłumaczy komendę `clauding`, którą sesja rejestruje agenta i pokazuje strony w panelu. Claude Code wczytuje umiejętności tylko z Twojego folderu skills, więc muszą tam trafić — to jedyne pliki, jakie ta aplikacja zapisuje w ~/.claude. Możesz odmówić i zainstalować je później z menu Umiejętności.",
   "builtinSkill.install": "Zainstaluj",
   "builtinSkill.notNow": "Nie teraz"
 }

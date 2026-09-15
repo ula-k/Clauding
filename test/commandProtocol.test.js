@@ -1,5 +1,6 @@
 // CL-11 — what the running app does with one `clauding open` / `clauding
-// panel show|hide` / `clauding tabs` request (electron/lib/commandRequests.js).
+// panel show|hide` / `clauding tabs` / `clauding agent add|list` request
+// (electron/lib/commandRequests.js).
 //
 // The terminal registry is a small fake — no pty, no `claude` — while the
 // panel tab store and the target description are the real ones, working on
@@ -10,7 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createPanelTabStore, describeTarget } from "../electron/panelTabs.js";
-import { createCommandRequestHandler } from "../electron/lib/commandRequests.js";
+import { createCommandRequestHandler, nextFreeAgentColor } from "../electron/lib/commandRequests.js";
+import { AGENT_COLOR_TOKENS } from "../electron/agents.js";
 
 function scratchFolder() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "clauding-test-command-"));
@@ -286,4 +288,124 @@ test("a web address opens as a tab of its own", async () => {
   });
   assert.equal(answer, "Opened https://example.com/ in the Clauding panel.");
   assert.equal(panelTabs.get("session-one").tabs[0].kind, "url");
+});
+
+// `clauding agent add|list`: the app's agent list, reached from a session
+// that has just written a definition. The store is a small fake with the
+// same two calls main.js hands in.
+function fakeAgentList(initialAgents = []) {
+  const registered = initialAgents.slice();
+  return {
+    registered,
+    list() {
+      return registered.map((agent) => ({ ...agent }));
+    },
+    add(draft) {
+      const agent = { id: `agent-${registered.length + 1}`, ...draft };
+      registered.push(agent);
+      return { ...agent };
+    }
+  };
+}
+
+function appWithAgents(agents) {
+  const folder = scratchFolder();
+  const handler = createCommandRequestHandler({
+    terminals: fakeTerminals([terminal({})]),
+    panelTabs: createPanelTabStore({ storagePath: path.join(folder, "panel-tabs.json") }),
+    describeTarget,
+    readPanelSelection() {
+      return {};
+    },
+    agents
+  });
+  return { folder, handler };
+}
+
+function definitionFolderIn(folder, slug, text) {
+  const definitionFolder = path.join(folder, slug);
+  fs.mkdirSync(definitionFolder, { recursive: true });
+  fs.writeFileSync(path.join(definitionFolder, `${slug}.md`), text);
+  return definitionFolder;
+}
+
+test("agent add registers the folder with the name, emoji and colour it suggests", async () => {
+  const agents = fakeAgentList();
+  const { handler, folder } = appWithAgents(agents);
+  const definitionFolder = definitionFolderIn(folder, "release-notes-writer", "# Agent: Release Notes Writer 📝\n\nRole.\n");
+  const answer = await handler.handleCommandRequest({
+    command: "agent",
+    action: "add",
+    definitionFolder: "release-notes-writer",
+    cwd: folder
+  });
+  assert.equal(answer, 'Added agent "Release Notes Writer" to Clauding.');
+  assert.deepEqual(agents.registered.length, 1);
+  const added = agents.registered[0];
+  assert.equal(added.definitionFolder, definitionFolder, "a relative folder is resolved against the caller's cwd");
+  assert.equal(added.definitionFile, path.join(definitionFolder, "release-notes-writer.md"));
+  assert.equal(added.emoji, "📝");
+  assert.equal(added.color, nextFreeAgentColor([]));
+});
+
+test("agent add takes the flags over its own suggestions, and the next free colour", async () => {
+  const agents = fakeAgentList([{ id: "one", name: "Agent Maker", emoji: "🧬", color: AGENT_COLOR_TOKENS[0], definitionFolder: "/elsewhere" }]);
+  const { handler, folder } = appWithAgents(agents);
+  definitionFolderIn(folder, "invoice-checker", "# Agent: Invoice Checker ✅\n");
+  const answer = await handler.handleCommandRequest({
+    command: "agent",
+    action: "add",
+    definitionFolder: path.join(folder, "invoice-checker"),
+    name: "Faktury",
+    emoji: "🧾",
+    cwd: folder
+  });
+  assert.equal(answer, 'Added agent "Faktury" to Clauding.');
+  const added = agents.registered[1];
+  assert.equal(added.name, "Faktury");
+  assert.equal(added.emoji, "🧾");
+  assert.equal(added.color, AGENT_COLOR_TOKENS[1], "the colour the Agent Maker already has is skipped");
+});
+
+test("agent add refuses a folder twice, a folder that is not there and one without a definition", async () => {
+  const agents = fakeAgentList();
+  const { handler, folder } = appWithAgents(agents);
+  const definitionFolder = definitionFolderIn(folder, "spec-writer", "# Agent: Spec Writer 📐\n");
+  await handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder, cwd: folder });
+  await assert.rejects(
+    handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder, cwd: folder }),
+    /already registered as "Spec Writer"/
+  );
+  await assert.rejects(
+    handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder: path.join(folder, "nowhere"), cwd: folder }),
+    /there is no folder at/
+  );
+  fs.mkdirSync(path.join(folder, "empty-one"));
+  await assert.rejects(
+    handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder: path.join(folder, "empty-one"), cwd: folder }),
+    /no Markdown definition file/
+  );
+  assert.equal(agents.registered.length, 1, "nothing was registered by a refused request");
+});
+
+test("agent list prints one line per agent, and says so when there are none", async () => {
+  const agents = fakeAgentList();
+  const { handler, folder } = appWithAgents(agents);
+  assert.equal(
+    await handler.handleCommandRequest({ command: "agent", action: "list" }),
+    "No agents are registered in Clauding yet."
+  );
+  const definitionFolder = definitionFolderIn(folder, "spec-writer", "# Agent: Spec Writer 📐\n");
+  await handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder, cwd: folder });
+  assert.equal(
+    await handler.handleCommandRequest({ command: "agent", action: "list" }),
+    `📐 Spec Writer — ${definitionFolder}`
+  );
+});
+
+test("an agent request without an action, and one to a window with no agent list, are refused", async () => {
+  const { handler } = appWithAgents(fakeAgentList());
+  await assert.rejects(handler.handleCommandRequest({ command: "agent", action: "remove" }), /clauding agent add/);
+  const { handler: panelOnly } = appWith({ terminals: [terminal({})] });
+  await assert.rejects(panelOnly.handleCommandRequest({ command: "agent", action: "list" }), /no agent list/);
 });

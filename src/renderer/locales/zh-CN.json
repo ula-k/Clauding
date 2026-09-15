@@ -123,6 +123,7 @@
   "row.assignToAgent": "指派给智能体",
   "row.noAgent": "不用智能体",
   "header.menu": "会话操作",
+  "kickoff.typeToStart": "输入一条消息即可开始",
   "meta.createAgent": "做一个智能体",
   "meta.createAgentLong": "用这段对话做一个智能体",
   "meta.createAgentTooltip": "把这段对话复制到新终端，让智能体工匠从中提炼出一份智能体定义。",
@@ -160,9 +161,9 @@
   "skills.scanSourceClaudeDesktop": "Claude Desktop",
   "skills.scanSourceHermes": "Hermes",
   "skills.scanSourceAdded": "你添加的位置",
-  "skills.installBuiltin": "安装内置的 skill-maker",
-  "builtinSkill.title": "安装内置的 skill-maker 吗？",
-  "builtinSkill.text": "Clauding 自带一个把对话变成技能的技能。Claude Code 只从你的技能文件夹加载技能，所以它必须写到那里——这是本应用在 ~/.claude 下写入的唯一文件。你可以拒绝，稍后从“技能”菜单安装。",
+  "skills.installBuiltin": "安装内置技能",
+  "builtinSkill.title": "安装内置技能？",
+  "builtinSkill.text": "Clauding 自带两个技能：一个把对话变成技能，另一个讲解 `clauding` 命令——会话用它注册智能体、在右侧面板里显示页面。Claude Code 只从你的 skills 文件夹加载技能，所以它们必须写到那里，这也是本应用在 ~/.claude 下写入的仅有的文件。你可以拒绝，之后再从“技能”菜单安装。",
   "builtinSkill.install": "安装",
   "builtinSkill.notNow": "暂不"
 }

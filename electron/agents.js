@@ -189,10 +189,12 @@ function headingName(definitionText) {
     return "";
   }
   const withoutPrefix = headingMatch[1].replace(/^agent\s*[::]\s*/i, "");
-  // A heading like "# 🚀 Launcher" already lends its emoji to the emoji field,
-  // so the name must not carry it a second time.
+  // A heading like "# 🚀 Launcher" — or "# Agent: Launcher 🚀", the form the
+  // Agent Maker writes — already lends its emoji to the emoji field, so the
+  // name must not carry it a second time, at either end.
   const withoutLeadingEmoji = withoutPrefix.replace(new RegExp("^" + EMOJI_PATTERN.source + "\\s*", "u"), "");
-  return cleanName(withoutLeadingEmoji);
+  const withoutTrailingEmoji = withoutLeadingEmoji.replace(new RegExp("\\s*" + EMOJI_PATTERN.source + "\\s*$", "u"), "");
+  return cleanName(withoutTrailingEmoji);
 }
 
 function firstEmoji(definitionText) {

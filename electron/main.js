@@ -24,12 +24,13 @@ import { runForkSmoke } from "./smokeFork.js";
 import { runCollapseSmoke } from "./smokeCollapse.js";
 import { runAgentsSmoke } from "./smokeAgents.js";
 import { runEmojiSmoke } from "./smokeEmoji.js";
+import { runKickoffSmoke } from "./smokeKickoff.js";
 import { createSessionGroupStore } from "./sessionGroups.js";
 import { createAgentStore, inspectDefinitionFolder, inspectDefinitionFile } from "./agents.js";
 import { createSettingsStore } from "./settings.js";
 import { listSkills } from "./skills.js";
 import { copySkillCandidate, scanForSkillCandidates } from "./skillsScan.js";
-import { builtinAgentDraft, seedBuiltinSkill, seedBuiltins } from "./builtins.js";
+import { builtinAgentDraft, seedBuiltinSkills, seedBuiltins } from "./builtins.js";
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
@@ -75,6 +76,7 @@ const smokePreambleMode = process.env.CLAUDING_SMOKE_PREAMBLE === "1";
 const smokeResizeMode = process.env.CLAUDING_SMOKE_RESIZE === "1";
 const smokeAgentsMode = process.env.CLAUDING_SMOKE_AGENTS === "1";
 const smokeEmojiMode = process.env.CLAUDING_SMOKE_EMOJI === "1";
+const smokeKickoffMode = process.env.CLAUDING_SMOKE_KICKOFF === "1";
 // Any automation at all: the first-run questions stay out of its way.
 const anySmokeMode =
   smokeTerminalMode ||
@@ -84,7 +86,8 @@ const anySmokeMode =
   smokePreambleMode ||
   smokeResizeMode ||
   smokeAgentsMode ||
-  smokeEmojiMode;
+  smokeEmojiMode ||
+  smokeKickoffMode;
 
 let mainWindow = null;
 let stopWatchingLiveStatus = null;
@@ -120,8 +123,8 @@ function clearStalePromptFiles() {
   }
 }
 
-// The one file this app writes under ~/.claude is the built-in skill-maker
-// skill, and it is not written until the user has said yes. The window asks
+// The only files this app writes under ~/.claude are its own built-in
+// skills, and they are not written until the user has said yes. The window asks
 // when the settings it reads say the question is still open — carried in the
 // settings themselves rather than pushed, because a push sent while the
 // renderer is still mounting reaches nobody. A screenshot or smoke run is
@@ -215,6 +218,22 @@ const commandRequests = createCommandRequestHandler({
   },
   onPanelCommand(notice) {
     sendToWindow(CHANNELS.panelCommand, notice);
+  },
+  // `clauding agent add|list`. The store itself is built later in the
+  // start-up (it needs the user-data folder), so it is reached through these
+  // two calls rather than handed in.
+  agents: {
+    list() {
+      return agents ? agents.get().agents : [];
+    },
+    add(draft) {
+      if (!agents) {
+        throw new Error("this window has no agent list.");
+      }
+      const added = agents.addAgent(draft);
+      installApplicationMenu();
+      return added;
+    }
   },
   log(line) {
     console.log(line);
@@ -313,6 +332,20 @@ function createWindow() {
         window: mainWindow,
         registry: terminalRegistry,
         agents,
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeKickoffMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runKickoffSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        settings,
         sendCommand(command) {
           sendToWindow(CHANNELS.smokeCommand, command);
         },
@@ -828,12 +861,12 @@ function registerIpc() {
   });
 
   // "Restore built-in": the Agent Maker goes back to the name, emoji,
-  // colour and definition the app ships with (and the built-in skill is
-  // seeded again if it is missing).
+  // colour and definition the app ships with (and the built-in skills are
+  // seeded again if they are missing).
   ipcMain.handle(CHANNELS.agentsRestoreBuiltin, async () => {
     agents.ensureBuiltinAgent(builtinAgentDraft(), { force: true });
-    // Asking for the built-ins back is itself a yes to the one file under
-    // ~/.claude, so the skill is written whatever the stored answer was.
+    // Asking for the built-ins back is itself a yes to the files under
+    // ~/.claude, so the skills are written whatever the stored answer was.
     settings.update({ skillMakerSeeding: "installed" });
     seedBuiltins({ agentStore: agents, skillsRoot: settings.get().skillsRoot, log: (line) => console.log(line) });
     installApplicationMenu();
@@ -908,15 +941,15 @@ function registerIpc() {
     return settingsForRenderer();
   });
 
-  // The first-run question about the built-in skill-maker. Only a yes
-  // writes the one file this app puts under ~/.claude.
+  // The first-run question about the built-in skills. Only a yes writes
+  // the files this app puts under ~/.claude.
   ipcMain.handle(CHANNELS.skillsSeedAnswer, async (event, { install }) => {
     const current = settings.update({ skillMakerSeeding: install ? "installed" : "declined" });
     if (install) {
-      seedBuiltinSkill(current.skillsRoot, (line) => console.log(line));
+      seedBuiltinSkills(current.skillsRoot, (line) => console.log(line));
       installApplicationMenu();
     } else {
-      console.log("[builtin] the user declined the built-in skill-maker; nothing was written under ~/.claude");
+      console.log("[builtin] the user declined the built-in skills; nothing was written under ~/.claude");
     }
     return settingsForRenderer();
   });
@@ -1142,12 +1175,13 @@ app.whenReady().then(() => {
       console.log(line);
     }
   });
-  // The agent that makes agents and the skill that makes skills ship with
-  // the app, so they exist for everyone: the Agent Maker goes into
-  // agents.json as the first agent. The skill is different — it is written
-  // into the user's own ~/.claude/skills, so it waits for a yes (the window
-  // asks once, see settingsForRenderer); a copy the user edited is never
-  // overwritten either way.
+  // The agent that makes agents, the skill that makes skills and the skill
+  // that explains the `clauding` command ship with the app, so they exist
+  // for everyone: the Agent Maker goes into agents.json as the first agent.
+  // The skills are different — they are written into the user's own
+  // ~/.claude/skills, so they wait for a yes (the window asks once, see
+  // settingsForRenderer); a copy the user edited is never overwritten
+  // either way.
   seedBuiltins({
     agentStore: agents,
     skillsRoot: settings.get().skillsRoot,

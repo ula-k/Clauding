@@ -132,6 +132,22 @@ function ForkButton({ onFork, standalone = false }) {
   );
 }
 
+// A fork opened to do one job types its own first message. When the CLI
+// never got to its prompt in time (a dialog nobody answered, a slow start),
+// nothing was typed — and the header says so, because otherwise the
+// terminal just sits there looking idle.
+function KickoffHint({ terminal }) {
+  const { translate } = useTranslation();
+  if (!terminal || terminal.kickoffState !== "needsMessage") {
+    return null;
+  }
+  return (
+    <span className="kickoff-hint" data-kickoff-hint>
+      {translate("kickoff.typeToStart")}
+    </span>
+  );
+}
+
 function StatusPill({ statusGroup }) {
   const { translate } = useTranslation();
   if (statusGroup === "running") {
@@ -308,6 +324,7 @@ export default function MiddleColumn({
             <EditableTitle title={title} onRename={session ? onRename : null} />
             <AgentChip agent={agent} />
             <StatusPill statusGroup={terminalStatusGroup(terminal, session)} />
+            <KickoffHint terminal={terminal} />
             {onFork && terminal.sessionId && <ForkButton onFork={onFork} />}
             <MetaActionButtons sessionId={sessionId} onCreateAgent={onCreateAgent} onHarvestSkills={onHarvestSkills} />
             <HeaderMenuButton

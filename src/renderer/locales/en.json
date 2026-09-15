@@ -123,6 +123,7 @@
   "row.assignToAgent": "Assign to agent",
   "row.noAgent": "No agent",
   "header.menu": "Session actions",
+  "kickoff.typeToStart": "Type a message to start",
   "meta.createAgent": "Create agent",
   "meta.createAgentLong": "Create agent from this conversation",
   "meta.createAgentTooltip": "Copy this conversation into a new terminal and let the Agent Maker distil it into an agent definition.",
@@ -160,9 +161,9 @@
   "skills.scanSourceClaudeDesktop": "Claude Desktop",
   "skills.scanSourceHermes": "Hermes",
   "skills.scanSourceAdded": "Places you added",
-  "skills.installBuiltin": "Install built-in skill-maker",
-  "builtinSkill.title": "Install the built-in skill-maker?",
-  "builtinSkill.text": "Clauding ships a skill that turns a conversation into skills. Claude Code only loads skills from your skills folder, so it has to be written there — the one file this app puts under ~/.claude. You can say no and install it later from the Skills menu.",
+  "skills.installBuiltin": "Install built-in skills",
+  "builtinSkill.title": "Install the built-in skills?",
+  "builtinSkill.text": "Clauding ships two skills: one turns a conversation into skills, the other explains the `clauding` command a session uses to register an agent and to show pages in the panel. Claude Code only loads skills from your skills folder, so they have to be written there — the only files this app puts under ~/.claude. You can say no and install them later from the Skills menu.",
   "builtinSkill.install": "Install",
   "builtinSkill.notNow": "Not now"
 }

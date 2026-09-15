@@ -18,6 +18,15 @@ import { claudeExecutablePath, supportsAppendSystemPromptFile, terminalEnvironme
 import { buildClaudeArguments, buildTerminalEnvironment } from "./lib/claudeArguments.js";
 import { buildAgentSystemPrompt } from "./agents.js";
 import { isProcessAlive } from "./liveStatus.js";
+import {
+  KICKOFF_ENTER_DELAY_MILLISECONDS,
+  KICKOFF_OUTPUT_CHARACTERS,
+  KICKOFF_POLL_MILLISECONDS,
+  KICKOFF_SETTLE_MILLISECONDS,
+  KICKOFF_TIMEOUT_MILLISECONDS,
+  isPromptReady,
+  looksTypedByHand
+} from "./lib/terminalKickoff.js";
 
 const { CHANNELS } = channels;
 
@@ -162,6 +171,9 @@ export function createTerminalRegistry({
       registryStatus: record.registryStatus,
       openedByClick: record.openedByClick,
       receivedInput: record.receivedInput,
+      // null when this terminal was opened without a first message of its
+      // own; otherwise "waiting", "sent" or "needsMessage" (see deliverKickoff).
+      kickoffState: record.kickoffState,
       exited: record.exited,
       exitCode: record.exitCode
     };
@@ -321,6 +333,60 @@ export function createTerminalRegistry({
     record.promptFilePath = null;
   }
 
+  function pause(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  }
+
+  // A terminal opened to do one job ("Harvest skills", "Create agent from
+  // this conversation") says what the job is in its system prompt — which
+  // gives it a role but starts no turn. So the job is also typed in as the
+  // first user message, as soon as the CLI is at its prompt.
+  //
+  // Nothing is ever typed into a dialog: if the CLI is asking something of
+  // its own, the wait simply continues. After the timeout the terminal is
+  // left exactly as it is and the header asks the user to type something.
+  async function deliverKickoff(record, message) {
+    const deadline = Date.now() + KICKOFF_TIMEOUT_MILLISECONDS;
+    while (Date.now() < deadline) {
+      if (record.exited) {
+        return;
+      }
+      // The user got there first: their line is in the prompt already, and
+      // pasting on top of it would mangle what they wrote.
+      if (record.typedByHand) {
+        record.kickoffState = null;
+        logLine(`${record.terminalId}: the first message was typed by hand, the kickoff was dropped`);
+        announceChange();
+        return;
+      }
+      if (isPromptReady(record, recentPlainOutput(record.terminalId, KICKOFF_OUTPUT_CHARACTERS))) {
+        await pause(KICKOFF_SETTLE_MILLISECONDS);
+        if (record.exited || record.typedByHand) {
+          continue;
+        }
+        // A long message counts as a paste, where Enter is only a newline,
+        // so the text and the Enter are sent separately.
+        record.process.write(message);
+        await pause(KICKOFF_ENTER_DELAY_MILLISECONDS);
+        if (record.exited) {
+          return;
+        }
+        record.process.write("\r");
+        record.kickoffState = "sent";
+        logLine(`${record.terminalId}: kickoff sent (${message.length} characters)`);
+        announceChange();
+        return;
+      }
+      await pause(KICKOFF_POLL_MILLISECONDS);
+    }
+    if (record.exited) {
+      return;
+    }
+    record.kickoffState = "needsMessage";
+    logLine(`${record.terminalId}: the prompt never became ready, the kickoff was not sent`);
+    announceChange();
+  }
+
   // `openedByClick` marks terminals the session list opened on a click (see
   // UNTOUCHED_IDLE_CLOSE_MILLISECONDS); "+ New" terminals are never auto-closed.
   //
@@ -336,6 +402,7 @@ export function createTerminalRegistry({
     sessionName = null,
     agentId = null,
     taskPrompt = null,
+    kickoffMessage = null,
     columns = 100,
     rows = 30,
     openedByClick = false
@@ -350,6 +417,7 @@ export function createTerminalRegistry({
     const agent = agentId && resolveAgent ? resolveAgent(agentId) : null;
     const preamble = readPreamble ? readPreamble() : "";
     const cleanTaskPrompt = typeof taskPrompt === "string" ? taskPrompt.trim() : "";
+    const cleanKickoffMessage = typeof kickoffMessage === "string" ? kickoffMessage.trim() : "";
     // One append, always: the preamble alone, or the preamble followed by
     // who this session is, its whole agent definition and — for a terminal
     // opened to do one job, like "Create agent from this conversation" —
@@ -417,6 +485,10 @@ export function createTerminalRegistry({
       statusChangedAt: Date.now(),
       openedByClick: Boolean(openedByClick),
       receivedInput: false,
+      // Input that is really somebody typing, as opposed to the answers
+      // xterm gives the CLI's own queries: only that cancels a kickoff.
+      typedByHand: false,
+      kickoffState: cleanKickoffMessage ? "waiting" : null,
       exited: false,
       exitCode: null,
       pendingOutput: [],
@@ -433,6 +505,14 @@ export function createTerminalRegistry({
       commandArguments[position - 1] === "--append-system-prompt" ? "…" : argument
     );
     logLine(`${record.terminalId}: spawned claude ${shownArguments.join(" ")} in ${workingDirectory} (pid ${child.pid})`);
+    if (cleanKickoffMessage) {
+      if (dryRunSpawn) {
+        record.kickoffState = null;
+        logLine(`${record.terminalId}: DRY RUN kickoff message: ${cleanKickoffMessage}`);
+      } else {
+        deliverKickoff(record, cleanKickoffMessage);
+      }
+    }
     announceChange();
     updatePoller();
     return publicRecord(record);
@@ -442,6 +522,9 @@ export function createTerminalRegistry({
     const record = terminals.get(terminalId);
     if (record && !record.exited) {
       record.focusedAt = Date.now();
+      if (looksTypedByHand(data)) {
+        record.typedByHand = true;
+      }
       if (!record.receivedInput) {
         record.receivedInput = true;
         announceChange();
