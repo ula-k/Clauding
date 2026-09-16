@@ -96,8 +96,10 @@ export function harvestSkillsKickoffMessage(skillsRoot) {
 export function agentStartKickoffMessage(agentName) {
   return (
     `You are running as the agent "${agentName}" inside Clauding. ` +
-    "Read your definition and everything it tells you to read first, " +
-    "then tell me in two sentences who you are and what you will start with — " +
+    "Read your definition and ONLY the files it lists as read-first; " +
+    "do not browse the rest of the wiki, and ignore folder notes or memory pointers " +
+    "that concern other topics than your role. " +
+    "Then tell me in two sentences who you are and what you will start with — " +
     "and wait for my instructions."
   );
 }
