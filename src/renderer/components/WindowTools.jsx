@@ -4,11 +4,16 @@ import PopupMenu from "./PopupMenu.jsx";
 import { GearIcon, ScanIcon, SparkIcon } from "./Icons.jsx";
 import { checkExtraArguments } from "../../../electron/lib/extraFlags.js";
 
-// The two window-wide buttons in the top-right of the middle column, next to
-// "Show panel": **Skills** and the settings gear. Neither belongs to a
-// session — they are about the machine, not about the conversation — but
-// this is the corner of the window the eye goes to, and the same Skills list
-// hangs in the macOS menu bar.
+// The one window-wide button in the top-right of the middle column, next to
+// "Show panel": the settings gear. It does not belong to a session — it is
+// about the machine, not about the conversation — but this is the corner of
+// the window the eye goes to.
+//
+// Skills had a button of their own here and lost it: the list is one click
+// away in the macOS **Skills** menu and at the bottom of the terminal
+// header's "…", and the header is worth more to a title than to a button
+// nobody presses. The popover is still opened from here, hanging off the
+// gear, so both of those still have somewhere to open.
 //
 // Skills are shown, never edited here: a skill is written by running the
 // skill-maker over a conversation ("Harvest skills"), which is a job for a
@@ -201,16 +206,17 @@ export default function WindowTools({
   const [settingsAnchor, setSettingsAnchor] = useState(null);
   const [skills, setSkills] = useState([]);
   const [loadingSkills, setLoadingSkills] = useState(false);
-  const skillsButtonRef = useRef(null);
   const settingsButtonRef = useRef(null);
 
   // The folder is read every time the list is opened, so a skill written a
-  // minute ago by a "Harvest skills" session is already there.
+  // minute ago by a "Harvest skills" session is already there. The list
+  // hangs off the gear: the Skills button it used to hang off is gone, and
+  // the gear is the one thing still standing in that corner.
   const openSkills = useCallback(() => {
-    if (!skillsButtonRef.current) {
+    if (!settingsButtonRef.current) {
       return;
     }
-    setSkillsAnchor(skillsButtonRef.current.getBoundingClientRect());
+    setSkillsAnchor(settingsButtonRef.current.getBoundingClientRect());
     setLoadingSkills(true);
     window.clauding
       .listSkills()
@@ -251,18 +257,7 @@ export default function WindowTools({
     <>
       <button
         type="button"
-        className={skillsAnchor ? "header-tool-button is-open" : "header-tool-button"}
-        ref={skillsButtonRef}
-        title={translate("skills.tooltip")}
-        onClick={() => (skillsAnchor ? closeSkills() : openSkills())}
-        data-skills-button
-      >
-        <SparkIcon />
-        {translate("skills.button")}
-      </button>
-      <button
-        type="button"
-        className={settingsAnchor ? "header-tool-button is-icon is-open" : "header-tool-button is-icon"}
+        className={settingsAnchor || skillsAnchor ? "header-tool-button is-icon is-open" : "header-tool-button is-icon"}
         ref={settingsButtonRef}
         title={translate("settings.title")}
         aria-label={translate("settings.title")}

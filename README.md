@@ -37,8 +37,8 @@ row is clicked.
   the app: **Agent Maker** is the first row of the Agents tab, **skill-maker**
   is seeded into your skills folder. **Create agent** turns the conversation
   you are in into a new agent definition, **Harvest skills** turns it into
-  skills, and **Skills** in the menu bar (and in the window's top-right)
-  lists every skill on the Mac with its description. Clicking one **reads it
+  skills, and **Skills** in the menu bar (and at the bottom of the terminal
+  header's "…") lists every skill on the Mac with its description. Clicking one **reads it
   over the terminal** — the terminal keeps running underneath — and **Scan
   for skills…** looks through the rest of the Mac for skills worth copying
   into your skills folder.
@@ -242,6 +242,7 @@ src/renderer/              React 18 + Vite (JSX), styles/theme.css holds every c
 src/renderer/terminalInstances.js  the xterm.js instances, kept alive outside React
 src/renderer/components/TerminalPane.jsx   the visible terminal (fit + focus)
 src/renderer/components/MiddleColumn.jsx   header + terminal, or the short note for a session running elsewhere
+src/renderer/toolbarFit.js         which header controls stay on the one line and which fall into the "…"
 src/renderer/components/SidePanel.jsx      the right panel: tab strip, toolbar, webview / markdown tabs
 src/renderer/components/SessionsColumn.jsx the left column: groups, rows, "+ group", "Hidden (N)"
 src/renderer/components/GroupHeader.jsx    one group header: name, count, "+", "…" menu, drop target
@@ -256,7 +257,7 @@ src/renderer/components/AssignAgentDialog.jsx  the "Assign to agent" question, a
 src/renderer/assignmentPlan.js     what each of that dialog's buttons means (write the link? restart?)
 src/renderer/components/DeleteSessionDialog.jsx  the one destructive confirmation: delete a session
 src/renderer/components/AgentPickerSheet.jsx     "More…": every agent, with a search box
-src/renderer/components/WindowTools.jsx    the Skills and settings popovers (top-right)
+src/renderer/components/WindowTools.jsx    the settings gear (top-right) and the Skills + settings popovers
 src/renderer/components/DocumentReader.jsx a skill / an agent definition read over the terminal
 src/renderer/components/SkillsScanSheet.jsx  "Scan for skills…": candidates found on the Mac
 src/renderer/components/BuiltinSkillSheet.jsx  the first-run question about the built-in skill
@@ -432,6 +433,47 @@ binary matches; if that fails it runs `electron-rebuild --only node-pty`
 automatically. `npm run rebuild` forces that compile (needs the Xcode command
 line tools; takes about a minute). Both paths were verified on this Mac.
 
+## The terminal header: one line
+
+The header is **one line, never two**. Left to right: the **title** (click to
+rename, truncates with an ellipsis, never narrower than 160 px), then the
+controls, then the **"…"**, the **settings gear** and **Hide / Show panel**.
+Under it sits a second, purely informational line: the project folder (its
+tooltip names the flags this terminal really started with) and the git
+branch. That line is not a toolbar and nothing ever moves out of it.
+
+What does not fit goes into the "…", and **nothing is ever in both places**.
+The rule is measured, not guessed (`src/renderer/toolbarFit.js`, dry-tested
+in `test/toolbarFit.test.js`):
+
+* every control is drawn once and read back inside a layout effect, so the
+  measuring pass is over before the window is painted; the widths are kept
+  and only re-taken when the controls or the language change;
+* a `ResizeObserver` on the row supplies the width it has to fit in;
+* `fitToolbar()` keeps controls **from the highest priority down** for as
+  long as they fit — where a control is drawn has nothing to do with whether
+  it is kept — and the first one refused stops the line, so a small
+  unimportant control never jumps in over a big important one.
+
+The order, most important first: **Hide / Show panel**, the **settings
+gear** (neither is ever hidden — they are the corner the eye goes to), the
+**agent chip**, the **status pill**, **Fork**, **Create agent**, **Harvest
+skills**. **Skills** has no button at all any more: it is at the bottom of
+the "…" and in the macOS **Skills** menu.
+
+The "…" holds, in this order:
+
+1. whatever overflowed, most important first — a button as a menu item, and
+   the agent chip or the status pill **as themselves**, because they were
+   never buttons and a menu row that cannot be clicked would be a lie;
+2. a separator;
+3. the session actions that were never buttons: **Extra claude flags…**,
+   **Assign to agent ▸**, **Delete session…**, **Skills**, **Rename
+   session**.
+
+Because that second group is always there, the "…" is always on the header —
+it is the only way to those five.
+
 ## Fork
 
 Claude Code can fork a conversation, but a fork in one window would replace
@@ -440,6 +482,8 @@ the middle column, **the original keeps running, untouched**, and both rows
 sit in the list.
 
 A **Fork** button lives in the terminal header, right of the status pill
+(or, on a narrow window, in the header's "…" — see **The terminal header:
+one line**)
 (tooltip: *"Start a copy of this conversation in a new terminal; this one
 stays as it is."*). It appears as soon as the terminal has a session id. The
 same button is on the note for a session running in a terminal or job
@@ -1055,8 +1099,11 @@ Two folders, both shown under the **gear** next to the Skills button:
 
 ### The Skills menu
 
-The same list in two places: a **Skills** menu in the macOS menu bar and a
-**Skills** button in the window's top-right, next to "Show panel". Both read
+The same list in two places: a **Skills** menu in the macOS menu bar and
+**Skills** at the bottom of the terminal header's "…". (It had a button of
+its own in the window's top-right and lost it: see **The terminal header:
+one line**. The popover now hangs off the gear, which is where the macOS
+menu opens it too.) Both read
 `<skillsRoot>/*/SKILL.md` **every time they are opened** (the list is short and
 a session can write a skill at any moment) and show the `name` and
 `description` from each file's frontmatter, falling back to the folder name and
@@ -1130,8 +1177,9 @@ folder that is already there is never replaced without a confirmation.
 
 ### Attaching a session to an agent
 
-A row's `…` menu and the terminal header's `…` both have **Assign to agent**:
-**No agent** at the top, then the agents themselves — **at most ten**, the
+A row's `…` menu and the terminal header's `…` both have **Assign to agent**
+(in the header it is a submenu, **Assign to agent ▸**, so the header's menu
+stays short): **No agent** at the top, then the agents themselves — **at most ten**, the
 ones most likely to be wanted. The order is how much each agent is used (the
 sessions linked to it in `sessionAgents`, plus the terminals running as it
 right now), ties going to whichever was used last (`lastUsedAt` in
@@ -1328,6 +1376,13 @@ CLAUDING_SCREENSHOT_WAIT=20000 ...                       # wait this many ms mor
 CLAUDING_SCREENSHOT_RESUME=<sessionId> ...                # that terminal resumes this session, so it
                                                          # has a session id at once (with
                                                          # CLAUDING_DRY_SPAWN=1 the id may be invented)
+CLAUDING_SCREENSHOT_AGENT=<agentId> ...                   # that terminal is opened as this agent, so
+                                                         # the header carries its chip
+CLAUDING_SCREENSHOT_WIDTH=1000 CLAUDING_SCREENSHOT_HEIGHT=900 ...
+                                                         # the window opens this big instead of
+                                                         # 1440x900 (1000 is its minimum width),
+                                                         # for photographing a header at the widths
+                                                         # it has to survive
 CLAUDING_SCREENSHOT_CLICK='[data-agents-tab]>>[data-add-agent]' ...
                                                          # click these selectors in order first
                                                          # (a tab, a sheet, a menu item), so any
@@ -1437,7 +1492,8 @@ CLAUDING_SMOKE_AGENTS=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 CLAUDING_SMOKE_ASSIGN=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     "Assign to agent" end to end, in the scratch folder only: writes a small
     definition ("begin every reply with SCRATCH"), adds it as an agent,
-    starts a real session with no agent, opens the header menu and picks
+    starts a real session with no agent, opens the header menu, opens its
+    "Assign to agent" submenu and picks
     that agent -> assign-dialog.png with nothing written yet; presses Cancel
     and checks that agents.json, the row badge and the header chip are all
     unchanged -> assign-cancelled.png; opens the dialog again and presses
@@ -1513,7 +1569,8 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: dry unit tests of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, i18n key sets, the installer script). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-18`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
+`npm test` runs `node --test test/*.test.js`: dry unit tests of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the terminal header's one-line fit, i18n key
+sets, the installer script). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-18`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
 
 ## License
 

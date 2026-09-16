@@ -1,12 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { folderLabel } from "../paths.js";
 import TerminalPane from "./TerminalPane.jsx";
 import DocumentReader from "./DocumentReader.jsx";
 import { DotsIcon, FolderIcon, ForkIcon, PencilIcon, SparkIcon } from "./Icons.jsx";
-import PopupMenu, { MenuItem, MenuLabel, MenuSeparator } from "./PopupMenu.jsx";
+import PopupMenu, { MenuItem, MenuLabel, MenuNote, MenuSeparator, MenuSubmenu } from "./PopupMenu.jsx";
 import { AgentChip } from "./AgentBadge.jsx";
 import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
+import { fitToolbar, HEADER_ITEM_PRIORITY } from "../toolbarFit.js";
+
+// The title never gets squeezed below this; it truncates with an ellipsis
+// instead, and the controls to its right fall into the "…" one by one.
+const TITLE_MINIMUM_WIDTH = 160;
+// The `gap` of .header-top, counted with each control it follows.
+const HEADER_ITEM_GAP = 12;
 
 // "Create agent from this conversation" and "Harvest skills": both fork the
 // conversation into a second terminal that does one job — the Agent Maker
@@ -14,53 +21,42 @@ import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
 // looking for the procedures in it. Neither can run before the CLI has
 // registered a session id, because there is nothing to fork yet; until then
 // the buttons are disabled and say why.
-function MetaActionButtons({ sessionId, onCreateAgent, onHarvestSkills }) {
-  const { translate } = useTranslation();
-  const disabled = !sessionId;
+function MetaActionButton({ label, tooltip, disabled, onClick, marker }) {
+  const attributes = marker === "create-agent" ? { "data-create-agent-button": true } : { "data-harvest-skills-button": true };
   return (
-    <>
-      <button
-        type="button"
-        className="fork-button"
-        disabled={disabled}
-        title={translate(disabled ? "meta.waitForSession" : "meta.createAgentTooltip")}
-        onClick={onCreateAgent}
-        data-create-agent-button
-      >
-        <SparkIcon />
-        {translate("meta.createAgent")}
-      </button>
-      <button
-        type="button"
-        className="fork-button"
-        disabled={disabled}
-        title={translate(disabled ? "meta.waitForSession" : "meta.harvestSkillsTooltip")}
-        onClick={onHarvestSkills}
-        data-harvest-skills-button
-      >
-        {translate("meta.harvestSkills")}
-      </button>
-    </>
+    <button type="button" className="fork-button" disabled={disabled} title={tooltip} onClick={onClick} {...attributes}>
+      {marker === "create-agent" && <SparkIcon />}
+      {label}
+    </button>
   );
 }
 
-// The header's own "…": which agent this session is assigned to, and the
-// two meta actions again, for the people who look for them in a menu.
+// The header's own "…": everything the header had no room for, and under a
+// separator the session actions that were never buttons in the first place
+// — the flags, the agent this session is assigned to, deleting it, the
+// skills list, renaming it.
 function HeaderMenuButton({
+  overflowedItems,
   sessionId,
   agents,
   currentAgentId,
   runsElsewhere,
   onAssignAgent,
   onOpenAgentPicker,
-  onCreateAgent,
-  onHarvestSkills,
   onEditSessionFlags,
-  onDeleteSession
+  onDeleteSession,
+  onOpenSkills,
+  onRenameSession
 }) {
   const { translate } = useTranslation();
   const [menuAnchor, setMenuAnchor] = useState(null);
   const menuButtonRef = useRef(null);
+
+  function runAndClose(action) {
+    setMenuAnchor(null);
+    action();
+  }
+
   return (
     <>
       <button
@@ -76,91 +72,81 @@ function HeaderMenuButton({
       </button>
       {menuAnchor && (
         <PopupMenu anchor={menuAnchor} onClose={() => setMenuAnchor(null)}>
-          <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
-          <MenuItem
-            marker="assign-none"
-            selected={!currentAgentId}
-            onClick={() => {
-              setMenuAnchor(null);
-              onAssignAgent(sessionId, null);
-            }}
-          >
-            {translate("row.noAgent")}
-          </MenuItem>
-          {agents.slice(0, MENU_AGENT_LIMIT).map((agent) => (
-            <MenuItem
-              key={agent.id}
-              marker={`assign-${agent.id}`}
-              selected={agent.id === currentAgentId}
-              onClick={() => {
-                setMenuAnchor(null);
-                onAssignAgent(sessionId, agent.id);
-              }}
-            >
-              {`${agent.emoji} ${agent.name}`}
-            </MenuItem>
-          ))}
-          {agents.length > MENU_AGENT_LIMIT && onOpenAgentPicker && (
-            <MenuItem
-              marker="assign-more"
-              onClick={() => {
-                setMenuAnchor(null);
-                onOpenAgentPicker(sessionId);
-              }}
-            >
-              {translate("agents.more")}
-            </MenuItem>
+          {/* What the line had no room for, most important first. The chip
+              and the pill come across as themselves — they were never
+              buttons, and a menu row that cannot be clicked would be a lie. */}
+          {overflowedItems.map((item) =>
+            item.menu ? (
+              <MenuItem
+                key={item.id}
+                marker={item.id}
+                disabled={Boolean(item.menu.disabled)}
+                title={item.menu.tooltip || null}
+                onClick={() => runAndClose(item.menu.onClick)}
+              >
+                {item.menu.label}
+              </MenuItem>
+            ) : (
+              <MenuNote key={item.id} marker={item.id}>
+                {item.node}
+              </MenuNote>
+            )
           )}
-          <MenuSeparator />
-          <MenuItem
-            disabled={!sessionId}
-            onClick={() => {
-              setMenuAnchor(null);
-              onCreateAgent();
-            }}
-          >
-            {translate("meta.createAgentLong")}
-          </MenuItem>
-          <MenuItem
-            disabled={!sessionId}
-            onClick={() => {
-              setMenuAnchor(null);
-              onHarvestSkills();
-            }}
-          >
-            {translate("meta.harvestSkills")}
-          </MenuItem>
+          {overflowedItems.length > 0 && <MenuSeparator />}
           {onEditSessionFlags && (
-            <>
-              <MenuSeparator />
-              <MenuItem
-                marker="session-flags"
-                disabled={!sessionId}
-                onClick={() => {
-                  setMenuAnchor(null);
-                  onEditSessionFlags(sessionId);
-                }}
-              >
-                {translate("flags.sessionMenu")}
-              </MenuItem>
-            </>
+            <MenuItem
+              marker="session-flags"
+              disabled={!sessionId}
+              onClick={() => runAndClose(() => onEditSessionFlags(sessionId))}
+            >
+              {translate("flags.sessionMenu")}
+            </MenuItem>
           )}
-          {onDeleteSession && (
-            <>
-              <MenuSeparator />
+          <MenuSubmenu label={translate("row.assignToAgent")} marker="assign-agent">
+            <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
+            <MenuItem
+              marker="assign-none"
+              selected={!currentAgentId}
+              onClick={() => runAndClose(() => onAssignAgent(sessionId, null))}
+            >
+              {translate("row.noAgent")}
+            </MenuItem>
+            {agents.slice(0, MENU_AGENT_LIMIT).map((agent) => (
               <MenuItem
-                marker="delete-session"
-                tone="danger"
-                disabled={!sessionId || runsElsewhere}
-                title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint")}
-                onClick={() => {
-                  setMenuAnchor(null);
-                  onDeleteSession(sessionId);
-                }}
+                key={agent.id}
+                marker={`assign-${agent.id}`}
+                selected={agent.id === currentAgentId}
+                onClick={() => runAndClose(() => onAssignAgent(sessionId, agent.id))}
               >
-                {translate("row.delete")}
+                {`${agent.emoji} ${agent.name}`}
               </MenuItem>
-            </>
+            ))}
+            {agents.length > MENU_AGENT_LIMIT && onOpenAgentPicker && (
+              <MenuItem marker="assign-more" onClick={() => runAndClose(() => onOpenAgentPicker(sessionId))}>
+                {translate("agents.more")}
+              </MenuItem>
+            )}
+          </MenuSubmenu>
+          {onDeleteSession && (
+            <MenuItem
+              marker="delete-session"
+              tone="danger"
+              disabled={!sessionId || runsElsewhere}
+              title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint")}
+              onClick={() => runAndClose(() => onDeleteSession(sessionId))}
+            >
+              {translate("row.delete")}
+            </MenuItem>
+          )}
+          {onOpenSkills && (
+            <MenuItem marker="skills" title={translate("skills.tooltip")} onClick={() => runAndClose(onOpenSkills)}>
+              {translate("skills.button")}
+            </MenuItem>
+          )}
+          {onRenameSession && (
+            <MenuItem marker="rename-session" onClick={() => runAndClose(onRenameSession)}>
+              {translate("row.rename")}
+            </MenuItem>
           )}
         </PopupMenu>
       )}
@@ -192,11 +178,8 @@ function ForkButton({ onFork, standalone = false }) {
 // never got to its prompt in time (a dialog nobody answered, a slow start),
 // nothing was typed — and the header says so, because otherwise the
 // terminal just sits there looking idle.
-function KickoffHint({ terminal }) {
+function KickoffHint() {
   const { translate } = useTranslation();
-  if (!terminal || terminal.kickoffState !== "needsMessage") {
-    return null;
-  }
   return (
     <span className="kickoff-hint" data-kickoff-hint>
       {translate("kickoff.typeToStart")}
@@ -204,18 +187,26 @@ function KickoffHint({ terminal }) {
   );
 }
 
-function StatusPill({ statusGroup }) {
-  const { translate } = useTranslation();
+function statusText(statusGroup, translate) {
   if (statusGroup === "running") {
-    return <span className="status-pill is-running">{translate("status.running")}</span>;
+    return translate("status.running");
   }
   if (statusGroup === "waiting") {
-    return <span className="status-pill is-waiting">{translate("status.waiting")}</span>;
+    return translate("status.waiting");
   }
-  return <span className="status-pill">{translate("status.idle")}</span>;
+  return translate("status.idle");
 }
 
-function EditableTitle({ title, onRename }) {
+function StatusPill({ statusGroup }) {
+  const { translate } = useTranslation();
+  const className =
+    statusGroup === "running" ? "status-pill is-running" : statusGroup === "waiting" ? "status-pill is-waiting" : "status-pill";
+  return <span className={className}>{statusText(statusGroup, translate)}</span>;
+}
+
+// `renameRequest` is the "Rename…" item of the "…" menu: a counter, because
+// the same request can be made twice in a row.
+function EditableTitle({ title, onRename, renameRequest }) {
   const { translate } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(title);
@@ -225,6 +216,12 @@ function EditableTitle({ title, onRename }) {
       setDraftTitle(title);
     }
   }, [title, editing]);
+
+  useEffect(() => {
+    if (renameRequest > 0 && onRename) {
+      setEditing(true);
+    }
+  }, [renameRequest, onRename]);
 
   function commit() {
     const trimmed = draftTitle.trim();
@@ -262,6 +259,102 @@ function EditableTitle({ title, onRename }) {
       {title}
       {onRename && <PencilIcon />}
     </h1>
+  );
+}
+
+// One line, never two. The title takes what is left, the controls are kept
+// from the most important down for as long as they fit, and the rest go
+// into the "…" — never into both places.
+//
+// The widths are measured, not guessed: on the first render (and whenever
+// the controls or the language change) every control is drawn and read
+// back, inside a layout effect, so the measuring pass is over before the
+// window is painted. Only the available width changes on a resize, and a
+// ResizeObserver supplies that; the measured widths are kept.
+function HeaderToolbar({ titleNode, items, signature, trailing, renderMenuButton }) {
+  const rowRef = useRef(null);
+  const trailingRef = useRef(null);
+  const menuButtonRef = useRef(null);
+  const [rowWidth, setRowWidth] = useState(0);
+  const [measurement, setMeasurement] = useState(null);
+  const measuring = !measurement || measurement.signature !== signature;
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) {
+      return;
+    }
+    const currentWidth = row.getBoundingClientRect().width;
+    // A header inside a `display: none` stack (the reader is over the
+    // terminal) measures as nothing: keep what was measured while it was
+    // on screen rather than throwing it away.
+    if (currentWidth <= 0) {
+      return;
+    }
+    setRowWidth(currentWidth);
+    if (!measuring) {
+      return;
+    }
+    const widths = {
+      trailing: trailingRef.current ? trailingRef.current.getBoundingClientRect().width : 0,
+      menuButton: menuButtonRef.current ? menuButtonRef.current.getBoundingClientRect().width : 0
+    };
+    for (const node of row.querySelectorAll("[data-toolbar-item]")) {
+      widths[node.dataset.toolbarItem] = node.getBoundingClientRect().width;
+    }
+    setMeasurement({ signature, widths });
+  });
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const measured = entries[0].contentRect.width;
+      if (measured > 0) {
+        setRowWidth(measured);
+      }
+    });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, []);
+
+  // The "…" is always on the header: besides whatever overflowed, it holds
+  // the session actions that were never buttons (the flags, the agent,
+  // Delete session…, Skills, Rename…). So its width is taken off the top
+  // instead of being reserved only on overflow.
+  const widths = measurement ? measurement.widths : null;
+  const fitted =
+    measuring || !widths || rowWidth <= 0
+      ? { visible: items.map((item) => item.id), overflowed: [] }
+      : fitToolbar({
+          availableWidth: rowWidth - TITLE_MINIMUM_WIDTH - widths.trailing - widths.menuButton - HEADER_ITEM_GAP,
+          items: items.map((item) => ({
+            id: item.id,
+            priority: item.priority,
+            width: (widths[item.id] || 0) + HEADER_ITEM_GAP
+          })),
+          overflowButtonWidth: 0
+        });
+  const visibleItems = items.filter((item) => fitted.visible.includes(item.id));
+  const overflowedItems = fitted.overflowed.map((id) => items.find((item) => item.id === id));
+
+  return (
+    <div className="header-top" ref={rowRef}>
+      {titleNode}
+      {visibleItems.map((item) => (
+        <span className="header-item" key={item.id} data-toolbar-item={item.id}>
+          {item.node}
+        </span>
+      ))}
+      <span className="header-item" ref={menuButtonRef}>
+        {renderMenuButton(overflowedItems)}
+      </span>
+      <span className="header-item header-trailing" ref={trailingRef}>
+        {trailing}
+      </span>
+    </div>
   );
 }
 
@@ -305,12 +398,14 @@ export default function MiddleColumn({
   onHarvestSkills,
   onEditSessionFlags,
   onDeleteSession,
+  onOpenSkills,
   reader,
   onCloseReader,
   onOpenReaderInPanel,
   windowTools
 }) {
-  const { translate } = useTranslation();
+  const { translate, language } = useTranslation();
+  const [renameRequest, setRenameRequest] = useState(0);
   const mode = columnMode({ session, terminal });
   const sessionId = (terminal && terminal.sessionId) || (session && session.sessionId) || null;
   // With the reader open the window tools move into its header, so they are
@@ -376,6 +471,93 @@ export default function MiddleColumn({
   // no control of their own: the folder's tooltip says them.
   const extraArgumentsText = terminal && terminal.extraArguments ? terminal.extraArguments.join(" ") : "";
 
+  const statusGroup = terminalStatusGroup(terminal, session);
+  const agentStarting = Boolean(terminal && terminal.agentId && terminal.kickoffState === "waiting");
+  const needsFirstMessage = Boolean(terminal && terminal.kickoffState === "needsMessage");
+  const metaDisabled = !sessionId;
+  const metaTooltipKey = metaDisabled ? "meta.waitForSession" : null;
+
+  // Ula's order, highest first: the agent chip, then the status, then Fork,
+  // then the two meta actions. Above all of them and never hidden: the
+  // settings gear and Hide/Show panel, which live in `trailing`.
+  const headerItems = [
+    agent
+      ? {
+          id: "agent",
+          priority: HEADER_ITEM_PRIORITY.agentChip,
+          label: `${agent.emoji}${agent.name}${agentDefinitionPending}${agentStarting}`,
+          node: <AgentChip agent={agent} definitionPending={agentDefinitionPending} starting={agentStarting} />
+        }
+      : null,
+    needsFirstMessage
+      ? {
+          id: "kickoff",
+          priority: HEADER_ITEM_PRIORITY.kickoffHint,
+          label: "kickoff",
+          node: <KickoffHint />
+        }
+      : null,
+    {
+      id: "status",
+      priority: HEADER_ITEM_PRIORITY.statusPill,
+      label: statusGroup,
+      node: <StatusPill statusGroup={statusGroup} />
+    },
+    onFork && terminal.sessionId
+      ? {
+          id: "fork",
+          priority: HEADER_ITEM_PRIORITY.fork,
+          label: "fork",
+          node: <ForkButton onFork={onFork} />,
+          menu: { label: translate("fork.button"), tooltip: translate("fork.tooltip"), onClick: onFork }
+        }
+      : null,
+    {
+      id: "createAgent",
+      priority: HEADER_ITEM_PRIORITY.createAgent,
+      label: `createAgent${metaDisabled}`,
+      node: (
+        <MetaActionButton
+          marker="create-agent"
+          label={translate("meta.createAgent")}
+          tooltip={translate(metaTooltipKey || "meta.createAgentTooltip")}
+          disabled={metaDisabled}
+          onClick={onCreateAgent}
+        />
+      ),
+      menu: {
+        label: translate("meta.createAgentLong"),
+        tooltip: translate(metaTooltipKey || "meta.createAgentTooltip"),
+        disabled: metaDisabled,
+        onClick: onCreateAgent
+      }
+    },
+    {
+      id: "harvestSkills",
+      priority: HEADER_ITEM_PRIORITY.harvestSkills,
+      label: `harvestSkills${metaDisabled}`,
+      node: (
+        <MetaActionButton
+          marker="harvest-skills"
+          label={translate("meta.harvestSkills")}
+          tooltip={translate(metaTooltipKey || "meta.harvestSkillsTooltip")}
+          disabled={metaDisabled}
+          onClick={onHarvestSkills}
+        />
+      ),
+      menu: {
+        label: translate("meta.harvestSkills"),
+        tooltip: translate(metaTooltipKey || "meta.harvestSkillsTooltip"),
+        disabled: metaDisabled,
+        onClick: onHarvestSkills
+      }
+    }
+  ].filter(Boolean);
+
+  // Re-measure when what is written on the controls can have changed —
+  // never on a resize, where only the room they have to fit in changes.
+  const signature = [language, panelOpen, Boolean(underTools), ...headerItems.map((item) => `${item.id}:${item.label}`)].join("|");
+
   // The terminal stays mounted while the reader is on top of it: unmounting
   // TerminalPane would detach the xterm instance and the scrollback would
   // scroll back into view from the top. Only its wrapper is hidden.
@@ -384,34 +566,36 @@ export default function MiddleColumn({
       {readerPane}
       <div className={reader ? "terminal-stack is-hidden" : "terminal-stack"} data-terminal-stack={reader ? "hidden" : "shown"}>
         <header className="transcript-header">
-          <div className="header-top">
-            <EditableTitle title={title} onRename={session ? onRename : null} />
-            <AgentChip
-              agent={agent}
-              definitionPending={agentDefinitionPending}
-              starting={Boolean(terminal && terminal.agentId && terminal.kickoffState === "waiting")}
-            />
-            <StatusPill statusGroup={terminalStatusGroup(terminal, session)} />
-            <KickoffHint terminal={terminal} />
-            {onFork && terminal.sessionId && <ForkButton onFork={onFork} />}
-            <MetaActionButtons sessionId={sessionId} onCreateAgent={onCreateAgent} onHarvestSkills={onHarvestSkills} />
-            <HeaderMenuButton
-              sessionId={sessionId}
-              agents={agents || []}
-              currentAgentId={agent ? agent.id : null}
-              onOpenAgentPicker={onOpenAgentPicker}
-              runsElsewhere={Boolean(session && session.liveStatus && session.liveStatus.source !== "app")}
-              onAssignAgent={onAssignAgent}
-              onCreateAgent={onCreateAgent}
-              onHarvestSkills={onHarvestSkills}
-              onEditSessionFlags={onEditSessionFlags}
-              onDeleteSession={onDeleteSession}
-            />
-            {underTools}
-            <button type="button" className="panel-toggle" onClick={onTogglePanel}>
-              {panelOpen ? translate("panel.hide") : translate("panel.show")}
-            </button>
-          </div>
+          <HeaderToolbar
+            signature={signature}
+            items={headerItems}
+            titleNode={
+              <EditableTitle title={title} onRename={session ? onRename : null} renameRequest={renameRequest} />
+            }
+            trailing={
+              <>
+                {underTools}
+                <button type="button" className="panel-toggle" onClick={onTogglePanel}>
+                  {panelOpen ? translate("panel.hide") : translate("panel.show")}
+                </button>
+              </>
+            }
+            renderMenuButton={(overflowedItems) => (
+              <HeaderMenuButton
+                overflowedItems={overflowedItems}
+                sessionId={sessionId}
+                agents={agents || []}
+                currentAgentId={agent ? agent.id : null}
+                onOpenAgentPicker={onOpenAgentPicker}
+                runsElsewhere={Boolean(session && session.liveStatus && session.liveStatus.source !== "app")}
+                onAssignAgent={onAssignAgent}
+                onEditSessionFlags={onEditSessionFlags}
+                onDeleteSession={onDeleteSession}
+                onOpenSkills={onOpenSkills}
+                onRenameSession={session && onRename ? () => setRenameRequest(renameRequest + 1) : null}
+              />
+            )}
+          />
           <div className="header-meta">
             <span
               className="meta-item"

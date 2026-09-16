@@ -154,10 +154,13 @@ async function leaveTerminal(registry, terminalId) {
   }
 }
 
-// The header's "…" menu, then this agent's item in it.
+// The header's "…" menu, its "Assign agent ▸" submenu, then this agent's
+// item in that submenu.
 async function openAssignDialog(window, agentId, item = null) {
   await clickInWindow(window, "[data-header-menu-button]");
   await wait(800);
+  await clickInWindow(window, '[data-menu-item="assign-agent"]');
+  await wait(500);
   const picked = await clickInWindow(window, `[data-menu-item="${item || `assign-${agentId}`}"]`);
   if (!picked) {
     throw new Error("the agent is not in the header menu");

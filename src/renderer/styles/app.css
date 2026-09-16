@@ -799,6 +799,33 @@ a {
   color: var(--accent);
 }
 
+/* A submenu ("Assign agent ▸"): the same row, with the triangle that says
+   a second menu opens beside it. */
+.popup-menu-item-arrow {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.popup-menu-item.is-submenu.is-open,
+.popup-menu-item.is-submenu:hover .popup-menu-item-arrow {
+  color: var(--accent-strong);
+}
+
+.popup-menu-item.is-submenu.is-open {
+  background: var(--accent-soft);
+}
+
+/* What the header had no room for and is not a button: the agent's chip,
+   the status pill, a hint. It moves into the menu as itself — same chip,
+   same pill — so it is plain that there is nothing here to click. */
+.popup-menu-note.is-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 7px;
+}
+
 .list-note {
   padding: 18px 8px;
   color: var(--text-faint);
@@ -1483,11 +1510,33 @@ input:focus-visible {
   background: var(--background);
 }
 
+/* One line, never two. Nothing wraps and nothing is squeezed: what does
+   not fit is not drawn here at all — it is in the "…" (toolbarFit.js). The
+   overflow rule is only a guard for the frame in which everything is drawn
+   so it can be measured. */
 .transcript-header .header-top {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 12px;
+}
+
+/* One measurable box per control. The agent chip is two elements (the chip
+   and its "loads on next resume" note), so they are wrapped rather than
+   measured one by one. */
+.transcript-header .header-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* The gear and Hide/Show panel: the two Ula never wants to lose, so they
+   are not in the overflow at all. The title's flex:1 is what holds them
+   against the right edge. */
+.transcript-header .header-trailing {
+  gap: 10px;
 }
 
 .transcript-header h1 {
@@ -1499,9 +1548,10 @@ input:focus-visible {
   text-overflow: ellipsis;
   flex: 1;
   /* Not 0: the title is the one thing in this row that says which
-     conversation is on screen, so the buttons wrap to a second line before
-     it is squeezed down to "New s…". */
-  min-width: 11ch;
+     conversation is on screen. It takes whatever the controls leave and
+     truncates; below this the controls go into the "…" instead. Keep in
+     step with TITLE_MINIMUM_WIDTH in MiddleColumn.jsx. */
+  min-width: 160px;
   -webkit-app-region: no-drag;
 }
 

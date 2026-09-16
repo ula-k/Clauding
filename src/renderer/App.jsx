@@ -1415,6 +1415,7 @@ export default function App() {
           onHarvestSkills={() => harvestSkillsFromConversation(null)}
           onEditSessionFlags={requestSessionFlags}
           onDeleteSession={requestSessionDelete}
+          onOpenSkills={() => setSkillsMenuOpen(true)}
           reader={reader}
           onCloseReader={() => setReader(null)}
           onOpenReaderInPanel={openReaderInPanel}

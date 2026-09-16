@@ -117,6 +117,15 @@ const screenshotTerminalFolder = process.env.CLAUDING_SCREENSHOT_TERMINAL || nul
 // menu, "Assign to agent"). With CLAUDING_DRY_SPAWN=1 nothing is spawned,
 // so the id may just as well be a made-up one.
 const screenshotResumeSessionId = process.env.CLAUDING_SCREENSHOT_RESUME || null;
+// CLAUDING_SCREENSHOT_AGENT=<agentId>: the terminal is opened as that agent,
+// so the header carries its chip — the one thing in the header that changes
+// width with the name in it.
+const screenshotAgentId = process.env.CLAUDING_SCREENSHOT_AGENT || null;
+// CLAUDING_SCREENSHOT_WIDTH / _HEIGHT: the window is opened this big instead
+// of 1440x900, which is how a header is photographed at the widths it has to
+// survive (1000 is the narrowest the window goes).
+const screenshotWindowWidth = Number(process.env.CLAUDING_SCREENSHOT_WIDTH || 0);
+const screenshotWindowHeight = Number(process.env.CLAUDING_SCREENSHOT_HEIGHT || 0);
 const smokeTerminalMode = process.env.CLAUDING_SMOKE_TERMINAL === "1";
 const smokeGroupsMode = process.env.CLAUDING_SMOKE_GROUPS === "1";
 const smokeForkMode = process.env.CLAUDING_SMOKE_FORK === "1";
@@ -372,8 +381,8 @@ async function hideSession(sessionId) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: screenshotWindowWidth > 0 ? screenshotWindowWidth : 1440,
+    height: screenshotWindowHeight > 0 ? screenshotWindowHeight : 900,
     minWidth: 1000,
     minHeight: 600,
     titleBarStyle: "hiddenInset",
@@ -627,6 +636,7 @@ async function captureScreenshotAndQuit() {
       const record = terminalRegistry.open({
         workingDirectory: screenshotTerminalFolder,
         resumeSessionId: screenshotResumeSessionId,
+        agentId: screenshotAgentId,
         columns: 110,
         rows: 32
       });
