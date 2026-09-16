@@ -25,7 +25,11 @@ export function AgentBadge({ agent }) {
 // while its terminal was running: the link is written, but the conversation
 // on screen still carries the system prompt it started with — so the chip
 // says in so many words when the definition will be read.
-export function AgentChip({ agent, definitionPending = false }) {
+//
+// `starting` is the other half: a session that has just been started as an
+// agent, whose first message the app is still waiting to type in. Until it
+// goes, the terminal looks idle, so the chip says what is happening.
+export function AgentChip({ agent, definitionPending = false, starting = false }) {
   const { translate } = useTranslation();
   if (!agent) {
     return null;
@@ -44,6 +48,11 @@ export function AgentChip({ agent, definitionPending = false }) {
       {definitionPending && (
         <span className="agent-chip-pending" data-agent-chip-pending>
           {translate("agents.pendingResume")}
+        </span>
+      )}
+      {!definitionPending && starting && (
+        <span className="agent-chip-pending" data-agent-chip-starting>
+          {translate("agents.starting")}
         </span>
       )}
     </>

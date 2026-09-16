@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { checkExtraArguments } from "../../../electron/lib/extraFlags.js";
 import { useTranslation } from "../i18n.js";
 import { FolderIcon } from "./Icons.jsx";
 import EmojiPicker from "./EmojiPicker.jsx";
@@ -40,6 +41,10 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
   const [suggestedName, setSuggestedName] = useState(agent ? agent.name : (prefill && prefill.name) || "");
   // The built-in emoji list under the field (the fallback for the native panel).
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  // Extra `claude` flags every session this agent runs gets (the middle of
+  // the three levels, see electron/lib/extraFlags.js).
+  const [extraFlags, setExtraFlags] = useState(agent ? agent.extraClaudeArguments || "" : "");
+  const [extraFlagsProblem, setExtraFlagsProblem] = useState("");
   const formRef = useRef(null);
   // The emoji field, its two buttons and the popover: a click in here must
   // not count as a click outside the popover.
@@ -144,12 +149,18 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
     if (!canSave) {
       return;
     }
+    const checkedFlags = checkExtraArguments(extraFlags);
+    if (checkedFlags.reserved.length > 0) {
+      setExtraFlagsProblem(checkedFlags.message);
+      return;
+    }
     onSave({
       name: name.trim(),
       emoji: emoji || DEFAULT_AGENT_EMOJI,
       color,
       definitionFolder,
-      definitionFile
+      definitionFile,
+      extraClaudeArguments: extraFlags.trim()
     });
   }
 
@@ -261,6 +272,29 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
           </option>
         ))}
       </select>
+
+      <label className="sheet-label" htmlFor="agent-form-flags">
+        {translate("flags.title")}
+      </label>
+      <input
+        id="agent-form-flags"
+        type="text"
+        className="agent-form-input"
+        value={extraFlags}
+        placeholder="--channels plugin:telegram"
+        spellCheck={false}
+        onChange={(event) => {
+          setExtraFlags(event.target.value);
+          setExtraFlagsProblem("");
+        }}
+        data-agent-flags-input
+      />
+      <div className="agent-form-hint">{translate("flags.agentHint")}</div>
+      {extraFlagsProblem && (
+        <div className="agent-form-hint is-problem" data-agent-flags-problem>
+          {extraFlagsProblem}
+        </div>
+      )}
 
       <div className="sheet-actions">
         <button type="button" className="button is-ghost" onClick={onClose}>

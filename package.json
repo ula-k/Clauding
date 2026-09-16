@@ -1,6 +1,6 @@
 {
   "name": "clauding",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A macOS desktop window around Claude Code sessions: your session list on the left, a real terminal running claude in the middle, a side panel with tabs on the right.",
   "license": "MIT",
   "author": "Ula Kuczyńska",

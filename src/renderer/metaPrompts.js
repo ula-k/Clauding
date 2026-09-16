@@ -86,6 +86,22 @@ export function harvestSkillsKickoffMessage(skillsRoot) {
   );
 }
 
+// A *new* session started with an agent (the Agents tab row, "+ New" with an
+// agent picked, a group header's "+" with one) has exactly the same problem
+// as an assignment: the definition is appended to the system prompt, which
+// nobody can see, and the CLI comes up at an empty prompt — so the session
+// looked like any other empty terminal with a coloured chip on it. This is
+// the message the app types in for it, so the first thing on screen is the
+// agent saying who it is.
+export function agentStartKickoffMessage(agentName) {
+  return (
+    `You are running as the agent "${agentName}" inside Clauding. ` +
+    "Read your definition and everything it tells you to read first, " +
+    "then tell me in two sentences who you are and what you will start with — " +
+    "and wait for my instructions."
+  );
+}
+
 // "Assign to agent": after the terminal is restarted (or the session
 // resumed) the definition is in the system prompt — where nobody can see
 // it. So the app types one message in, the same way the two meta actions

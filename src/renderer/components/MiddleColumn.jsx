@@ -354,6 +354,10 @@ export default function MiddleColumn({
   }
 
   const projectColorIndex = session ? session.projectColorIndex : 0;
+  // The flags this terminal's `claude` was really started with (global,
+  // agent and session levels already merged in the main process). They get
+  // no control of their own: the folder's tooltip says them.
+  const extraArgumentsText = terminal && terminal.extraArguments ? terminal.extraArguments.join(" ") : "";
 
   // The terminal stays mounted while the reader is on top of it: unmounting
   // TerminalPane would detach the xterm instance and the scrollback would
@@ -365,7 +369,11 @@ export default function MiddleColumn({
         <header className="transcript-header">
           <div className="header-top">
             <EditableTitle title={title} onRename={session ? onRename : null} />
-            <AgentChip agent={agent} definitionPending={agentDefinitionPending} />
+            <AgentChip
+              agent={agent}
+              definitionPending={agentDefinitionPending}
+              starting={Boolean(terminal && terminal.agentId && terminal.kickoffState === "waiting")}
+            />
             <StatusPill statusGroup={terminalStatusGroup(terminal, session)} />
             <KickoffHint terminal={terminal} />
             {onFork && terminal.sessionId && <ForkButton onFork={onFork} />}
@@ -387,7 +395,15 @@ export default function MiddleColumn({
             </button>
           </div>
           <div className="header-meta">
-            <span className="meta-item" title={workingDirectoryShort}>
+            <span
+              className="meta-item"
+              title={
+                extraArgumentsText
+                  ? `${workingDirectoryShort}\n${translate("flags.effective")}: ${extraArgumentsText}`
+                  : workingDirectoryShort
+              }
+              data-extra-flags={extraArgumentsText || null}
+            >
               <span className="project-dot" style={{ background: `var(--project-color-${projectColorIndex})` }} />
               <FolderIcon />
               {projectLabel}

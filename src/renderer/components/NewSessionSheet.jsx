@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { FolderIcon } from "./Icons.jsx";
 import { folderLabel } from "../paths.js";
+import { checkExtraArguments } from "../../../electron/lib/extraFlags.js";
 
 const ADD_AGENT_OPTION = "add-agent";
 const NO_AGENT_OPTION = "";
@@ -27,6 +28,11 @@ export default function NewSessionSheet({
   const [recentProjects, setRecentProjects] = useState([]);
   const [workingDirectory, setWorkingDirectory] = useState(null);
   const [agentId, setAgentId] = useState(initialAgentId || null);
+  // Flags for this one conversation, on top of the global and the agent's.
+  // They are remembered under its session id, so every later resume, restart
+  // and fork starts `claude` with them again.
+  const [extraFlags, setExtraFlags] = useState("");
+  const [extraFlagsProblem, setExtraFlagsProblem] = useState("");
   const sheetRef = useRef(null);
 
   // A folder that is not in ~/.claude.json yet (an agent's last one, or a
@@ -76,7 +82,7 @@ export default function NewSessionSheet({
       if (event.key === "Escape") {
         onClose();
       } else if (event.key === "Enter" && workingDirectory) {
-        onConfirm({ workingDirectory, agentId });
+        confirmStart();
       }
     }
     window.addEventListener("mousedown", handleMouseDown);
@@ -85,7 +91,19 @@ export default function NewSessionSheet({
       window.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose, onConfirm, workingDirectory, agentId]);
+  }, [onClose, onConfirm, workingDirectory, agentId, extraFlags]);
+
+  // Every way out of the sheet goes through this: the folder, the agent and
+  // the flags travel together, and a reserved flag stops the start instead
+  // of being quietly dropped.
+  function confirmStart(folderPath = workingDirectory) {
+    const checked = checkExtraArguments(extraFlags);
+    if (checked.reserved.length > 0) {
+      setExtraFlagsProblem(checked.message);
+      return;
+    }
+    onConfirm({ workingDirectory: folderPath, agentId, extraArguments: extraFlags.trim() });
+  }
 
   async function pickOther() {
     const picked = await window.clauding.pickProjectFolder();
@@ -125,7 +143,7 @@ export default function NewSessionSheet({
             className={project.path === workingDirectory ? "sheet-folder is-selected" : "sheet-folder"}
             title={project.pathShort}
             onClick={() => setWorkingDirectory(project.path)}
-            onDoubleClick={() => onConfirm({ workingDirectory: project.path, agentId })}
+            onDoubleClick={() => confirmStart(project.path)}
           >
             <FolderIcon />
             <span>{project.label}</span>
@@ -153,6 +171,27 @@ export default function NewSessionSheet({
         ))}
         <option value={ADD_AGENT_OPTION}>{translate("newSession.addAgent")}</option>
       </select>
+      <label className="sheet-label sheet-agent-label" htmlFor="new-session-flags">
+        {translate("flags.title")}
+      </label>
+      <input
+        id="new-session-flags"
+        type="text"
+        className="agent-form-input"
+        value={extraFlags}
+        placeholder="--channels plugin:telegram"
+        spellCheck={false}
+        onChange={(event) => {
+          setExtraFlags(event.target.value);
+          setExtraFlagsProblem("");
+        }}
+        data-new-session-flags
+      />
+      {extraFlagsProblem && (
+        <div className="sheet-hint is-problem" data-new-session-flags-problem>
+          {extraFlagsProblem}
+        </div>
+      )}
       <div className="sheet-hint">{translate("newSession.hint")}</div>
       <div className="sheet-actions">
         <button type="button" className="button is-ghost" onClick={onClose}>
@@ -162,7 +201,7 @@ export default function NewSessionSheet({
           type="button"
           className="button is-primary"
           disabled={!workingDirectory}
-          onClick={() => onConfirm({ workingDirectory, agentId })}
+          onClick={() => confirmStart()}
           data-new-confirm
         >
           {translate("newSession.confirm")}

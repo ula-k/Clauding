@@ -5,7 +5,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { hasBlockingDialog, isPromptReady, looksTypedByHand } from "../electron/lib/terminalKickoff.js";
-import { createAgentKickoffMessage, harvestSkillsKickoffMessage } from "../src/renderer/metaPrompts.js";
+import {
+  agentStartKickoffMessage,
+  createAgentKickoffMessage,
+  harvestSkillsKickoffMessage
+} from "../src/renderer/metaPrompts.js";
 
 function readyRecord(overrides = {}) {
   return { sessionId: "session-one", registryStatus: "idle", exited: false, ...overrides };
@@ -51,4 +55,12 @@ test("both kickoff messages say where the session is and name the folder they wr
   assert.match(createAgent, /\/scratch\/agents-root\/<slug>\/<slug>\.md/);
   assert.match(createAgent, /wait for my approval/);
   assert.match(createAgent, /Do not describe the Agent Maker itself/);
+
+  // A session that *starts* as an agent is told the same way who it is:
+  // the definition itself is invisible in the system prompt.
+  const agentStart = agentStartKickoffMessage("Spec Writer");
+  assert.match(agentStart, /running as the agent "Spec Writer"/);
+  assert.match(agentStart, /Read your definition/);
+  assert.match(agentStart, /two sentences/);
+  assert.match(agentStart, /wait for my instructions/);
 });

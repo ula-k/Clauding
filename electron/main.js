@@ -24,12 +24,27 @@ import { runGroupsSmoke } from "./smokeGroups.js";
 import { runForkSmoke } from "./smokeFork.js";
 import { runCollapseSmoke } from "./smokeCollapse.js";
 import { runAgentsSmoke } from "./smokeAgents.js";
+import { runAgentStartSmoke } from "./smokeAgentStart.js";
+import { runFlagsSmoke } from "./smokeFlags.js";
+import {
+  UPDATE_BY_HAND_ADVICE,
+  projectRootFolder,
+  quietCheckIsDue,
+  readLastQuietCheck,
+  readRemoteState,
+  runUpdateSteps,
+  updateMenuItemLabel,
+  updatePlan,
+  writeLastQuietCheck
+} from "./updater.js";
+import { openUpdateSheet } from "./updateSheet.js";
 import { runAssignSmoke } from "./smokeAssign.js";
 import { runEmojiSmoke } from "./smokeEmoji.js";
 import { runKickoffSmoke } from "./smokeKickoff.js";
 import { createSessionGroupStore } from "./sessionGroups.js";
 import { createAgentStore, inspectDefinitionFolder, inspectDefinitionFile } from "./agents.js";
 import { createSettingsStore } from "./settings.js";
+import { createSessionFlagsStore } from "./sessionFlags.js";
 import { listSkills } from "./skills.js";
 import { copySkillCandidate, scanForSkillCandidates } from "./skillsScan.js";
 import { builtinAgentDraft, seedBuiltinSkills, seedBuiltins } from "./builtins.js";
@@ -109,6 +124,8 @@ const smokePreambleMode = process.env.CLAUDING_SMOKE_PREAMBLE === "1";
 const smokeResizeMode = process.env.CLAUDING_SMOKE_RESIZE === "1";
 const smokeAgentsMode = process.env.CLAUDING_SMOKE_AGENTS === "1";
 const smokeAssignMode = process.env.CLAUDING_SMOKE_ASSIGN === "1";
+const smokeAgentStartMode = process.env.CLAUDING_SMOKE_AGENT_START === "1";
+const smokeFlagsMode = process.env.CLAUDING_SMOKE_FLAGS === "1";
 const smokeEmojiMode = process.env.CLAUDING_SMOKE_EMOJI === "1";
 const smokeKickoffMode = process.env.CLAUDING_SMOKE_KICKOFF === "1";
 // Any automation at all: the first-run questions stay out of its way.
@@ -121,6 +138,8 @@ const anySmokeMode =
   smokeResizeMode ||
   smokeAgentsMode ||
   smokeAssignMode ||
+  smokeAgentStartMode ||
+  smokeFlagsMode ||
   smokeEmojiMode ||
   smokeKickoffMode;
 
@@ -178,6 +197,11 @@ function sendToWindow(channel, payload) {
   }
 }
 
+// The per-session `claude` flags (session-flags.json). Built with the other
+// stores at start-up; the registry reaches it through the three callbacks
+// below, the same way it reaches the agents.
+let sessionFlags = null;
+
 const terminalRegistry = createTerminalRegistry({
   sendToWindow,
   onChange() {
@@ -205,7 +229,18 @@ const terminalRegistry = createTerminalRegistry({
   resolveAgent(agentId) {
     return agents ? agents.agentById(agentId) : null;
   },
-  promptDirectory
+  promptDirectory,
+  readGlobalExtraArguments() {
+    return settings ? settings.get().extraClaudeArguments : "";
+  },
+  readSessionExtraArguments(sessionId) {
+    return sessionFlags ? sessionFlags.flagsFor(sessionId) : "";
+  },
+  rememberSessionExtraArguments(sessionId, flags) {
+    if (sessionFlags) {
+      sessionFlags.remember(sessionId, flags);
+    }
+  }
 });
 
 // A terminal started with an agent records the link the moment its CLI
@@ -411,6 +446,33 @@ function createWindow() {
   } else if (smokeAssignMode) {
     mainWindow.webContents.once("did-finish-load", () => {
       runAssignSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        agents,
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeFlagsMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runFlagsSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        settings,
+        agents,
+        sessionFlags,
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeAgentStartMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runAgentStartSmoke({
         window: mainWindow,
         registry: terminalRegistry,
         agents,
@@ -705,14 +767,161 @@ function skillsMenuTemplate() {
   return { label: "Skills", submenu: items };
 }
 
+// "Check for new version…". The app runs from a git checkout, so the check
+// is a read-only `git fetch` and a comparison with origin/main; the update
+// is the four commands the user would type themselves. The quiet check at
+// start-up changes nothing but the menu item's text.
+let quietUpdatePlan = null;
+let updateCheckRunning = false;
+
+async function runUpdateNow() {
+  const sheet = openUpdateSheet(mainWindow);
+  const result = await runUpdateSteps({
+    projectRoot: projectRootFolder(),
+    onStep(stepName) {
+      sheet.setStep(`Running ${stepName}…`);
+    }
+  });
+  sheet.close();
+  if (!result.ok) {
+    await dialog.showMessageBox(mainWindow, {
+      type: "error",
+      message: `The update stopped at ${result.failedStep}`,
+      detail: result.details || "No output.",
+      buttons: ["OK"]
+    });
+    return;
+  }
+  quietUpdatePlan = null;
+  installApplicationMenu();
+  const answer = await dialog.showMessageBox(mainWindow, {
+    type: "info",
+    message: "Clauding was updated.",
+    detail:
+      "Relaunching closes every terminal open in the app — the conversations themselves are kept " +
+      "and can be resumed afterwards.",
+    buttons: ["Relaunch now", "Later"],
+    defaultId: 0,
+    cancelId: 1
+  });
+  if (answer.response === 0) {
+    app.relaunch();
+    app.exit(0);
+  }
+}
+
+async function checkForNewVersion({ quiet }) {
+  if (updateCheckRunning) {
+    return;
+  }
+  updateCheckRunning = true;
+  try {
+    const state = await readRemoteState(projectRootFolder());
+    if (!state.ok) {
+      console.log(`[update] the check did not run: ${state.reason}`);
+      if (!quiet) {
+        await dialog.showMessageBox(mainWindow, {
+          type: "warning",
+          message:
+            state.reason === "notACheckout"
+              ? "This copy of Clauding is not a git checkout, so it cannot check for a new version."
+              : "Could not reach the repository.",
+          detail: state.details || "",
+          buttons: ["OK"]
+        });
+      }
+      return;
+    }
+    const plan = updatePlan(state);
+    console.log(
+      `[update] ${plan.headline}${plan.updateAvailable ? ` (${plan.changeCount} commits, branch ${state.branch}, ` +
+        `${state.clean ? "clean" : "local changes"})` : ""}`
+    );
+    quietUpdatePlan = plan.updateAvailable ? plan : null;
+    installApplicationMenu();
+    if (quiet) {
+      return;
+    }
+    if (!plan.updateAvailable) {
+      await dialog.showMessageBox(mainWindow, { type: "info", message: plan.headline, buttons: ["OK"] });
+      return;
+    }
+    if (!plan.canUpdateInApp) {
+      await dialog.showMessageBox(mainWindow, {
+        type: "warning",
+        message: plan.headline,
+        detail: UPDATE_BY_HAND_ADVICE,
+        buttons: ["OK"]
+      });
+      return;
+    }
+    const answer = await dialog.showMessageBox(mainWindow, {
+      type: "question",
+      message: plan.headline,
+      detail: plan.detail,
+      buttons: ["Update", "Later"],
+      defaultId: 0,
+      cancelId: 1
+    });
+    if (answer.response === 0) {
+      await runUpdateNow();
+    }
+  } finally {
+    updateCheckRunning = false;
+  }
+}
+
+// Once a day, and never while an automation is driving the window.
+function checkForNewVersionQuietlyIfDue() {
+  if (anySmokeMode || screenshotPath) {
+    return;
+  }
+  if (!quietCheckIsDue(readLastQuietCheck(userDataDirectory))) {
+    return;
+  }
+  writeLastQuietCheck(userDataDirectory);
+  checkForNewVersion({ quiet: true });
+}
+
 // The Edit roles are what make Cmd+C / Cmd+V work inside the terminal:
 // Electron turns them into copy / paste events on xterm's hidden textarea.
 function installApplicationMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       // macOS draws this title from the bundle, but the label keeps the name
-      // right when the app runs without one (`npm start`).
-      { role: "appMenu", label: app.name },
+      // right when the app runs without one (`npm start`). The standard app
+      // menu is written out rather than taken as a role, because the version
+      // check lives in it — new functions go in the menu bar, never into the
+      // window as another control.
+      {
+        label: app.name,
+        submenu: [
+          { role: "about" },
+          { type: "separator" },
+          {
+            label: updateMenuItemLabel(quietUpdatePlan),
+            click() {
+              checkForNewVersion({ quiet: false });
+            }
+          },
+          { type: "separator" },
+          {
+            label: "Settings…",
+            accelerator: "Command+,",
+            click() {
+              sendToWindow(CHANNELS.settingsShow, {});
+            }
+          },
+          { type: "separator" },
+          { role: "services" },
+          { type: "separator" },
+          { role: "hide" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          { role: "quit" }
+        ]
+      },
       {
         label: "Edit",
         submenu: [
@@ -1378,6 +1587,12 @@ app.whenReady().then(() => {
     skillAnswer: settings.get().skillMakerSeeding
   });
   watchAgentsRoot();
+  sessionFlags = createSessionFlagsStore({
+    storagePath: path.join(userDataDirectory, "session-flags.json"),
+    log(line) {
+      console.log(line);
+    }
+  });
   panelTabs = createPanelTabStore({
     storagePath: path.join(userDataDirectory, "panel-tabs.json"),
     onChange(change) {
@@ -1397,6 +1612,7 @@ app.whenReady().then(() => {
   lockDownWebviews();
   registerIpc();
   createWindow();
+  checkForNewVersionQuietlyIfDue();
   stopWatchingLiveStatus = watchLiveStatus(() => {
     // The registry file of a terminal's CLI changed: pick up the link / status first.
     terminalRegistry.refreshLinks();

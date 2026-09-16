@@ -4,6 +4,16 @@
 // then spawns the pty with what these two functions return, so the shape of
 // the command line can be checked without a pty and without a `claude`.
 import path from "node:path";
+import { isReservedFlag } from "./extraFlags.js";
+
+export {
+  RESERVED_FLAGS,
+  checkExtraArguments,
+  isReservedFlag,
+  mergeExtraArguments,
+  reservedFlagsIn,
+  splitArguments
+} from "./extraFlags.js";
 
 const MAXIMUM_SESSION_NAME_LENGTH = 120;
 
@@ -30,7 +40,8 @@ export function buildClaudeArguments({
   sessionName = null,
   agent = null,
   appendedPrompt = "",
-  promptFilePath = null
+  promptFilePath = null,
+  extraArguments = []
 } = {}) {
   const commandArguments = resumeSessionId ? ["--resume", resumeSessionId] : [];
   if (forkSession) {
@@ -48,6 +59,13 @@ export function buildClaudeArguments({
       commandArguments.push("--append-system-prompt", appendedPrompt);
     }
     commandArguments.push("--system-prompt-snapshot", "off");
+  }
+  // The user's own flags go last, after everything the app needs, and never
+  // include one of the app's own (see mergeExtraArguments).
+  for (const token of extraArguments || []) {
+    if (typeof token === "string" && token !== "" && !isReservedFlag(token)) {
+      commandArguments.push(token);
+    }
   }
   return { commandArguments, displayName };
 }

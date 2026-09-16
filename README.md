@@ -104,6 +104,30 @@ script wrote.
 
 Launch it from Launchpad, Spotlight or `open -a Clauding`.
 
+## Updating
+
+There is no update server: the running app *is* this checkout, so the check
+is a git one. **Clauding → Check for new version…** in the menu bar (nothing
+in the window: new functions go in the menu bar) runs a read-only `git fetch
+origin` in the project folder, counts `HEAD..origin/main` and reads the
+version out of `origin/main:package.json`. It then says either **"You're up
+to date (0.2.0)"** or **"Clauding 0.3.0 is available — 7 new changes since
+your version (0.2.0). Update now?"** with **Update** / **Later**.
+
+**Update** only runs when the checkout is a clean `main`; otherwise a dialog
+says so and hands over the four commands: `git pull && npm install && npm run
+build && npm run install-app`. That is exactly what the app runs itself, in
+that order, behind a small progress sheet naming the step. If a step fails,
+its last lines are shown and nothing else is tried. On success it offers
+**Relaunch now** — which closes every terminal open in the app (the
+conversations are kept and can be resumed).
+
+Once a day, at start-up, the same check runs **quietly**: it opens no dialog
+and changes nothing but the menu item's text, which becomes **"Update
+available (0.3.0)…"**. The decision behind all of this is one pure function,
+`updatePlan()` in `electron/updater.js`, covered by `test/updater.test.js`;
+the tests never fetch, pull or install.
+
 ## Run from source
 
 ```
@@ -192,11 +216,17 @@ electron/settings.js       settings.json: the agents root and the skills folder
 electron/skills.js         reads <skillsRoot>/*/SKILL.md (name + description)
 electron/builtins.js       seeding the built-in Agent Maker and the built-in skills
 electron/lib/terminalKickoff.js  when a fork may be typed into, and what counts as typing
+electron/lib/extraFlags.js  the extra `claude` flags: splitting the field, the reserved ones, the merge
+electron/sessionFlags.js   session-flags.json: the flags one conversation keeps for good
+electron/updater.js        "Check for new version…": the git check, the plan and the four update commands
+electron/updateSheet.js    the little progress window the update runs behind
 builtin/agents/agent-maker/agent-maker.md   the Agent Maker's own definition
 builtin/skills/skill-maker/SKILL.md         the skill-maker skill, as shipped
 builtin/skills/clauding-agents/SKILL.md     the `clauding` command, as a skill
 electron/smokeAgents.js    CLAUDING_SMOKE_AGENTS automation for the agents (dev only)
 electron/smokeAssign.js    CLAUDING_SMOKE_ASSIGN: "Assign to agent" end to end (dev only)
+electron/smokeAgentStart.js  CLAUDING_SMOKE_AGENT_START: a new session started as an agent introduces itself (dev only)
+electron/smokeFlags.js     CLAUDING_SMOKE_FLAGS: the extra flags on the composed command line (dev only, dry)
 electron/smokeEmoji.js     CLAUDING_SMOKE_EMOJI: the agent form's emoji field (dev only)
 electron/smokeGroups.js    CLAUDING_SMOKE_GROUPS automation for the list (dev only)
 electron/smokeCollapse.js  CLAUDING_SMOKE_COLLAPSE automation for folding a group shut (dev only)
@@ -819,6 +849,19 @@ It lives at <definitionFile>; its folder <definitionFolder> holds your working f
 and `--name "<emoji> <agent name>"` unless a name was already given (a fork's
 `--name` wins), so the CLI's own header says who is working too.
 
+**It introduces itself too.** The definition is in the system prompt, where
+nobody can see it, and the CLI comes up at an empty prompt — so a session
+started as an agent (the Agents tab row, "+ New" with an agent picked, a
+group header's "+") is given its first message by the app, typed in by the
+same mechanism as an assignment (`electron/lib/terminalKickoff.js`): *"You
+are running as the agent `<name>` inside Clauding. Read your definition and
+everything it tells you to read first, then tell me in two sentences who you
+are and what you will start with — and wait for my instructions."* The header
+chip says **"starting…"** until it has gone. A session without an agent gets
+nothing, a `--resume` of an already-linked session gets nothing (it had its
+introduction when it was assigned), and anything the user types first wins:
+the message is then dropped.
+
 **Linking.** The moment the CLI registers a session id (the same linking path
 every terminal uses), `sessionAgents[sessionId]` is written. A **fork**
 inherits the original's agent: the same definition in its prompt and the same
@@ -864,6 +907,50 @@ badge on its row.
   see below) are dropped from the session list itself and from the resolved
   links, so they do not appear under an agent either: a smoke run's
   conversations stay out of both places.
+
+## Extra `claude` flags
+
+Anything the CLI takes that the app does not set itself can be added to the
+command line — `--model sonnet`, `--dangerously-skip-permissions`, or the one
+this was built for: `--channels plugin:telegram`, which lets Ula talk to that
+session from Telegram. There are three levels and they are appended in this
+order, so the narrower one always comes last:
+
+1. **Global** — `extraClaudeArguments` in `settings.json`, edited in
+   **Clauding → Settings…** (or the gear, which opens the same popover).
+   Every terminal the app starts gets them.
+2. **Per agent** — "Extra claude flags" in the agent form, stored in
+   `agents.json`. Every session that agent runs gets them. An agent that
+   reports on Telegram carries `--channels plugin:telegram` here and needs
+   nothing else.
+3. **Per session** — "Extra claude flags" in the "+ New" sheet, for this one
+   conversation.
+
+The field is written the way it would be typed in a terminal and split the
+same way: quotes hold a value together (`--name "two words"`), a backslash
+escapes the next character.
+
+**The session's own flags are remembered.** They are written to
+`session-flags.json` under the session id the moment the CLI registers it,
+and put back on every `--resume` the app starts — a restart after "Assign to
+agent", a click on the row, a fork. Without that a `--channels` conversation
+would silently lose its channel the first time it was resumed, and the
+messages would simply stop arriving.
+
+**What cannot be typed.** `--resume`, `--print` / `-p`, `--output-format`,
+`--append-system-prompt*` and `--system-prompt-snapshot` are the app's own:
+a second `--resume` would fight with the one Clauding passes, and `--print`
+would take the CLI out of interactive mode altogether, leaving a terminal
+that never answers. All three fields refuse them by name ("Clauding sets
+--resume itself — please take it out"), and the merge drops them again (with
+their value) if one got into a file by hand. The effective flags of the
+terminal on screen are in the tooltip of the folder in its header — no new
+control for them.
+
+The splitting, the refusals and the merge are `electron/lib/extraFlags.js`,
+covered by `test/extraFlags.test.js`; where they land on the command line is
+`buildClaudeArguments()` in `electron/lib/claudeArguments.js`, which puts
+them last, after everything the app needs.
 
 ## The meta layer: making agents and making skills
 
@@ -1326,6 +1413,29 @@ CLAUDING_SMOKE_ASSIGN=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     prints the answer that came back -> assign-restarted.png. Exits the
     terminal and deletes the agent it added. On failure: assign-failed.png.
     Run it with its own profile (`--user-data-dir`).
+
+CLAUDING_DRY_SPAWN=1 CLAUDING_SMOKE_FLAGS=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
+    the extra `claude` flags, without starting anything: puts a flag in
+    settings.json, one on an agent and one on a session, opens a new
+    session, a resume and a fork, and prints each composed command line —
+    checking that the three levels arrive in order, that a resumed session
+    and a fork get the flags back out of session-flags.json, and that a
+    reserved flag written into settings.json reaches neither the file nor
+    the command line. Run it with its own profile (`--user-data-dir`).
+
+CLAUDING_SMOKE_AGENT_START=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
+    the first message a session started *as an agent* gets, in the scratch
+    folder only: writes a small definition ("always begin replies with
+    SCRATCH"), adds it as an agent, takes the folder's trust dialog in a
+    throw-away terminal (answering it is typing, and typing cancels a
+    kickoff), then clicks the agent's row in the Agents tab and presses
+    Start in the sheet it opens — the app's own renderer -> IPC path. Checks
+    that the new terminal carries the agent and is waiting to be given its
+    message, that the header chip says "starting…" -> agent-start-waiting.png,
+    that the app types the message in by itself (kickoffState "sent"), and
+    prints the answer, which has to begin with SCRATCH -> agent-start.png.
+    Exits the terminal and deletes the agent it added. Run it with its own
+    profile (`--user-data-dir`). On failure: agent-start-failed.png.
 
 CLAUDING_SMOKE_FORK=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the Fork button, in the scratch folder only: opens a terminal, gets a

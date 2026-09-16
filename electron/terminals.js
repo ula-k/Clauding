@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import nodePty from "node-pty";
 import channels from "./channels.cjs";
 import { claudeExecutablePath, supportsAppendSystemPromptFile, terminalEnvironment } from "./claudeCli.js";
-import { buildClaudeArguments, buildTerminalEnvironment } from "./lib/claudeArguments.js";
+import { buildClaudeArguments, buildTerminalEnvironment, mergeExtraArguments } from "./lib/claudeArguments.js";
 import { buildAgentSystemPrompt } from "./agents.js";
 import { isProcessAlive } from "./liveStatus.js";
 import {
@@ -145,7 +145,13 @@ export function createTerminalRegistry({
   readPreamble,
   commandDirectory,
   resolveAgent,
-  promptDirectory
+  promptDirectory,
+  // The extra `claude` flags: the global ones from settings.json, and the
+  // per-session ones a conversation keeps (electron/sessionFlags.js). The
+  // agent's own come off the agent record itself.
+  readGlobalExtraArguments = null,
+  readSessionExtraArguments = null,
+  rememberSessionExtraArguments = null
 }) {
   const terminals = new Map();
   let linkPoller = null;
@@ -171,6 +177,13 @@ export function createTerminalRegistry({
       registryStatus: record.registryStatus,
       openedByClick: record.openedByClick,
       receivedInput: record.receivedInput,
+      // The flags this terminal was actually started with, so the header can
+      // say so in its tooltip.
+      extraArguments: record.extraArguments.slice(),
+      // The whole command line, as it was composed: the dry-run hooks check
+      // it, and it is what the log line says.
+      commandArguments: record.commandArguments.slice(),
+      sessionExtraArguments: record.sessionExtraArguments,
       // null when this terminal was opened without a first message of its
       // own; otherwise "waiting", "sent" or "needsMessage" (see deliverKickoff).
       kickoffState: record.kickoffState,
@@ -245,6 +258,11 @@ export function createTerminalRegistry({
         record.sessionId = entry.sessionId;
         changed = true;
         logLine(`${record.terminalId}: session ${entry.sessionId} (pid ${record.pid})`);
+        // Now that the conversation has an id, its own flags can be filed
+        // under it — a fork writes them under its new id too.
+        if (rememberSessionExtraArguments && record.sessionExtraArguments) {
+          rememberSessionExtraArguments(entry.sessionId, record.sessionExtraArguments);
+        }
       }
       const status = typeof entry.status === "string" ? entry.status : null;
       if (status !== record.registryStatus) {
@@ -403,6 +421,7 @@ export function createTerminalRegistry({
     agentId = null,
     taskPrompt = null,
     kickoffMessage = null,
+    extraArguments = null,
     columns = 100,
     rows = 30,
     openedByClick = false
@@ -441,6 +460,18 @@ export function createTerminalRegistry({
     // of a session that was not born inside Clauding never arrives — the
     // session then does not know about the right panel at all (it published a
     // claude.ai Artifact instead). See lib/claudeArguments.js.
+    // Global -> agent -> session, in that order. A resume, a restart and a
+    // fork all take the session's own flags out of the store, so a
+    // conversation started with `--channels plugin:telegram` keeps its
+    // channel for the rest of its life.
+    const inheritedSessionExtra = resumeSessionId && readSessionExtraArguments ? readSessionExtraArguments(resumeSessionId) : "";
+    const typedSessionExtra = typeof extraArguments === "string" ? extraArguments.trim() : "";
+    const sessionExtraArguments = typedSessionExtra || inheritedSessionExtra || "";
+    const mergedExtraArguments = mergeExtraArguments([
+      readGlobalExtraArguments ? readGlobalExtraArguments() : "",
+      agent && agent.extraClaudeArguments ? agent.extraClaudeArguments : "",
+      sessionExtraArguments
+    ]);
     const { commandArguments, displayName } = buildClaudeArguments({
       resumeSessionId,
       forkSession,
@@ -450,7 +481,8 @@ export function createTerminalRegistry({
       // not rename their conversation behind their back.
       agent: resumeSessionId && !forkSession ? null : agent,
       appendedPrompt,
-      promptFilePath
+      promptFilePath,
+      extraArguments: mergedExtraArguments
     });
     const environment = buildTerminalEnvironment({
       baseEnvironment: terminalEnvironment(),
@@ -488,6 +520,9 @@ export function createTerminalRegistry({
       // Input that is really somebody typing, as opposed to the answers
       // xterm gives the CLI's own queries: only that cancels a kickoff.
       typedByHand: false,
+      extraArguments: mergedExtraArguments,
+      sessionExtraArguments,
+      commandArguments,
       kickoffState: cleanKickoffMessage ? "waiting" : null,
       exited: false,
       exitCode: null,

@@ -16,6 +16,10 @@
 //   skillScanRoots      extra folders "Scan for skills…" looks through, on
 //                       top of the places it knows about. Added with a
 //                       folder picker, never guessed.
+//   extraClaudeArguments  extra flags every `claude` this app starts gets,
+//                         written the way they would be typed in a terminal
+//                         ("--model sonnet"). The first of the three levels;
+//                         see electron/lib/claudeArguments.js.
 //   skillMakerSeeding   "unanswered" until the user has been asked whether
 //                       the built-in skill-maker may be written into their
 //                       skills folder, then "installed" or "declined". The
@@ -25,7 +29,8 @@
 // File shape (version 1):
 //   { "version": 1, "agentsRoot": "/Users/<you>/Clauding/agents",
 //     "skillsRoot": "/Users/<you>/.claude/skills",
-//     "skillScanRoots": [], "skillMakerSeeding": "unanswered" }
+//     "skillScanRoots": [], "skillMakerSeeding": "unanswered",
+//     "extraClaudeArguments": "" }
 //
 // Anything unexpected in the file is replaced by the default, exactly like
 // groups.json and agents.json: a broken settings.json must never keep the
@@ -33,8 +38,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { mergeExtraArguments } from "./lib/claudeArguments.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
+const MAXIMUM_EXTRA_ARGUMENTS_LENGTH = 500;
 
 export function defaultAgentsRoot() {
   return path.join(os.homedir(), "Clauding", "agents");
@@ -71,6 +78,13 @@ function cleanFolderList(rawList) {
   return folders;
 }
 
+// Flags the app sets itself are taken out here as well as in the field, so
+// a settings.json edited by hand cannot break every terminal at once.
+export function cleanExtraClaudeArguments(rawText) {
+  const text = String(rawText || "").replace(/\s+/g, " ").trim().slice(0, MAXIMUM_EXTRA_ARGUMENTS_LENGTH);
+  return mergeExtraArguments([text]).join(" ");
+}
+
 function sanitize(saved) {
   const source = saved && typeof saved === "object" ? saved : {};
   const seeding = String(source.skillMakerSeeding || "");
@@ -78,7 +92,8 @@ function sanitize(saved) {
     agentsRoot: cleanFolder(source.agentsRoot, defaultAgentsRoot()),
     skillsRoot: cleanFolder(source.skillsRoot, defaultSkillsRoot()),
     skillScanRoots: cleanFolderList(source.skillScanRoots),
-    skillMakerSeeding: SKILL_SEEDING_ANSWERS.includes(seeding) ? seeding : "unanswered"
+    skillMakerSeeding: SKILL_SEEDING_ANSWERS.includes(seeding) ? seeding : "unanswered",
+    extraClaudeArguments: cleanExtraClaudeArguments(source.extraClaudeArguments)
   };
 }
 
@@ -87,6 +102,7 @@ function sameSettings(first, second) {
     first.agentsRoot === second.agentsRoot &&
     first.skillsRoot === second.skillsRoot &&
     first.skillMakerSeeding === second.skillMakerSeeding &&
+    first.extraClaudeArguments === second.extraClaudeArguments &&
     first.skillScanRoots.join("\n") === second.skillScanRoots.join("\n")
   );
 }

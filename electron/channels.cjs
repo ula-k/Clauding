@@ -34,6 +34,8 @@ const CHANNELS = {
   settingsUpdate: "settings:update",
   settingsPickAgentsRoot: "settings:pick-agents-root",
   settingsChanged: "settings:changed",
+  // The Settings… item in the macOS menu bar asking for the settings popover.
+  settingsShow: "settings:show",
   skillsList: "skills:list",
   // The native Skills menu asking the window to open the skills popover.
   skillsShow: "skills:show",

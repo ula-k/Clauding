@@ -15,7 +15,8 @@
 //         "definitionFolder": "/Users/<you>/Documents/agents/spec-writer",
 //         "definitionFile": "/Users/<you>/Documents/agents/spec-writer/spec-writer.md",
 //         "lastWorkingDirectory": "/Users/<you>/Documents/projects/website",
-//         "lastUsedAt": 1730000000000
+//         "lastUsedAt": 1730000000000,
+//         "extraClaudeArguments": "--channels plugin:telegram"
 //       }
 //     ],
 //     "sessionAgents": { "<sessionId>": "<agentId>" }
@@ -29,6 +30,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { mergeExtraArguments } from "./lib/claudeArguments.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_NAME_LENGTH = 60;
@@ -116,6 +118,13 @@ function cleanDefinitionFile(rawFile, definitionFolder) {
   return resolved;
 }
 
+const MAXIMUM_EXTRA_ARGUMENTS_LENGTH = 500;
+
+function cleanExtraArguments(rawText) {
+  const text = String(rawText || "").replace(/\s+/g, " ").trim().slice(0, MAXIMUM_EXTRA_ARGUMENTS_LENGTH);
+  return mergeExtraArguments([text]).join(" ");
+}
+
 function sanitizeAgent(entry) {
   if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || !entry.id) {
     return null;
@@ -142,7 +151,12 @@ function sanitizeAgent(entry) {
     // Which built-in this agent is ("agent-maker"), or null for the user's
     // own. A built-in can be recoloured and renamed but never deleted, and
     // the app puts a missing one back at the next start.
-    builtin: cleanBuiltin(entry.builtin)
+    builtin: cleanBuiltin(entry.builtin),
+    // Extra `claude` flags every session this agent runs gets, on top of
+    // the ones in settings.json — "--channels plugin:telegram" for an agent
+    // that talks to Ula on Telegram, say. Flags the app sets itself are
+    // dropped here (see mergeExtraArguments).
+    extraClaudeArguments: cleanExtraArguments(entry.extraClaudeArguments)
   };
 }
 

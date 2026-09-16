@@ -6,6 +6,7 @@ import { groupIdForSession } from "./sessionGrouping.js";
 import { forkDisplayName } from "./forkName.js";
 import {
   agentAssignmentKickoffMessage,
+  agentStartKickoffMessage,
   createAgentKickoffMessage,
   createAgentTaskPrompt,
   harvestSkillsKickoffMessage,
@@ -84,7 +85,13 @@ const INITIAL_AGENT_STATE = { agents: [], sessionAgents: {} };
 // Until settings.json has been read. The real defaults are decided in the
 // main process (electron/settings.js); these only keep the menu from
 // drawing "undefined" for the few milliseconds before the answer arrives.
-const INITIAL_SETTINGS = { agentsRoot: "", skillsRoot: "", skillScanRoots: [], skillMakerSeeding: "installed" };
+const INITIAL_SETTINGS = {
+  agentsRoot: "",
+  skillsRoot: "",
+  skillScanRoots: [],
+  skillMakerSeeding: "installed",
+  extraClaudeArguments: ""
+};
 // The agent that makes agents, by its built-in marker rather than by name:
 // the user may rename it.
 const AGENT_MAKER_MARKER = "agent-maker";
@@ -133,6 +140,7 @@ export default function App() {
   // The Skills item in the macOS menu bar asks the window to open the same
   // popover the Skills button opens.
   const [skillsMenuOpen, setSkillsMenuOpen] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   // "Scan for skills…": the sheet that lists every skill-looking folder on
   // the Mac and lets the user pick which ones to copy into the skills folder.
   const [skillsScanOpen, setSkillsScanOpen] = useState(false);
@@ -371,6 +379,11 @@ export default function App() {
     });
   }, []);
 
+  // "Clauding → Settings…" in the menu bar opens the gear's popover.
+  useEffect(() => {
+    return window.clauding.onShowSettings(() => setSettingsMenuOpen(true));
+  }, []);
+
   // One skill picked straight from the macOS Skills menu: the same reader a
   // click in the popover opens.
   useEffect(() => {
@@ -520,7 +533,8 @@ export default function App() {
     sessionName = null,
     agentId = null,
     taskPrompt = null,
-    kickoffMessage = null
+    kickoffMessage = null,
+    extraArguments = null
   }) => {
     setNewSheetOpen(false);
     // A terminal the user just asked for is what they want to look at.
@@ -539,6 +553,10 @@ export default function App() {
         // …and the message the app types in for it once the CLI is at its
         // prompt, because a system prompt alone starts no turn.
         kickoffMessage,
+        // Extra `claude` flags the user typed for this one session; a resume
+        // or a fork sends none and the main process puts the session's own
+        // remembered flags back instead.
+        extraArguments,
         columns: dimensions.columns,
         rows: dimensions.rows,
         openedByClick
@@ -1019,6 +1037,25 @@ export default function App() {
     [agentById, agentState]
   );
 
+  // "+ New" confirmed: a brand new conversation in the chosen folder, as the
+  // chosen agent or as nobody. A session that starts *as an agent* is also
+  // given its first message — the definition is only in the system prompt,
+  // so without it the terminal shows a coloured chip and an empty prompt and
+  // nothing says that an agent is working here at all.
+  const startNewSession = useCallback(
+    ({ workingDirectory, agentId, extraArguments }) => {
+      const startingAgent = agentId ? agentById.get(agentId) || null : null;
+      return openTerminal({
+        workingDirectory,
+        groupId: newSheetGroupId,
+        agentId: agentId || null,
+        extraArguments: extraArguments || null,
+        kickoffMessage: startingAgent ? agentStartKickoffMessage(startingAgent.name) : null
+      });
+    },
+    [agentById, newSheetGroupId, openTerminal]
+  );
+
   // What the "Assign to agent" menus offer: the most used agents first, so
   // the ten in the menu are the ten worth having there. Everything else is
   // behind "More…".
@@ -1251,9 +1288,7 @@ export default function App() {
             setNewSheetOpen(true);
           }}
           onCloseNewSheet={() => setNewSheetOpen(false)}
-          onConfirmNewSession={({ workingDirectory, agentId }) =>
-            openTerminal({ workingDirectory, groupId: newSheetGroupId, agentId: agentId || null })
-          }
+          onConfirmNewSession={startNewSession}
           groupState={groupState}
           groupActions={groupActions}
           agentSessions={agentTabSessions}
@@ -1294,6 +1329,8 @@ export default function App() {
               settings={settings}
               skillsOpen={skillsMenuOpen}
               onSkillsOpenChange={setSkillsMenuOpen}
+              settingsOpen={settingsMenuOpen}
+              onSettingsOpenChange={setSettingsMenuOpen}
               onOpenSkill={(skill) =>
                 openReader({
                   kind: "skill",
@@ -1307,6 +1344,7 @@ export default function App() {
               skillMakerSeeding={settings.skillMakerSeeding}
               onInstallBuiltinSkill={() => window.clauding.answerBuiltinSkill(true).then(setSettings)}
               onPickAgentsRoot={() => window.clauding.pickAgentsRoot().then(setSettings)}
+              onSaveExtraFlags={(flags) => window.clauding.updateSettings({ extraClaudeArguments: flags }).then(setSettings)}
             />
           }
         />

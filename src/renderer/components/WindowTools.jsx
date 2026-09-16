@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import PopupMenu from "./PopupMenu.jsx";
 import { GearIcon, ScanIcon, SparkIcon } from "./Icons.jsx";
+import { checkExtraArguments } from "../../../electron/lib/extraFlags.js";
 
 // The two window-wide buttons in the top-right of the middle column, next to
 // "Show panel": **Skills** and the settings gear. Neither belongs to a
@@ -97,7 +98,53 @@ function SkillsPopover({
   );
 }
 
-function SettingsPopover({ anchor, settings, onPickAgentsRoot, onReveal, onClose }) {
+// The global level of the extra `claude` flags: one field, saved when it
+// loses focus or on Enter. Flags the app sets itself are refused with a line
+// under the field instead of being written.
+function ExtraFlagsField({ settings, onSave }) {
+  const { translate } = useTranslation();
+  const [draft, setDraft] = useState(settings.extraClaudeArguments || "");
+  const [problem, setProblem] = useState("");
+
+  function commit() {
+    const checked = checkExtraArguments(draft);
+    if (checked.reserved.length > 0) {
+      setProblem(checked.message);
+      return;
+    }
+    setProblem("");
+    onSave(draft.trim());
+  }
+
+  return (
+    <div className="settings-block">
+      <div className="settings-name">{translate("flags.title")}</div>
+      <input
+        type="text"
+        className="settings-input"
+        value={draft}
+        placeholder="--channels plugin:telegram"
+        spellCheck={false}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+          }
+        }}
+        data-settings-extra-flags
+      />
+      <div className="settings-hint">{translate("flags.globalHint")}</div>
+      {problem && (
+        <div className="settings-hint is-problem" data-settings-extra-flags-problem>
+          {problem}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsPopover({ anchor, settings, onPickAgentsRoot, onSaveExtraFlags, onReveal, onClose }) {
   const { translate } = useTranslation();
   return (
     <PopupMenu anchor={anchor} variant="wide" onClose={onClose}>
@@ -130,6 +177,8 @@ function SettingsPopover({ anchor, settings, onPickAgentsRoot, onReveal, onClose
           </button>
         </div>
       </div>
+      <div className="popup-menu-separator" />
+      <ExtraFlagsField settings={settings} onSave={onSaveExtraFlags} />
     </PopupMenu>
   );
 }
@@ -138,11 +187,14 @@ export default function WindowTools({
   settings,
   skillsOpen,
   onSkillsOpenChange,
+  settingsOpen,
+  onSettingsOpenChange,
   onOpenSkill,
   onScanForSkills,
   onInstallBuiltinSkill,
   skillMakerSeeding,
-  onPickAgentsRoot
+  onPickAgentsRoot,
+  onSaveExtraFlags
 }) {
   const { translate } = useTranslation();
   const [skillsAnchor, setSkillsAnchor] = useState(null);
@@ -186,6 +238,14 @@ export default function WindowTools({
       openSkills();
     }
   }, [skillsOpen, openSkills]);
+
+  // …and so does "Clauding → Settings…" for the gear's popover: the menu bar
+  // is where new functions go, and it opens what is already in the window.
+  useEffect(() => {
+    if (settingsOpen && settingsButtonRef.current) {
+      setSettingsAnchor(settingsButtonRef.current.getBoundingClientRect());
+    }
+  }, [settingsOpen]);
 
   return (
     <>
@@ -233,8 +293,14 @@ export default function WindowTools({
             setSettingsAnchor(null);
             onPickAgentsRoot();
           }}
+          onSaveExtraFlags={onSaveExtraFlags}
           onReveal={(target) => window.clauding.revealInFinder(target)}
-          onClose={() => setSettingsAnchor(null)}
+          onClose={() => {
+            setSettingsAnchor(null);
+            if (onSettingsOpenChange) {
+              onSettingsOpenChange(false);
+            }
+          }}
         />
       )}
     </>

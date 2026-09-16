@@ -126,6 +126,10 @@ contextBridge.exposeInMainWorld("clauding", {
   onSettingsChanged(listener) {
     return subscribe(CHANNELS.settingsChanged, listener);
   },
+  // "Clauding → Settings…" in the menu bar asking for the settings popover.
+  onShowSettings(listener) {
+    return subscribe(CHANNELS.settingsShow, listener);
+  },
   // Every skill in the skills folder: name and description from the
   // frontmatter of each <name>/SKILL.md. Read from disk on every call.
   listSkills() {
