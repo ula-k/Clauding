@@ -1,19 +1,25 @@
 // CL-17 — what `npm run install-app` puts inside Clauding.app
-// (scripts/lib/launcherBundle.js). The bundle is written into a throw-away
-// folder under the system temporary folder: /Applications is never touched,
-// the renderer is not built and nothing is launched.
+// (scripts/lib/appBundle.js). Everything happens in a throw-away folder
+// under the system temporary folder, from a fake Electron.app skeleton:
+// /Applications is never touched, the real 300 MB Electron is never copied,
+// the renderer is not built, nothing is signed and nothing is launched.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  informationPropertyList,
-  launcherScript,
-  packageVersion,
-  writeLauncherBundle
-} from "../scripts/lib/launcherBundle.js";
+  APPLICATION_NAME,
+  BUNDLE_IDENTIFIER,
+  bundleEntryScript,
+  bundlePackageManifest,
+  buildApplicationBundle,
+  informationPropertyEdits,
+  isClaudingBundle,
+  packageVersion
+} from "../scripts/lib/appBundle.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -21,100 +27,182 @@ function scratchFolder() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "clauding-test-install-"));
 }
 
-function writeBundleInto(folder, iconSourcePath) {
+// A stand-in for node_modules/electron/dist/Electron.app: the same shape,
+// none of the weight.
+function fakeElectronBundle(folder) {
+  const bundlePath = path.join(folder, "Electron.app");
+  const contentsFolder = path.join(bundlePath, "Contents");
+  fs.mkdirSync(path.join(contentsFolder, "MacOS"), { recursive: true });
+  fs.mkdirSync(path.join(contentsFolder, "Resources"), { recursive: true });
+  fs.writeFileSync(path.join(contentsFolder, "MacOS", "Electron"), "#!/bin/sh\nexit 0\n");
+  fs.chmodSync(path.join(contentsFolder, "MacOS", "Electron"), 0o755);
+  fs.writeFileSync(path.join(contentsFolder, "Resources", "electron.icns"), "not really an icon");
+  fs.writeFileSync(path.join(contentsFolder, "Resources", "default_app.asar"), "not really an archive");
+  fs.writeFileSync(
+    path.join(contentsFolder, "Info.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Electron</string>
+  <key>CFBundleDisplayName</key><string>Electron</string>
+  <key>CFBundleIdentifier</key><string>com.github.Electron</string>
+  <key>CFBundleExecutable</key><string>Electron</string>
+  <key>CFBundleIconFile</key><string>electron.icns</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>44.3.0</string>
+  <key>CFBundleVersion</key><string>44.3.0</string>
+  <key>NSMainNibFile</key><string>MainMenu</string>
+  <key>NSPrincipalClass</key><string>AtomApplication</string>
+</dict></plist>
+`
+  );
+  return bundlePath;
+}
+
+function buildInto(folder, iconSourcePath) {
   const bundlePath = path.join(folder, "Clauding.app");
-  const written = writeLauncherBundle({ bundlePath, projectRoot, iconSourcePath });
+  const written = buildApplicationBundle({
+    bundlePath,
+    projectRoot,
+    electronBundlePath: fakeElectronBundle(folder),
+    iconSourcePath,
+    signIdentity: null
+  });
   return { bundlePath, written };
 }
 
-test("the bundle is a property list, an executable script and an icon", () => {
+function readPropertyList(bundlePath) {
+  const informationPath = path.join(bundlePath, "Contents", "Info.plist");
+  return JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", informationPath], { encoding: "utf8" }));
+}
+
+test("the bundle is Electron's own, renamed to Clauding", () => {
   const folder = scratchFolder();
-  const iconSourcePath = path.join(projectRoot, "build", "icon", "Clauding.icns");
-  const { bundlePath, written } = writeBundleInto(folder, iconSourcePath);
+  const { bundlePath } = buildInto(folder, null);
+  const properties = readPropertyList(bundlePath);
 
-  assert.equal(fs.existsSync(path.join(bundlePath, "Contents", "Info.plist")), true);
-  assert.equal(fs.existsSync(path.join(bundlePath, "Contents", "MacOS", "Clauding")), true);
-  assert.equal(written.hasIcon, true, "this checkout has build/icon/Clauding.icns");
-  assert.equal(fs.existsSync(path.join(bundlePath, "Contents", "Resources", "Clauding.icns")), true);
+  assert.equal(properties.CFBundleName, APPLICATION_NAME, "the leftmost menu-bar title comes from this");
+  assert.equal(properties.CFBundleDisplayName, APPLICATION_NAME);
+  assert.equal(properties.CFBundleIdentifier, BUNDLE_IDENTIFIER);
+  assert.equal(properties.CFBundleExecutable, APPLICATION_NAME);
+  assert.equal(properties.LSApplicationCategoryType, "public.app-category.developer-tools");
+  // Everything Electron's own property list said that we did not rewrite is
+  // still there: the bundle is a copy, not a hand-written stub.
+  assert.equal(properties.NSPrincipalClass, "AtomApplication");
+  assert.equal(properties.NSMainNibFile, "MainMenu");
+});
 
-  const mode = fs.statSync(written.launcherPath).mode & 0o777;
-  assert.equal(mode, 0o755, "the launcher can be run by the Dock");
+test("the executable is renamed too, and stays runnable", () => {
+  const folder = scratchFolder();
+  const { bundlePath, written } = buildInto(folder, null);
+  const executablePath = path.join(bundlePath, "Contents", "MacOS", "Clauding");
+
+  assert.equal(written.executablePath, executablePath);
+  assert.equal(fs.existsSync(executablePath), true);
+  assert.equal(fs.existsSync(path.join(bundlePath, "Contents", "MacOS", "Electron")), false);
+  assert.equal(fs.statSync(executablePath).mode & 0o777, 0o755);
 });
 
 test("the property list carries the version from package.json", () => {
   const folder = scratchFolder();
-  const { bundlePath } = writeBundleInto(folder, null);
-  const text = fs.readFileSync(path.join(bundlePath, "Contents", "Info.plist"), "utf8");
+  const { bundlePath, written } = buildInto(folder, null);
   const version = packageVersion(projectRoot);
+  const properties = readPropertyList(bundlePath);
+
   assert.match(version, /^\d+\.\d+\.\d+/);
-  assert.ok(text.includes(`<key>CFBundleVersion</key><string>${version}</string>`));
-  assert.ok(text.includes("<key>CFBundleExecutable</key><string>Clauding</string>"));
-  assert.ok(text.includes("<key>CFBundleIdentifier</key><string>com.clauding.app</string>"));
-  assert.ok(text.startsWith("<?xml"), "it is a property list, not a fragment");
+  assert.equal(written.version, version);
+  assert.equal(properties.CFBundleShortVersionString, version);
+  assert.equal(properties.CFBundleVersion, version);
 });
 
 test("a checkout with no package.json still gets a version", () => {
   assert.equal(packageVersion(scratchFolder()), "0.0.0");
 });
 
-test("the launcher starts this checkout, with the usual shell folders on PATH", () => {
+test("our icon replaces Electron's", () => {
   const folder = scratchFolder();
-  const { written } = writeBundleInto(folder, null);
-  const script = fs.readFileSync(written.launcherPath, "utf8");
-  assert.ok(script.startsWith("#!/bin/zsh"));
-  assert.ok(script.includes(`PROJECT_DIRECTORY=${JSON.stringify(projectRoot)}`), "the project folder is written in");
-  assert.ok(script.includes("node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"));
-  // A Dock-launched app has almost nothing on PATH; `claude` and `clauding`
-  // have to be findable from a terminal of the app.
-  assert.ok(script.includes('export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'));
-});
+  const iconSourcePath = path.join(projectRoot, "build", "icon", "Clauding.icns");
+  const { bundlePath, written } = buildInto(folder, iconSourcePath);
 
-test("the project folder is the one this script lives in, whatever the folder is called", () => {
-  const madeUpCheckout = "/Users/someone/some where/clauding";
-  const script = launcherScript(madeUpCheckout);
-  assert.ok(script.includes('PROJECT_DIRECTORY="/Users/someone/some where/clauding"'), "a space in the path survives");
-  assert.equal(fs.existsSync(path.join(projectRoot, "package.json")), true, "the resolved root is the checkout");
-  assert.equal(path.basename(projectRoot), path.basename(path.resolve(projectRoot)));
+  assert.equal(written.hasIcon, true, "this checkout has build/icon/Clauding.icns");
+  assert.equal(readPropertyList(bundlePath).CFBundleIconFile, "Clauding.icns");
+  assert.equal(fs.existsSync(path.join(bundlePath, "Contents", "Resources", "Clauding.icns")), true);
+  assert.equal(fs.existsSync(path.join(bundlePath, "Contents", "Resources", "electron.icns")), false);
 });
 
 test("a missing icon is reported and does not stop the bundle", () => {
   const folder = scratchFolder();
   const reported = [];
   const bundlePath = path.join(folder, "Clauding.app");
-  const written = writeLauncherBundle({
+  const written = buildApplicationBundle({
     bundlePath,
     projectRoot,
+    electronBundlePath: fakeElectronBundle(folder),
     iconSourcePath: path.join(folder, "no-icon-here.icns"),
+    signIdentity: null,
     report(line) {
       reported.push(line);
     }
   });
+
   assert.equal(written.hasIcon, false);
-  assert.equal(fs.existsSync(written.launcherPath), true);
+  assert.equal(fs.existsSync(written.executablePath), true);
   assert.equal(reported.length, 1);
   assert.match(reported[0], /icon/i);
 });
 
+test("the app inside the bundle is two lines pointing at this checkout", () => {
+  const folder = scratchFolder();
+  const { written } = buildInto(folder, null);
+  const entry = fs.readFileSync(written.entryPath, "utf8");
+  const manifest = JSON.parse(fs.readFileSync(written.manifestPath, "utf8"));
+
+  assert.ok(entry.includes(`import "file://${projectRoot}/electron/main.js"`), "the real main process, by absolute path");
+  assert.ok(!entry.includes("import("), "a static import, so Electron is ready only after main.js has run");
+  assert.equal(manifest.main, "main.js");
+  assert.equal(manifest.type, "module", "electron/main.js is an ES module");
+  // No copy of the app: the bundle brings Electron and nothing else of ours.
+  assert.equal(fs.readdirSync(path.dirname(written.entryPath)).sort().join(","), "main.js,package.json");
+});
+
+test("a checkout path with a space in it survives into the entry", () => {
+  const entry = bundleEntryScript("/Users/someone/some where/clauding");
+  assert.ok(entry.includes("/Users/someone/some%20where/clauding/electron/main.js"), "it is a file URL");
+  assert.equal(fs.existsSync(path.join(projectRoot, "package.json")), true, "the resolved root is the checkout");
+});
+
 test("installing again replaces what was there before", () => {
   const folder = scratchFolder();
-  const bundlePath = path.join(folder, "Clauding.app");
-  writeLauncherBundle({ bundlePath, projectRoot, iconSourcePath: null });
+  const { bundlePath } = buildInto(folder, null);
   const leftover = path.join(bundlePath, "Contents", "MacOS", "left-over-file");
   fs.writeFileSync(leftover, "from an older install");
-  writeLauncherBundle({ bundlePath, projectRoot, iconSourcePath: null });
+  buildInto(folder, null);
+
   assert.equal(fs.existsSync(leftover), false);
   assert.equal(fs.existsSync(path.join(bundlePath, "Contents", "MacOS", "Clauding")), true);
 });
 
 test("writing a bundle touches nothing outside the folder it was given", () => {
   const folder = scratchFolder();
-  writeBundleInto(folder, null);
-  assert.deepEqual(fs.readdirSync(folder), ["Clauding.app"]);
-  const insideBundle = fs.readdirSync(path.join(folder, "Clauding.app", "Contents")).sort();
-  assert.deepEqual(insideBundle, ["Info.plist", "MacOS", "Resources"]);
+  buildInto(folder, null);
+  assert.deepEqual(fs.readdirSync(folder).sort(), ["Clauding.app", "Electron.app"]);
 });
 
-test("the property list is the same text for the same version", () => {
-  assert.equal(informationPropertyList("1.2.3"), informationPropertyList("1.2.3"));
-  assert.ok(informationPropertyList("1.2.3").includes("<string>1.2.3</string>"));
+test("uninstalling only ever removes a bundle install-app wrote", () => {
+  const folder = scratchFolder();
+  const { bundlePath } = buildInto(folder, null);
+  assert.equal(isClaudingBundle(bundlePath), true);
+
+  const strangerPath = path.join(folder, "Someone-elses-Clauding.app");
+  fs.mkdirSync(path.join(strangerPath, "Contents", "Resources", "app"), { recursive: true });
+  fs.writeFileSync(path.join(strangerPath, "Contents", "Resources", "app", "main.js"), "console.log('mine');\n");
+  assert.equal(isClaudingBundle(strangerPath), false);
+  assert.equal(isClaudingBundle(path.join(folder, "not-there.app")), false);
+});
+
+test("the same version gives the same property list edits and manifest", () => {
+  assert.deepEqual(informationPropertyEdits("1.2.3"), informationPropertyEdits("1.2.3"));
+  assert.ok(informationPropertyEdits("1.2.3").some(([key, value]) => key === "CFBundleVersion" && value === "1.2.3"));
+  assert.equal(bundlePackageManifest("1.2.3"), bundlePackageManifest("1.2.3"));
+  assert.ok(bundlePackageManifest("1.2.3").includes('"version": "1.2.3"'));
 });

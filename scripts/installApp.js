@@ -1,38 +1,64 @@
-// `npm run install-app`: builds the renderer, then puts a small launcher
-// bundle at /Applications/Clauding.app.
+// `npm run install-app`: builds the renderer, then puts a real macOS
+// application bundle at /Applications/Clauding.app.
 //
-// The bundle holds no code of its own — it is a zsh script that starts the
-// Electron binary from this project folder with the last `npm run build`
-// output. That keeps one copy of the app (this checkout) and makes the Dock
-// icon, Spotlight and `open -a Clauding` work like any other Mac app. The
-// project folder is written into the script at install time, resolved from
-// where this file lives, so a clone anywhere works.
+// The bundle is a renamed copy of the Electron.app in this checkout's
+// node_modules (see scripts/lib/appBundle.js for why a copy and not a
+// launcher script). It holds no code of the app: its entry imports this
+// checkout's electron/main.js by absolute path, so the running app is always
+// the project folder and the last `npm run build`. After `git pull` run this
+// again — the Electron version, the version number and the icon in the
+// bundle are the ones that were current when it was written.
 //
-// Running it again simply overwrites the bundle.
+// CLAUDING_APP_BUNDLE=<path> writes the bundle somewhere else instead, which
+// is how it can be inspected without touching /Applications.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { writeLauncherBundle } from "./lib/launcherBundle.js";
+import { buildApplicationBundle } from "./lib/appBundle.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bundlePath = process.env.CLAUDING_APP_BUNDLE || "/Applications/Clauding.app";
 const iconSourcePath = path.join(projectRoot, "build", "icon", "Clauding.icns");
+const electronBundlePath = path.join(projectRoot, "node_modules", "electron", "dist", "Electron.app");
+
+function report(line) {
+  console.log(`[install-app] ${line}`);
+}
 
 function buildRenderer() {
-  console.log("[install-app] npm run build");
+  report("npm run build");
   execFileSync("npm", ["run", "build"], { cwd: projectRoot, stdio: "inherit" });
 }
 
-function writeBundle() {
-  writeLauncherBundle({
-    bundlePath,
+// The bundle is assembled outside its final home and only then moved into
+// place, so a half-written Clauding.app is never what the Dock picks up.
+function buildStagedBundle() {
+  const stagingFolder = fs.mkdtempSync(path.join(os.tmpdir(), "clauding-install-"));
+  const stagedBundlePath = path.join(stagingFolder, "Clauding.app");
+  report(`assembling the bundle in ${stagingFolder}`);
+  const written = buildApplicationBundle({
+    bundlePath: stagedBundlePath,
     projectRoot,
+    electronBundlePath,
     iconSourcePath,
-    report(line) {
-      console.log(`[install-app] ${line}`);
-    }
+    signIdentity: "-",
+    report
   });
+  return { stagingFolder, written };
+}
+
+function moveIntoPlace(stagedBundlePath) {
+  fs.rmSync(bundlePath, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+  try {
+    fs.renameSync(stagedBundlePath, bundlePath);
+  } catch (error) {
+    // A different volume: copy it over and drop the staged one.
+    execFileSync("ditto", [stagedBundlePath, bundlePath]);
+    fs.rmSync(stagedBundlePath, { recursive: true, force: true });
+  }
 }
 
 // Finder and the Dock cache a bundle by its modification time, so the new
@@ -41,34 +67,27 @@ function refreshFinder() {
   try {
     execFileSync("touch", [bundlePath]);
   } catch (error) {
-    console.log(`[install-app] could not touch ${bundlePath}: ${error.message}`);
+    report(`could not touch ${bundlePath}: ${error.message}`);
   }
 }
 
 function main() {
   if (process.platform !== "darwin") {
-    console.log("[install-app] this launcher bundle only makes sense on macOS.");
+    report("this application bundle only makes sense on macOS.");
     process.exit(1);
   }
-  const electronBinary = path.join(
-    projectRoot,
-    "node_modules",
-    "electron",
-    "dist",
-    "Electron.app",
-    "Contents",
-    "MacOS",
-    "Electron"
-  );
-  if (!fs.existsSync(electronBinary)) {
-    console.log("[install-app] Electron is not installed yet — run `npm install` first.");
+  if (!fs.existsSync(path.join(electronBundlePath, "Contents", "MacOS", "Electron"))) {
+    report("Electron is not installed yet — run `npm install` first.");
     process.exit(1);
   }
   buildRenderer();
-  writeBundle();
+  const { stagingFolder, written } = buildStagedBundle();
+  report(`version ${written.version}, icon ${written.hasIcon ? "ours" : "generic"}, signed ${written.signed}`);
+  moveIntoPlace(written.bundlePath);
+  fs.rmSync(stagingFolder, { recursive: true, force: true });
   refreshFinder();
-  console.log(`[install-app] ${bundlePath} now starts Clauding from ${projectRoot}`);
-  console.log("[install-app] open it from Launchpad, Spotlight, or with: open -a Clauding");
+  report(`${bundlePath} now runs Clauding from ${projectRoot}`);
+  report("open it from Launchpad, Spotlight, or with: open -a Clauding");
 }
 
 main();

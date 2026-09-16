@@ -79,12 +79,28 @@ npm install          # also prepares node-pty for Electron
 npm run install-app  # builds the renderer and puts Clauding.app in /Applications
 ```
 
-`npm run install-app` writes a small launcher bundle at
-`/Applications/Clauding.app`: an `Info.plist`, the icon, and a zsh script that
-starts the Electron binary from *this* checkout with the last `npm run build`
-output. There is no second copy of the app, so after changing the code
-`npm run build` is enough for the next launch. Run the command again to
-update the bundle (it overwrites), `npm run uninstall-app` to remove it.
+`npm run install-app` writes a real macOS application bundle at
+`/Applications/Clauding.app`. It is the `Electron.app` from this checkout's
+`node_modules`, copied and renamed: the property list says Clauding, the
+executable is called Clauding, the icon and the version number are ours, and
+it is signed ad-hoc so macOS will start it. That rename is what a launcher
+script could not do — macOS reads the leftmost menu-bar title and the About
+panel from the bundle itself, never from `app.setName()`, so a script that
+started the stock Electron.app always ended up calling the app "Electron".
+
+The bundle still holds none of the app's code. Its whole entry is
+`Contents/Resources/app/main.js`, two lines importing *this* checkout's
+`electron/main.js` by absolute path, so the running app is always the project
+folder and its last `npm run build` — no second copy of the source, no
+`node_modules`, no asar. After changing the code, `npm run build` is enough
+for the next launch.
+
+Re-run `npm run install-app` after `git pull` (or after moving the checkout):
+the Electron version, the version number and the icon inside the bundle are
+the ones that were current when it was written. It costs about 290 MB in
+`/Applications` — that is Electron, and the one in `node_modules` stays too.
+`npm run uninstall-app` removes the bundle again, and only ever one this
+script wrote.
 
 Launch it from Launchpad, Spotlight or `open -a Clauding`.
 
@@ -188,7 +204,8 @@ electron/projects.js       folder labels ("…/projects/website"), colour index,
 scripts/prepareNodePty.js  postinstall: makes node-pty usable inside Electron
 scripts/start.js           npm start (Vite dev server, then Electron)
 scripts/check.js           npm run check
-scripts/installApp.js      npm run install-app: the /Applications launcher bundle
+scripts/installApp.js      npm run install-app: the /Applications bundle
+scripts/lib/appBundle.js   what goes inside Clauding.app (renamed Electron.app)
 scripts/uninstallApp.js    npm run uninstall-app
 src/renderer/              React 18 + Vite (JSX), styles/theme.css holds every colour
 src/renderer/terminalInstances.js  the xterm.js instances, kept alive outside React

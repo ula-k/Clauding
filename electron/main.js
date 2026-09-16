@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, screen, shell, systemPreferences } from "electron";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -48,9 +48,33 @@ const screenshotPath = process.env.CLAUDING_SCREENSHOT || null;
 const applicationIconPath = path.join(currentDirectory, "..", "build", "icon", "icon-1024.png");
 const commandDirectory = path.join(currentDirectory, "..", "bin");
 
-// The app runs from the project folder through Electron's own binary, so the
-// name and the Dock icon are set here instead of coming from a packaged bundle.
+// The version of the checkout the app is running, for the About panel. The
+// bundle in /Applications carries the same number in its property list, but
+// only until the next `git pull`, and `npm start` has no bundle at all.
+function readPackageVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(currentDirectory, "..", "package.json"), "utf8")).version || "";
+  } catch (error) {
+    return "";
+  }
+}
+const applicationVersion = readPackageVersion();
+
+// The name and the Dock icon. In the bundle written by `npm run install-app`
+// the property list already says Clauding; started with `npm start` there is
+// no bundle at all, and this is the only thing that names the app.
 app.setName("Clauding");
+
+// The standard macOS About panel. Left alone it shows Electron's own name,
+// version and atom icon, because it is drawn from the running bundle and
+// `app.setName` does not reach it.
+app.setAboutPanelOptions({
+  applicationName: "Clauding",
+  applicationVersion,
+  version: "",
+  credits: "A macOS desktop window around Claude Code sessions.\nMIT-licensed. Not affiliated with Anthropic.",
+  iconPath: applicationIconPath
+});
 
 // Only one Clauding at a time: a second launch just brings the first window up.
 // (Two instances reading the session list at once were observed to stall.)
@@ -67,6 +91,7 @@ app.on("second-instance", () => {
   }
 });
 const screenshotSelect = process.env.CLAUDING_SCREENSHOT_SELECT || null;
+const screenshotAboutPanel = process.env.CLAUDING_SCREENSHOT_ABOUT === "1";
 const screenshotTerminalFolder = process.env.CLAUDING_SCREENSHOT_TERMINAL || null;
 const smokeTerminalMode = process.env.CLAUDING_SMOKE_TERMINAL === "1";
 const smokeGroupsMode = process.env.CLAUDING_SMOKE_GROUPS === "1";
@@ -442,6 +467,11 @@ function createWindow() {
 //       first (a scratch folder, never a real project) so a picture can be
 //       taken of anything that needs a live session
 //   CLAUDING_SCREENSHOT_WAIT=<ms>          wait this much longer before the shutter
+//   CLAUDING_SCREENSHOT_ABOUT=1            show the standard About panel and
+//       photograph that instead of the window (see below: only possible with
+//       macOS screen recording permission)
+//   CLAUDING_SCREENSHOT_ABOUT_HOLD=<ms>    keep the About panel on screen this
+//       much longer before quitting, so it can be read from outside
 //   CLAUDING_SCREENSHOT_CLICK=a>>b         click these selectors, in order,
 //       before the capture (a sheet, a tab, a menu item)
 async function captureScreenshotAndQuit() {
@@ -497,12 +527,66 @@ async function captureScreenshotAndQuit() {
   if (extraWait > 0) {
     await new Promise((resolve) => setTimeout(resolve, extraWait));
   }
+  if (screenshotAboutPanel) {
+    await photographAboutPanel();
+    app.quit();
+    return;
+  }
   if (mainWindow) {
     const image = await mainWindow.webContents.capturePage();
     fs.writeFileSync(screenshotPath, image.toPNG());
     console.log(`Screenshot written to ${screenshotPath}`);
   }
   app.quit();
+}
+
+// CLAUDING_SCREENSHOT_ABOUT=1. The About panel is a window of the app, not
+// page content, so `capturePage` cannot see it: the only way to a picture is
+// a screen capture, and macOS gives that to an app the user has allowed under
+// Privacy & Security → Screen Recording. Without the permission the panel is
+// still put on screen and held there (CLAUDING_SCREENSHOT_ABOUT_HOLD), which
+// is enough to read it by hand or with System Events.
+async function photographAboutPanel() {
+  // macOS does not offer a floating panel as a window to capture, so the
+  // picture has to be of the whole display. The app's own window is stretched
+  // over that display first: the shot then shows the menu bar, Clauding's
+  // window and the panel on top of it, and nothing of whatever else the user
+  // had open.
+  const display = screen.getPrimaryDisplay();
+  if (mainWindow) {
+    mainWindow.setBounds(display.bounds);
+    mainWindow.focus();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
+  app.showAboutPanel();
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const screenAccess = systemPreferences.getMediaAccessStatus("screen");
+  console.log(`[screenshot] About panel shown; screen recording permission: ${screenAccess}`);
+  if (screenAccess === "granted" && screenshotPath) {
+    const sources = await desktopCapturer.getSources({
+      types: ["window", "screen"],
+      thumbnailSize: {
+        width: Math.round(display.size.width * display.scaleFactor),
+        height: Math.round(display.size.height * display.scaleFactor)
+      }
+    });
+    console.log(`[screenshot] capturable: ${sources.map((source) => `${source.id} ${source.name}`).join(" | ")}`);
+    const chosen =
+      sources.find((source) => /about/i.test(source.name)) ||
+      sources.find((source) => source.id.startsWith("screen:"));
+    if (chosen) {
+      fs.writeFileSync(screenshotPath, chosen.thumbnail.toPNG());
+      console.log(`Screenshot written to ${screenshotPath} (${chosen.name})`);
+    } else {
+      console.log("[screenshot] nothing capturable held the About panel");
+    }
+  } else {
+    console.log("[screenshot] no screen recording permission, so no picture of the About panel");
+  }
+  const holdMilliseconds = Number(process.env.CLAUDING_SCREENSHOT_ABOUT_HOLD || 0);
+  if (holdMilliseconds > 0) {
+    await new Promise((resolve) => setTimeout(resolve, holdMilliseconds));
+  }
 }
 
 // The Skills menu in the macOS menu bar. It is built from the skills folder
@@ -561,7 +645,9 @@ function skillsMenuTemplate() {
 function installApplicationMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
-      { role: "appMenu" },
+      // macOS draws this title from the bundle, but the label keeps the name
+      // right when the app runs without one (`npm start`).
+      { role: "appMenu", label: app.name },
       {
         label: "Edit",
         submenu: [
