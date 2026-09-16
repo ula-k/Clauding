@@ -8,12 +8,22 @@
 //     "groups": [{ "id": "default", "name": null, "order": 0 }, …],
 //     "membership": { "<sessionId>": "<groupId>", … },
 //     "hidden": ["<sessionId>", …],
+//     "hiddenSince": { "<sessionId>": { "at": 1730000000000, "awaitingIdle": false }, … },
 //     "collapsed": ["<groupId>", …]
 //   }
 //
 // `collapsed` lists the groups folded shut in the list (Default may be one of
 // them). A group not named there is open — that is the default, so an older
 // groups.json without the field simply has everything open.
+//
+// `hiddenSince` is what keeps a hidden session hidden. Hiding is "stop and
+// put away": the app closes the session's own terminal first, so a row does
+// not come back a second later merely because the CLI is still there. What
+// brings a hidden session back is a *transition seen after it was hidden* —
+// it starts needing an answer, or it goes busy again — never the mere fact
+// that it exists and is idle. `awaitingIdle` is set when the session was
+// still busy at the moment it was hidden: such a session has to be seen
+// quiet once before "busy again" can mean anything.
 //
 // The group with id "default" always exists and always has a home for every
 // session that is not named in `membership`; its `name` stays null so the
@@ -37,6 +47,7 @@ function emptyState() {
     groups: [{ id: DEFAULT_GROUP_ID, name: null, order: 0 }],
     membership: {},
     hidden: [],
+    hiddenSince: {},
     collapsed: []
   };
 }
@@ -86,6 +97,17 @@ function sanitize(saved) {
   }
   if (Array.isArray(saved.hidden)) {
     state.hidden = saved.hidden.filter((sessionId) => typeof sessionId === "string");
+    // A groups.json written before hiding remembered anything: every hidden
+    // session is treated as hidden while quiet, which is the safe reading —
+    // it stays hidden until something actually happens in it.
+    const savedSince = saved.hiddenSince && typeof saved.hiddenSince === "object" ? saved.hiddenSince : {};
+    for (const sessionId of state.hidden) {
+      const entry = savedSince[sessionId];
+      state.hiddenSince[sessionId] = {
+        at: entry && Number.isFinite(entry.at) ? Number(entry.at) : Date.now(),
+        awaitingIdle: Boolean(entry && entry.awaitingIdle)
+      };
+    }
   }
   // Only groups that still exist can be collapsed; anything else is dropped.
   if (Array.isArray(saved.collapsed)) {
@@ -127,6 +149,9 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
       groups: state.groups.map((group) => ({ ...group })),
       membership: { ...state.membership },
       hidden: state.hidden.slice(),
+      hiddenSince: Object.fromEntries(
+        Object.entries(state.hiddenSince).map(([sessionId, entry]) => [sessionId, { ...entry }])
+      ),
       collapsed: state.collapsed.slice()
     };
   }
@@ -247,15 +272,24 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
 
   // Hiding only adds the session to `hidden`; its group is untouched, so
   // unhiding (by hand or automatically) puts it back exactly where it was.
-  function setHidden(sessionId, hidden) {
+  //
+  // `wasBusy` is what the session was doing at the moment it was hidden.
+  // Hiding a busy one (a session running in a terminal outside the app) does
+  // not stop it, so it has to be seen quiet once before going busy again can
+  // mean "something is happening here, look" — otherwise it would bounce
+  // back into the list on the very next poll. The app's own terminals are
+  // closed before this is called, so they are hidden quiet.
+  function setHidden(sessionId, hidden, wasBusy = false) {
     if (!sessionId) {
       return get();
     }
     const isHidden = state.hidden.includes(sessionId);
     if (hidden && !isHidden) {
       state.hidden.push(sessionId);
+      state.hiddenSince[sessionId] = { at: Date.now(), awaitingIdle: Boolean(wasBusy) };
     } else if (!hidden && isHidden) {
       state.hidden = state.hidden.filter((entry) => entry !== sessionId);
+      delete state.hiddenSince[sessionId];
     } else {
       return get();
     }
@@ -263,18 +297,61 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
     return get();
   }
 
-  // A hidden session that the CLI registry shows as busy again comes back:
-  // the user hid it because the list was too long, not to lose track of live work.
-  function unhideRunning(runningSessionIds) {
-    const stillHidden = state.hidden.filter((sessionId) => !runningSessionIds.has(sessionId));
-    if (stillHidden.length === state.hidden.length) {
+  // Every session this store knows nothing about any more (deleted) is
+  // forgotten here: its group, its place in `hidden`, its hiding note.
+  function forgetSession(sessionId) {
+    if (!sessionId) {
+      return get();
+    }
+    const known =
+      sessionId in state.membership || state.hidden.includes(sessionId) || sessionId in state.hiddenSince;
+    if (!known) {
+      return get();
+    }
+    delete state.membership[sessionId];
+    delete state.hiddenSince[sessionId];
+    state.hidden = state.hidden.filter((entry) => entry !== sessionId);
+    announce();
+    return get();
+  }
+
+  // What the poll saw this time round: `liveBySession` is a Map of
+  // sessionId -> { busy, needsAnswer }. A hidden session comes back only on
+  // something that happened *after* it was hidden — it needs an answer, or
+  // it went busy again having been seen quiet since. Being present in the
+  // registry, or sitting idle at a prompt, is not an event: that is exactly
+  // how a hidden session used to bounce straight back into the list.
+  function unhideOnActivity(liveBySession) {
+    const woken = [];
+    let touched = false;
+    for (const sessionId of state.hidden.slice()) {
+      const live = (liveBySession && liveBySession.get(sessionId)) || null;
+      const note = state.hiddenSince[sessionId] || { at: Date.now(), awaitingIdle: false };
+      const busy = Boolean(live && live.busy);
+      const needsAnswer = Boolean(live && live.needsAnswer);
+      if (!busy && note.awaitingIdle) {
+        // Seen quiet at last: from here on, busy again means something new.
+        state.hiddenSince[sessionId] = { ...note, awaitingIdle: false };
+        touched = true;
+        continue;
+      }
+      if (needsAnswer || (busy && !note.awaitingIdle)) {
+        woken.push(sessionId);
+      }
+    }
+    if (woken.length === 0) {
+      if (touched) {
+        announce();
+      }
       return false;
     }
     if (log) {
-      const woken = state.hidden.filter((sessionId) => runningSessionIds.has(sessionId));
-      log(`[groups] unhidden because they are running again: ${woken.join(", ")}`);
+      log(`[groups] unhidden because something happened in them: ${woken.join(", ")}`);
     }
-    state.hidden = stillHidden;
+    state.hidden = state.hidden.filter((sessionId) => !woken.includes(sessionId));
+    for (const sessionId of woken) {
+      delete state.hiddenSince[sessionId];
+    }
     announce();
     return true;
   }
@@ -288,6 +365,7 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
     assignSession,
     setCollapsed,
     setHidden,
-    unhideRunning
+    forgetSession,
+    unhideOnActivity
   };
 }

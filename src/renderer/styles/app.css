@@ -692,11 +692,18 @@ a {
   padding-right: 76px;
 }
 
-.row-unhide {
+/* The two things a hidden row offers, side by side at its right edge. */
+.row-hidden-actions {
   position: absolute;
   right: 6px;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-unhide {
   padding: 2px 9px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-lavender);
@@ -974,6 +981,137 @@ input:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* "loads on next resume": the session was assigned while its terminal was
+   already running, so the conversation on screen still has the system
+   prompt it started with. It goes when that terminal does. */
+.agent-chip-pending {
+  flex-shrink: 0;
+  margin-left: -2px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-lavender-raised);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* The "Assign to agent" question. Nothing is written until one of its
+   buttons is pressed, so it is a real dialog and not a sheet with a
+   confirmation behind it. */
+.assign-dialog {
+  max-width: 420px;
+}
+
+.assign-dialog-title {
+  display: block;
+  margin-bottom: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--agent-color, var(--border)) 40%, transparent);
+  font-size: 14.5px;
+  line-height: 1.35;
+}
+
+.assign-dialog-text {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.assign-dialog .sheet-actions {
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+/* The conversation about to be deleted, named so the confirmation is about
+   something and not about "this session" in the abstract. */
+.delete-dialog-session {
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-small);
+  background: var(--background);
+  border: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "More…": the whole list of agents with a search box. */
+.agent-picker {
+  max-width: 480px;
+}
+
+.agent-picker-list {
+  margin-top: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  border-radius: var(--radius-small);
+  background: var(--background);
+  border: 1px solid var(--border-soft);
+  padding: 4px;
+}
+
+.agent-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+  color: var(--text);
+}
+
+.agent-picker-row:hover {
+  background: var(--surface-hover);
+}
+
+.agent-picker-row.is-selected {
+  background: var(--surface-lavender-raised);
+  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--border-lavender);
+}
+
+.agent-picker-name {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-picker-folder {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Under "Hidden (N)": the session is already stopped, so the only thing
+   left to do with it — other than bringing it back — is to throw it away. */
+.row-delete {
+  flex-shrink: 0;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--coral);
+  box-shadow: inset 0 0 0 1px var(--coral-soft);
+}
+
+.row-delete:hover {
+  background: var(--coral-soft);
+}
+
+.row-delete:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .agent-list {

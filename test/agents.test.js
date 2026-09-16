@@ -16,6 +16,7 @@ import {
   inspectDefinitionFile,
   inspectDefinitionFolder
 } from "../electron/agents.js";
+import { MENU_AGENT_LIMIT, rankAgentsByUse } from "../src/renderer/agentConstants.js";
 
 const SAVE_WAIT_MILLISECONDS = 400;
 
@@ -185,6 +186,21 @@ test("deleting an agent takes every session link with it", () => {
   assert.equal(state.sessionAgents["session-two"], second.id);
 });
 
+test("a deleted session takes its agent link with it, and the agents stay", () => {
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const { store } = storeIn(scratchFolder());
+  const agent = store.addAgent({ name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" });
+  store.linkSession("session-one", agent.id);
+  store.linkSession("session-two", agent.id);
+
+  assert.equal(store.forgetSession("session-three"), false, "an unknown session changes nothing");
+  assert.equal(store.forgetSession("session-one"), true);
+  const state = store.get();
+  assert.equal(state.sessionAgents["session-one"], undefined);
+  assert.equal(state.sessionAgents["session-two"], agent.id);
+  assert.equal(state.agents.length, 1, "deleting a session never deletes an agent");
+});
+
 test("a link to a session with no transcript is kept, not treated as broken", async () => {
   const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
   const first = storeIn(scratchFolder());
@@ -252,4 +268,75 @@ test("the working folder of an agent is remembered once, not on every start", ()
   assert.equal(store.rememberWorkingDirectory(agent.id, "/Users/someone/Documents/projects/website"), false);
   assert.equal(store.agentById(agent.id).lastWorkingDirectory, "/Users/someone/Documents/projects/website");
   assert.equal(store.agentById("no-such-agent"), null);
+});
+
+// The "Assign to agent" menus show at most MENU_AGENT_LIMIT agents, so the
+// order decides which ones are one click away.
+function agentNamed(name, extra = {}) {
+  return { id: name, name, emoji: "✦", color: "--project-color-0", lastUsedAt: null, ...extra };
+}
+
+test("the assign menus rank agents by how many sessions they have", () => {
+  const ranked = rankAgentsByUse([agentNamed("one"), agentNamed("two"), agentNamed("three")], {
+    sessionAgents: { "session-a": "two", "session-b": "two", "session-c": "three" }
+  });
+  assert.deepEqual(ranked.map((agent) => agent.name), ["two", "three", "one"]);
+});
+
+test("a terminal running as an agent counts as a session of its own", () => {
+  const ranked = rankAgentsByUse([agentNamed("one"), agentNamed("two")], {
+    sessionAgents: { "session-a": "one" },
+    liveAgentIds: ["two", "two", null]
+  });
+  assert.deepEqual(ranked.map((agent) => agent.name), ["two", "one"]);
+});
+
+test("agents used equally often are ordered by when they were last used", () => {
+  const ranked = rankAgentsByUse(
+    [agentNamed("older", { lastUsedAt: 1000 }), agentNamed("never"), agentNamed("newer", { lastUsedAt: 2000 })],
+    { sessionAgents: { "session-a": "older", "session-b": "newer", "session-c": "never" } }
+  );
+  assert.deepEqual(ranked.map((agent) => agent.name), ["newer", "older", "never"]);
+});
+
+test("agents nothing distinguishes keep the order they are stored in", () => {
+  const stored = [agentNamed("first"), agentNamed("second"), agentNamed("third")];
+  assert.deepEqual(rankAgentsByUse(stored, {}).map((agent) => agent.name), ["first", "second", "third"]);
+});
+
+test("a built-in is ranked like any other agent, by use", () => {
+  const ranked = rankAgentsByUse([agentNamed("maker", { builtin: "agent-maker" }), agentNamed("mine")], {
+    sessionAgents: { "session-a": "mine", "session-b": "mine" }
+  });
+  assert.deepEqual(ranked.map((agent) => agent.name), ["mine", "maker"]);
+});
+
+test("the menu cap leaves the rest for \"More…\"", () => {
+  const many = Array.from({ length: MENU_AGENT_LIMIT + 4 }, (ignored, position) => agentNamed(`agent-${position}`));
+  const sessionAgents = {};
+  // The last four are the busy ones, so they must be the ones in the menu.
+  many.slice(-4).forEach((agent, position) => {
+    sessionAgents[`session-${position}`] = agent.id;
+  });
+  const ranked = rankAgentsByUse(many, { sessionAgents });
+  assert.equal(ranked.length, many.length, "nothing is dropped: More… shows them all");
+  assert.deepEqual(
+    ranked.slice(0, 4).map((agent) => agent.name),
+    many.slice(-4).map((agent) => agent.name)
+  );
+  assert.equal(ranked.slice(0, MENU_AGENT_LIMIT).length, MENU_AGENT_LIMIT);
+});
+
+test("using an agent stamps lastUsedAt, so the menus can put it first", () => {
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const { store } = storeIn(scratchFolder());
+  const agent = store.addAgent({ name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" });
+  assert.equal(store.get().agents[0].lastUsedAt, null);
+
+  store.rememberWorkingDirectory(agent.id, folder);
+  const afterStart = store.get().agents[0].lastUsedAt;
+  assert.ok(afterStart > 0, "starting a session as the agent is using it");
+
+  store.setSessionAgent("session-one", agent.id);
+  assert.ok(store.get().agents[0].lastUsedAt >= afterStart, "assigning it is using it too");
 });

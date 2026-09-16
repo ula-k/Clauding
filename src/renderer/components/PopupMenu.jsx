@@ -73,7 +73,10 @@ export function MenuSeparator() {
   return <div className="popup-menu-separator" />;
 }
 
-export function MenuItem({ onClick, disabled = false, selected = false, tone = "plain", children }) {
+// `marker` is written out as data-menu-item: a name the dev click hook (and
+// a smoke run) can reach an item by, since the text in a menu changes with
+// the language.
+export function MenuItem({ onClick, disabled = false, selected = false, tone = "plain", marker = null, title = null, children }) {
   const classNames = ["popup-menu-item"];
   if (tone === "danger") {
     classNames.push("is-danger");
@@ -82,7 +85,14 @@ export function MenuItem({ onClick, disabled = false, selected = false, tone = "
     classNames.push("is-selected");
   }
   return (
-    <button type="button" className={classNames.join(" ")} disabled={disabled} onClick={onClick}>
+    <button
+      type="button"
+      className={classNames.join(" ")}
+      disabled={disabled}
+      title={title || undefined}
+      data-menu-item={marker || undefined}
+      onClick={onClick}
+    >
       <span className="popup-menu-item-text">{children}</span>
       {selected && <span className="popup-menu-item-mark">✓</span>}
     </button>

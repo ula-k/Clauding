@@ -227,5 +227,15 @@ export function createPanelTabStore({ storagePath, onChange }) {
     announce(toKey, false);
   }
 
-  return { get, open, close, activate, setTitle, setVisible, migrate };
+  // The session was deleted: its tabs have nothing left to belong to.
+  function forgetSession(sessionKey) {
+    if (!sessionKey || !tabsBySession[sessionKey]) {
+      return false;
+    }
+    delete tabsBySession[sessionKey];
+    announce(sessionKey, false);
+    return true;
+  }
+
+  return { get, open, close, activate, setTitle, setVisible, migrate, forgetSession };
 }

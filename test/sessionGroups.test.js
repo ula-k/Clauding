@@ -118,16 +118,90 @@ test("hiding keeps the session's group, so unhiding puts it back where it was", 
   assert.equal(store.get().membership["session-one"], group.id);
 });
 
-test("a hidden session that is running again is unhidden on its own", () => {
+// Hiding is "stop it and put it away". The bounce-back these tests are here
+// for: a session that was merely *present* in the CLI registry — an app
+// terminal sitting idle — was unhidden again on the very next poll, so Hide
+// looked broken. Only something that happens after the hiding brings a row
+// back.
+function activity(entries) {
+  return new Map(Object.entries(entries).map(([sessionId, state]) => [sessionId, { busy: false, needsAnswer: false, ...state }]));
+}
+
+test("a session hidden while it was quiet stays hidden, poll after poll", () => {
   const { store } = storeIn(scratchFolder());
-  store.setHidden("busy-session", true);
   store.setHidden("quiet-session", true);
+  assert.equal(store.get().hiddenSince["quiet-session"].awaitingIdle, false);
 
-  assert.equal(store.unhideRunning(new Set(["unrelated"])), false);
-  assert.deepEqual(store.get().hidden, ["busy-session", "quiet-session"]);
-
-  assert.equal(store.unhideRunning(new Set(["busy-session"])), true);
+  // Still there, still idle, still nothing happening: it stays away.
+  assert.equal(store.unhideOnActivity(activity({ "quiet-session": { busy: false } })), false);
+  assert.equal(store.unhideOnActivity(activity({})), false);
+  assert.equal(store.unhideOnActivity(activity({ unrelated: { busy: true } })), false);
   assert.deepEqual(store.get().hidden, ["quiet-session"]);
+});
+
+test("a hidden session that starts working again comes back", () => {
+  const { store } = storeIn(scratchFolder());
+  store.setHidden("quiet-session", true);
+  assert.equal(store.unhideOnActivity(activity({ "quiet-session": { busy: true } })), true);
+  assert.deepEqual(store.get().hidden, []);
+  assert.equal("quiet-session" in store.get().hiddenSince, false);
+});
+
+test("a hidden session that needs an answer comes back even while it is not busy", () => {
+  const { store } = storeIn(scratchFolder());
+  store.setHidden("asking-session", true);
+  assert.equal(store.unhideOnActivity(activity({ "asking-session": { busy: false, needsAnswer: true } })), true);
+  assert.deepEqual(store.get().hidden, []);
+});
+
+test("a session hidden while busy waits for busy -> quiet -> busy before coming back", () => {
+  const { store } = storeIn(scratchFolder());
+  // Hidden while it was working somewhere else: the app cannot stop it.
+  store.setHidden("elsewhere-session", true, true);
+  assert.equal(store.get().hiddenSince["elsewhere-session"].awaitingIdle, true);
+
+  // Still busy from the same run: not an event, it stays hidden.
+  assert.equal(store.unhideOnActivity(activity({ "elsewhere-session": { busy: true } })), false);
+  assert.deepEqual(store.get().hidden, ["elsewhere-session"]);
+
+  // Seen quiet once…
+  assert.equal(store.unhideOnActivity(activity({ "elsewhere-session": { busy: false } })), false);
+  assert.equal(store.get().hiddenSince["elsewhere-session"].awaitingIdle, false);
+  assert.deepEqual(store.get().hidden, ["elsewhere-session"]);
+
+  // …and now busy again means somebody is working in it.
+  assert.equal(store.unhideOnActivity(activity({ "elsewhere-session": { busy: true } })), true);
+  assert.deepEqual(store.get().hidden, []);
+});
+
+test("a session hidden while busy still comes back at once when it needs an answer", () => {
+  const { store } = storeIn(scratchFolder());
+  store.setHidden("elsewhere-session", true, true);
+  assert.equal(store.unhideOnActivity(activity({ "elsewhere-session": { busy: true, needsAnswer: true } })), true);
+  assert.deepEqual(store.get().hidden, []);
+});
+
+test("unhiding by hand forgets the note, so hiding again starts from scratch", () => {
+  const { store, storagePath } = storeIn(scratchFolder());
+  store.setHidden("session-one", true, true);
+  store.setHidden("session-one", false);
+  assert.deepEqual(store.get().hidden, []);
+  assert.equal("session-one" in store.get().hiddenSince, false);
+  store.setHidden("session-one", true);
+  assert.equal(store.get().hiddenSince["session-one"].awaitingIdle, false);
+  assert.ok(storagePath);
+});
+
+test("a deleted session is forgotten by the groups, the hidden list and the notes", () => {
+  const { store } = storeIn(scratchFolder());
+  const group = store.createGroup("Blueprint");
+  store.assignSession("session-one", group.id);
+  store.setHidden("session-one", true, true);
+  assert.equal(store.forgetSession("session-two").hidden.length, 1, "an unknown session changes nothing");
+  const state = store.forgetSession("session-one");
+  assert.deepEqual(state.hidden, []);
+  assert.equal(state.membership["session-one"], undefined);
+  assert.equal("session-one" in state.hiddenSince, false);
 });
 
 test("collapsing only accepts groups that exist, Default included", () => {

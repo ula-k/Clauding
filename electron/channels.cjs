@@ -6,6 +6,7 @@ const CHANNELS = {
   sessionsGet: "sessions:get",
   sessionsChanged: "sessions:changed",
   sessionsRename: "sessions:rename",
+  sessionsDelete: "sessions:delete",
   groupsGet: "groups:get",
   groupsCreate: "groups:create",
   groupsRename: "groups:rename",

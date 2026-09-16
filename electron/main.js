@@ -10,6 +10,7 @@ import {
   enrichSession,
   isScratchWorkingDirectory,
   renameSessionTitle,
+  deleteSessionTranscript,
   DEFAULT_PAGE_SIZE
 } from "./sessions.js";
 import { watchLiveStatus, collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
@@ -23,6 +24,7 @@ import { runGroupsSmoke } from "./smokeGroups.js";
 import { runForkSmoke } from "./smokeFork.js";
 import { runCollapseSmoke } from "./smokeCollapse.js";
 import { runAgentsSmoke } from "./smokeAgents.js";
+import { runAssignSmoke } from "./smokeAssign.js";
 import { runEmojiSmoke } from "./smokeEmoji.js";
 import { runKickoffSmoke } from "./smokeKickoff.js";
 import { createSessionGroupStore } from "./sessionGroups.js";
@@ -93,6 +95,12 @@ app.on("second-instance", () => {
 const screenshotSelect = process.env.CLAUDING_SCREENSHOT_SELECT || null;
 const screenshotAboutPanel = process.env.CLAUDING_SCREENSHOT_ABOUT === "1";
 const screenshotTerminalFolder = process.env.CLAUDING_SCREENSHOT_TERMINAL || null;
+// CLAUDING_SCREENSHOT_RESUME=<sessionId>: that terminal resumes this session
+// instead of starting a new one, so it has a session id from the first
+// moment — which is what anything hanging off a session needs (the header
+// menu, "Assign to agent"). With CLAUDING_DRY_SPAWN=1 nothing is spawned,
+// so the id may just as well be a made-up one.
+const screenshotResumeSessionId = process.env.CLAUDING_SCREENSHOT_RESUME || null;
 const smokeTerminalMode = process.env.CLAUDING_SMOKE_TERMINAL === "1";
 const smokeGroupsMode = process.env.CLAUDING_SMOKE_GROUPS === "1";
 const smokeForkMode = process.env.CLAUDING_SMOKE_FORK === "1";
@@ -100,6 +108,7 @@ const smokeCollapseMode = process.env.CLAUDING_SMOKE_COLLAPSE === "1";
 const smokePreambleMode = process.env.CLAUDING_SMOKE_PREAMBLE === "1";
 const smokeResizeMode = process.env.CLAUDING_SMOKE_RESIZE === "1";
 const smokeAgentsMode = process.env.CLAUDING_SMOKE_AGENTS === "1";
+const smokeAssignMode = process.env.CLAUDING_SMOKE_ASSIGN === "1";
 const smokeEmojiMode = process.env.CLAUDING_SMOKE_EMOJI === "1";
 const smokeKickoffMode = process.env.CLAUDING_SMOKE_KICKOFF === "1";
 // Any automation at all: the first-run questions stay out of its way.
@@ -111,6 +120,7 @@ const anySmokeMode =
   smokePreambleMode ||
   smokeResizeMode ||
   smokeAgentsMode ||
+  smokeAssignMode ||
   smokeEmojiMode ||
   smokeKickoffMode;
 
@@ -271,20 +281,53 @@ const handleCommandRequest = commandRequests.handleCommandRequest;
 // A session the user hid comes back the moment the CLI registry shows it busy
 // again (or one of our own terminals picks it up): hiding is for a list that
 // got too long, not a way to lose a session that is doing something.
+// What every poll reports about the sessions that are alive right now:
+// sessionId -> { busy, needsAnswer }. "Busy" is a session actually working,
+// never a CLI merely sitting at its prompt — a hidden session must not come
+// back into the list just for existing (it did, and hiding looked broken).
+function collectSessionActivity() {
+  const activity = new Map();
+  for (const [sessionId, status] of collectLiveStatus()) {
+    activity.set(sessionId, {
+      busy: status.group === STATUS_GROUPS.running,
+      needsAnswer: Boolean(status.needs) || status.rawStatus === "blocked"
+    });
+  }
+  // One of our own terminals counts as busy only while it is working. An
+  // idle pane is not an event, and hiding closes the pane anyway.
+  for (const [sessionId, ownedState] of terminalRegistry.ownedStates()) {
+    const previous = activity.get(sessionId) || { busy: false, needsAnswer: false };
+    activity.set(sessionId, { ...previous, busy: previous.busy || ownedState.registryStatus === "busy" });
+  }
+  return activity;
+}
+
 function syncHiddenWithLiveStatus() {
   if (!sessionGroups) {
     return;
   }
-  const runningSessionIds = new Set();
-  for (const [sessionId, status] of collectLiveStatus()) {
-    if (status.group === STATUS_GROUPS.running) {
-      runningSessionIds.add(sessionId);
+  sessionGroups.unhideOnActivity(collectSessionActivity());
+}
+
+// Hide means "stop it and put it away": a session open in one of the app's
+// terminals is hung up first (the conversation stays on disk, the row goes
+// under "Hidden (N)"), and only then is it hidden. Without that it was
+// still alive in the registry and the next poll pulled it straight back.
+async function hideSession(sessionId) {
+  let wasBusy = false;
+  const activity = collectSessionActivity().get(sessionId) || null;
+  for (const terminal of terminalRegistry.list()) {
+    if (terminal.sessionId === sessionId && !terminal.exited) {
+      console.log(`[groups] hiding ${sessionId}: closing its terminal ${terminal.terminalId} first`);
+      await terminalRegistry.close(terminal.terminalId);
     }
   }
-  for (const sessionId of terminalRegistry.ownedStates().keys()) {
-    runningSessionIds.add(sessionId);
+  if (activity && !terminalRegistry.ownedStates().has(sessionId)) {
+    // A session running somewhere else is not ours to stop, so whether it
+    // was busy decides when it may come back.
+    wasBusy = activity.busy;
   }
-  sessionGroups.unhideRunning(runningSessionIds);
+  return sessionGroups.setHidden(sessionId, true, wasBusy);
 }
 
 function createWindow() {
@@ -354,6 +397,20 @@ function createWindow() {
   } else if (smokeAgentsMode) {
     mainWindow.webContents.once("did-finish-load", () => {
       runAgentsSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        agents,
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeAssignMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runAssignSmoke({
         window: mainWindow,
         registry: terminalRegistry,
         agents,
@@ -466,6 +523,9 @@ function createWindow() {
 //   CLAUDING_SCREENSHOT_TERMINAL=<folder>  open a terminal in that folder
 //       first (a scratch folder, never a real project) so a picture can be
 //       taken of anything that needs a live session
+//   CLAUDING_SCREENSHOT_RESUME=<sessionId> that terminal resumes this session,
+//       so it has a session id at once (with CLAUDING_DRY_SPAWN=1 the id can
+//       be invented: nothing is spawned)
 //   CLAUDING_SCREENSHOT_WAIT=<ms>          wait this much longer before the shutter
 //   CLAUDING_SCREENSHOT_ABOUT=1            show the standard About panel and
 //       photograph that instead of the window (see below: only possible with
@@ -481,7 +541,12 @@ async function captureScreenshotAndQuit() {
   // without touching one of the user's real sessions.
   if (screenshotTerminalFolder && mainWindow) {
     try {
-      const record = terminalRegistry.open({ workingDirectory: screenshotTerminalFolder, columns: 110, rows: 32 });
+      const record = terminalRegistry.open({
+        workingDirectory: screenshotTerminalFolder,
+        resumeSessionId: screenshotResumeSessionId,
+        columns: 110,
+        rows: 32
+      });
       sendToWindow(CHANNELS.smokeCommand, { action: "show-terminal", terminalId: record.terminalId });
       console.log(`[screenshot] opened a terminal in ${screenshotTerminalFolder}`);
     } catch (error) {
@@ -825,6 +890,41 @@ function registerIpc() {
     return renameSessionTitle(sessionId, title);
   });
 
+  // "Delete session": the one destructive action in the app. The window has
+  // already asked; here the terminal is hung up, the transcript is deleted
+  // through the SDK, and every file of ours that still named that session
+  // forgets it. A session running in a terminal outside the app is refused —
+  // it is not ours to end (the menu item is disabled there too).
+  ipcMain.handle(CHANNELS.sessionsDelete, async (event, { sessionId }) => {
+    if (!sessionId) {
+      return { sessionId, deleted: false, reason: "no-session" };
+    }
+    const ownedByApp = terminalRegistry.ownedStates().has(sessionId);
+    const elsewhere = !ownedByApp && collectLiveStatus().has(sessionId);
+    if (elsewhere) {
+      return { sessionId, deleted: false, reason: "running-elsewhere" };
+    }
+    for (const terminal of terminalRegistry.list()) {
+      if (terminal.sessionId === sessionId && !terminal.exited) {
+        console.log(`[sessions] deleting ${sessionId}: closing its terminal ${terminal.terminalId} first`);
+        terminalRegistry.close(terminal.terminalId);
+      }
+    }
+    try {
+      await deleteSessionTranscript(sessionId);
+    } catch (error) {
+      console.log(`[sessions] could not delete ${sessionId}: ${error.message}`);
+      return { sessionId, deleted: false, reason: "failed", message: String(error.message || error) };
+    }
+    sessionGroups.forgetSession(sessionId);
+    agents.forgetSession(sessionId);
+    panelTabs.forgetSession(sessionId);
+    forgetLinkedSessions();
+    sendToWindow(CHANNELS.sessionsChanged, { reason: "deleted" });
+    console.log(`[sessions] deleted ${sessionId} and everything the app remembered about it`);
+    return { sessionId, deleted: true };
+  });
+
   ipcMain.handle(CHANNELS.projectsRecent, async () => {
     return listRecentProjects();
   });
@@ -895,7 +995,10 @@ function registerIpc() {
   });
 
   ipcMain.handle(CHANNELS.groupsSetHidden, async (event, { sessionId, hidden }) => {
-    return sessionGroups.setHidden(sessionId, Boolean(hidden));
+    if (hidden) {
+      return hideSession(sessionId);
+    }
+    return sessionGroups.setHidden(sessionId, false);
   });
 
   ipcMain.handle(CHANNELS.groupsSetCollapsed, async (event, { groupId, collapsed }) => {

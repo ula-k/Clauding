@@ -85,3 +85,14 @@ export function harvestSkillsKickoffMessage(skillsRoot) {
     `then write the kept ones under ${skillsRoot} (one folder per skill with SKILL.md) and show me the list.`
   );
 }
+
+// "Assign to agent": after the terminal is restarted (or the session
+// resumed) the definition is in the system prompt — where nobody can see
+// it. So the app types one message in, the same way the two meta actions
+// do, and the answer on screen is the proof that the definition arrived.
+export function agentAssignmentKickoffMessage(agentName) {
+  return (
+    `You are now assigned the ${agentName} definition. ` +
+    "Read it and tell me in two sentences what you will do differently in this conversation from now on."
+  );
+}

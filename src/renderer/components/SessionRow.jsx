@@ -5,7 +5,7 @@ import { DotsIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuLabel, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentBadge } from "./AgentBadge.jsx";
 import { groupDisplayName } from "../groupConstants.js";
-import { titleWithoutAgentEmoji } from "../agentConstants.js";
+import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
 
 export const SESSION_DRAG_TYPE = "application/x-clauding-session";
 
@@ -37,9 +37,11 @@ export default function SessionRow({
   onHide,
   onUnhide,
   onRenameSession,
+  onDeleteSession,
   agents = [],
   currentAgentId = null,
   onAssignAgent,
+  onOpenAgentPicker,
   onCreateAgent,
   onHarvestSkills,
   hiddenVariant = false
@@ -127,9 +129,23 @@ export default function SessionRow({
         <span className="row-time">{relativeTime(session.lastModified, translate, now)}</span>
       </button>
       {hiddenVariant ? (
-        <button type="button" className="row-unhide" onClick={() => onUnhide(session.sessionId)}>
-          {translate("row.unhide")}
-        </button>
+        <div className="row-hidden-actions">
+          <button type="button" className="row-unhide" onClick={() => onUnhide(session.sessionId)}>
+            {translate("row.unhide")}
+          </button>
+          {onDeleteSession && (
+            <button
+              type="button"
+              className="row-delete"
+              disabled={runsElsewhere}
+              title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint")}
+              data-row-delete={session.sessionId}
+              onClick={() => onDeleteSession(session.sessionId)}
+            >
+              {translate("row.deleteConfirmButton")}
+            </button>
+          )}
+        </div>
       ) : (
         <button
           type="button"
@@ -162,9 +178,20 @@ export default function SessionRow({
             <>
               <MenuSeparator />
               <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
-              {agents.map((agent) => (
+              <MenuItem
+                marker="assign-none"
+                selected={!currentAgentId}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onAssignAgent(session.sessionId, null);
+                }}
+              >
+                {translate("row.noAgent")}
+              </MenuItem>
+              {agents.slice(0, MENU_AGENT_LIMIT).map((agent) => (
                 <MenuItem
                   key={agent.id}
+                  marker={`assign-${agent.id}`}
                   selected={agent.id === currentAgentId}
                   onClick={() => {
                     setMenuAnchor(null);
@@ -174,15 +201,17 @@ export default function SessionRow({
                   {`${agent.emoji} ${agent.name}`}
                 </MenuItem>
               ))}
-              <MenuItem
-                selected={!currentAgentId}
-                onClick={() => {
-                  setMenuAnchor(null);
-                  onAssignAgent(session.sessionId, null);
-                }}
-              >
-                {translate("row.noAgent")}
-              </MenuItem>
+              {agents.length > MENU_AGENT_LIMIT && onOpenAgentPicker && (
+                <MenuItem
+                  marker="assign-more"
+                  onClick={() => {
+                    setMenuAnchor(null);
+                    onOpenAgentPicker(session.sessionId);
+                  }}
+                >
+                  {translate("agents.more")}
+                </MenuItem>
+              )}
             </>
           )}
           {onCreateAgent && (
@@ -219,6 +248,8 @@ export default function SessionRow({
             {translate("row.rename")}
           </MenuItem>
           <MenuItem
+            marker="hide-session"
+            title={translate("row.hideHint")}
             onClick={() => {
               setMenuAnchor(null);
               onHide(session.sessionId);
@@ -226,6 +257,20 @@ export default function SessionRow({
           >
             {translate("row.hide")}
           </MenuItem>
+          {onDeleteSession && (
+            <MenuItem
+              marker="delete-session"
+              tone="danger"
+              disabled={runsElsewhere}
+              title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint")}
+              onClick={() => {
+                setMenuAnchor(null);
+                onDeleteSession(session.sessionId);
+              }}
+            >
+              {translate("row.delete")}
+            </MenuItem>
+          )}
         </PopupMenu>
       )}
     </div>

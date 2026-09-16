@@ -25,6 +25,13 @@ contextBridge.exposeInMainWorld("clauding", {
   renameSession(sessionId, title) {
     return ipcRenderer.invoke(CHANNELS.sessionsRename, { sessionId, title });
   },
+  // "Delete session": closes the app's terminal for it, deletes the
+  // transcript through the SDK and drops the session from groups.json,
+  // agents.json and panel-tabs.json. Only ever called after the user has
+  // answered the confirmation.
+  deleteSession(sessionId) {
+    return ipcRenderer.invoke(CHANNELS.sessionsDelete, { sessionId });
+  },
   onSessionsChanged(listener) {
     return subscribe(CHANNELS.sessionsChanged, listener);
   },

@@ -34,9 +34,11 @@ export default function SessionsColumn({
   groupActions,
   agentSessions,
   agents,
+  menuAgents,
   agentActions,
   sessionAgents,
   onRenameSession,
+  onDeleteSession,
   definitionSuggestions,
   onDismissSuggestion,
   onCreateAgentFromSession,
@@ -242,7 +244,8 @@ export default function SessionsColumn({
                     onHide={groupActions.hideSession}
                     onUnhide={groupActions.unhideSession}
                     onRenameSession={onRenameSession}
-                    agents={agents}
+                    onDeleteSession={onDeleteSession}
+                    agents={menuAgents || agents}
                     currentAgentId={session.agent ? session.agent.id : null}
                     onAssignAgent={agentActions.assignSession}
                     onCreateAgent={onCreateAgentFromSession}
@@ -279,6 +282,7 @@ export default function SessionsColumn({
                     onHide={groupActions.hideSession}
                     onUnhide={groupActions.unhideSession}
                     onRenameSession={onRenameSession}
+                    onDeleteSession={onDeleteSession}
                     hiddenVariant
                   />
                 ))}

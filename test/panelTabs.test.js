@@ -184,3 +184,16 @@ test("a page's own title replaces the file name once the panel knows it", () => 
   store.setTitle("session-one", tab.tabId, "");
   assert.equal(store.get("session-one").tabs[0].title, "The plan", "an empty title is ignored");
 });
+
+test("a deleted session's tabs are forgotten, and no other session is touched", () => {
+  const folder = scratchFolder();
+  const { store } = storeIn(folder);
+  store.open("session-one", describeTarget(pageIn(folder, "one.html"), folder));
+  store.open("session-two", describeTarget(pageIn(folder, "two.html"), folder));
+
+  assert.equal(store.forgetSession("session-three"), false, "a session with no tabs changes nothing");
+  assert.equal(store.forgetSession("session-one"), true);
+  assert.deepEqual(store.get("session-one").tabs, []);
+  assert.equal(store.get("session-one").panelVisible, false);
+  assert.equal(store.get("session-two").tabs.length, 1);
+});

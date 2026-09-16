@@ -5,6 +5,7 @@ import { disposeInstance, ensureInstance, hasInstance, lastTerminalDimensions, w
 import { groupIdForSession } from "./sessionGrouping.js";
 import { forkDisplayName } from "./forkName.js";
 import {
+  agentAssignmentKickoffMessage,
   createAgentKickoffMessage,
   createAgentTaskPrompt,
   harvestSkillsKickoffMessage,
@@ -12,12 +13,17 @@ import {
   harvestSkillsTaskPrompt,
   newAgentSessionName
 } from "./metaPrompts.js";
+import { assignmentPlan, definitionLoadsOnNextResume } from "./assignmentPlan.js";
+import { rankAgentsByUse } from "./agentConstants.js";
 import SessionsColumn from "./components/SessionsColumn.jsx";
 import MiddleColumn from "./components/MiddleColumn.jsx";
 import SidePanel from "./components/SidePanel.jsx";
 import WindowTools from "./components/WindowTools.jsx";
 import SkillsScanSheet from "./components/SkillsScanSheet.jsx";
 import BuiltinSkillSheet from "./components/BuiltinSkillSheet.jsx";
+import AssignAgentDialog from "./components/AssignAgentDialog.jsx";
+import DeleteSessionDialog from "./components/DeleteSessionDialog.jsx";
+import AgentPickerSheet from "./components/AgentPickerSheet.jsx";
 
 const PAGE_SIZE = 60;
 const LEFT_WIDTH_MIN = 240;
@@ -139,6 +145,22 @@ export default function App() {
   // "Add as agent" at the top of the Agents tab until it is added or waved
   // away.
   const [definitionSuggestions, setDefinitionSuggestions] = useState([]);
+  // The open "Assign to agent" question, or null. Holding it here rather
+  // than writing straight away is the whole point: until one of its buttons
+  // is pressed, agents.json has not been touched and no badge has moved.
+  const [assignRequest, setAssignRequest] = useState(null);
+  // sessionId -> terminalId for a session that was assigned with "Assign
+  // only" while that terminal was running: the link is written, but the
+  // conversation on screen still has its old system prompt, so the header
+  // chip says the definition loads on the next resume. The entry goes as
+  // soon as that terminal is gone.
+  const [pendingDefinitionTerminals, setPendingDefinitionTerminals] = useState({});
+  // The session the delete confirmation is asking about, or null. Nothing is
+  // deleted until it is answered — and a session running in a terminal
+  // outside the app never gets here at all.
+  const [deleteRequest, setDeleteRequest] = useState(null);
+  // The session the "More…" agent picker was opened for, or null.
+  const [agentPickerSessionId, setAgentPickerSessionId] = useState(null);
   // Whether the panel is open belongs to the session on screen and comes
   // from the main process with that session's tabs (panel-tabs.json). This
   // one is only for the moments when no session is selected at all, so the
@@ -169,6 +191,11 @@ export default function App() {
   // sessionAgents as it is right now, for the callbacks that must not be
   // rebuilt on every change of it (selecting a session, forking one).
   const agentLinksRef = useRef({});
+  // Sessions assigned to an agent whose definition has not been loaded into a
+  // terminal yet ("Assign only"). The next resume or restart the app starts
+  // for such a session types the assignment message in, so the agent says on
+  // screen what it is going to do differently.
+  const awaitingAssignmentKickoffRef = useRef(new Map());
   const panelSessionKeyRef = useRef(null);
   // Counts the panel states the main process has pushed at us. The answer to
   // a getPanelTabs() we sent earlier must not overwrite a newer push: when a
@@ -560,10 +587,17 @@ export default function App() {
     // Resume as the agent this session is assigned to: the definition goes
     // into the system prompt of the resumed terminal, so an old session
     // attached to an agent behaves as that agent from its next message on.
+    const agentId = agentLinksRef.current[sessionId] || null;
+    // Assigned while the old terminal was still running: this resume is the
+    // moment the definition is finally read, so the session introduces
+    // itself in its new role instead of the change staying invisible.
+    const agentName = awaitingAssignmentKickoffRef.current.get(sessionId) || null;
+    awaitingAssignmentKickoffRef.current.delete(sessionId);
     openTerminal({
       workingDirectory: session.workingDirectory,
       resumeSessionId: sessionId,
-      agentId: agentLinksRef.current[sessionId] || null,
+      agentId,
+      kickoffMessage: agentId && agentName ? agentAssignmentKickoffMessage(agentName) : null,
       openedByClick: true
     });
   }, [openTerminal]);
@@ -647,8 +681,17 @@ export default function App() {
       setGroupCollapsed(groupId, collapsed) {
         window.clauding.setSessionGroupCollapsed(groupId, collapsed).then(setGroupState);
       },
+      // Hide is "stop it and put it away": the main process hangs the
+      // session's terminal up before hiding it, so it cannot come straight
+      // back — and the pane on screen goes with it.
       hideSession(sessionId) {
-        window.clauding.setSessionHidden(sessionId, true).then(setGroupState);
+        window.clauding.setSessionHidden(sessionId, true).then((state) => {
+          setGroupState(state);
+          if (selectedSessionIdRef.current === sessionId) {
+            setSelectedSessionId(null);
+            setSelectedTerminalId(null);
+          }
+        });
       },
       unhideSession(sessionId) {
         window.clauding.setSessionHidden(sessionId, false).then(setGroupState);
@@ -661,39 +704,186 @@ export default function App() {
   // new agents.json state; the main process also broadcasts it.
   // "Assign to agent" from a row menu or from the terminal header. This is
   // how a session started long before its agent existed is attached to one:
-  // agents.json gets the link, the badge appears at once, and the next
+  // agents.json gets the link, the badge appears, and the next
   // `claude --resume` from the app carries that agent's definition.
   //
-  // A session that is open in a terminal *right now* keeps the system prompt
-  // it started with until the CLI is restarted, so the user is offered that
-  // restart. The conversation itself is untouched — it is the same
-  // `--resume`, only with the definition appended this time.
-  const assignSessionToAgent = useCallback(
-    async (sessionId, agentId) => {
+  // Picking an agent only *asks*. Nothing is written here — the dialog says
+  // what the choice means and its buttons are what decide (see
+  // assignmentPlan.js). Picking the agent the session already has, or "No
+  // agent" when it has none, is not a change and asks nothing.
+  const requestAgentAssignment = useCallback(
+    (sessionId, agentId) => {
       if (!sessionId) {
         return;
       }
-      const state = await window.clauding.assignSessionToAgent(sessionId, agentId || null);
+      const wantedAgentId = agentId || null;
+      const currentAgentId = agentLinksRef.current[sessionId] || null;
+      if (wantedAgentId === currentAgentId) {
+        return;
+      }
+      const terminal = terminalsRef.current.find((record) => record.sessionId === sessionId && !record.exited) || null;
+      setAssignRequest({
+        sessionId,
+        agentId: wantedAgentId,
+        agent: wantedAgentId ? agentState.agents.find((entry) => entry.id === wantedAgentId) || null : null,
+        currentAgent: currentAgentId ? agentState.agents.find((entry) => entry.id === currentAgentId) || null : null,
+        hasOpenTerminal: Boolean(terminal)
+      });
+    },
+    [agentState]
+  );
+
+  // The answer to that dialog. Only now is anything written, and only what
+  // the chosen button stands for:
+  //   Cancel                        nothing at all
+  //   Assign only / Assign          the link in agents.json
+  //   Assign and restart terminal   the link, then SIGHUP and a fresh
+  //                                 `claude --resume` carrying the definition
+  // A session that is open in a terminal keeps the system prompt it started
+  // with until that restart, so "Assign only" leaves a note on the chip.
+  const resolveAgentAssignment = useCallback(
+    async (choice) => {
+      const request = assignRequest;
+      setAssignRequest(null);
+      if (!request) {
+        return;
+      }
+      const sessionState = { hasOpenTerminal: request.hasOpenTerminal };
+      const plan = assignmentPlan(choice, sessionState);
+      if (!plan.writeLink) {
+        return;
+      }
+      const state = await window.clauding.assignSessionToAgent(request.sessionId, request.agentId);
       setAgentState(state);
-      const agent = agentId ? state.agents.find((entry) => entry.id === agentId) : null;
-      const terminal = terminalsRef.current.find((record) => record.sessionId === sessionId && !record.exited);
-      if (!agent || !terminal) {
+      const terminal =
+        terminalsRef.current.find((record) => record.sessionId === request.sessionId && !record.exited) || null;
+      const pending = definitionLoadsOnNextResume(choice, sessionState) && Boolean(terminal);
+      setPendingDefinitionTerminals((previous) => {
+        const next = { ...previous };
+        if (pending) {
+          next[request.sessionId] = terminal.terminalId;
+        } else {
+          delete next[request.sessionId];
+        }
+        return next;
+      });
+      if (pending) {
+        // The next resume from the app is where the definition is read, and
+        // that is where the session says what it will do differently.
+        awaitingAssignmentKickoffRef.current.set(request.sessionId, request.agent.name);
+      } else {
+        awaitingAssignmentKickoffRef.current.delete(request.sessionId);
+      }
+      if (!plan.restart || !terminal) {
         return;
       }
-      const question = translateInLanguage(language, "agents.restartQuestion", { name: agent.name });
-      if (!window.confirm(question)) {
-        return;
-      }
-      const session = sessionsRef.current.find((record) => record.sessionId === sessionId) || null;
+      const session = sessionsRef.current.find((record) => record.sessionId === request.sessionId) || null;
       const workingDirectory = terminal.workingDirectory || (session && session.workingDirectory);
       await window.clauding.closeTerminal(terminal.terminalId);
       // The pty needs a moment to hang up before a second `claude --resume`
       // takes the same session over.
       await new Promise((resolve) => setTimeout(resolve, 500));
-      openTerminal({ workingDirectory, resumeSessionId: sessionId, agentId: agent.id });
+      // The definition rides in the system prompt, which nobody can see, so
+      // the restarted terminal is also given its first message: the agent
+      // reads its definition and says what changes from here on.
+      openTerminal({
+        workingDirectory,
+        resumeSessionId: request.sessionId,
+        agentId: request.agentId,
+        kickoffMessage: agentAssignmentKickoffMessage(request.agent.name)
+      });
     },
-    [language, openTerminal]
+    [assignRequest, openTerminal]
   );
+
+  // The "loads on next resume" note belongs to one terminal: once that
+  // terminal is gone, the next `claude --resume` the app starts carries the
+  // definition, so there is nothing left to warn about.
+  useEffect(() => {
+    setPendingDefinitionTerminals((previous) => {
+      const kept = {};
+      let changed = false;
+      for (const [sessionId, terminalId] of Object.entries(previous)) {
+        if (terminals.some((record) => record.terminalId === terminalId && !record.exited)) {
+          kept[sessionId] = terminalId;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? kept : previous;
+    });
+  }, [terminals]);
+
+  // "Delete session…" — the one thing in the app that throws a conversation
+  // away. Asking is all this does; the transcript is not touched until the
+  // confirmation comes back. A session running in a terminal outside the app
+  // is not ours to end, so it is never even asked about.
+  const requestSessionDelete = useCallback((sessionId) => {
+    if (!sessionId) {
+      return;
+    }
+    const session = sessionsRef.current.find((record) => record.sessionId === sessionId) || null;
+    if (session && session.liveStatus && session.liveStatus.source !== "app") {
+      return;
+    }
+    setDeleteRequest({ sessionId, title: session ? session.title : null });
+  }, []);
+
+  const confirmSessionDelete = useCallback(async () => {
+    const request = deleteRequest;
+    setDeleteRequest(null);
+    if (!request) {
+      return;
+    }
+    let answer = null;
+    try {
+      answer = await window.clauding.deleteSession(request.sessionId);
+    } catch (error) {
+      answer = { deleted: false, message: String(error && error.message ? error.message : error) };
+    }
+    if (!answer || !answer.deleted) {
+      const message =
+        answer && answer.reason === "running-elsewhere"
+          ? translateInLanguage(language, "row.deleteRunningElsewhere")
+          : (answer && answer.message) || "";
+      window.alert(translateInLanguage(language, "row.deleteFailed", { message }));
+      return;
+    }
+    if (selectedSessionIdRef.current === request.sessionId) {
+      setSelectedSessionId(null);
+      setSelectedTerminalId(null);
+    }
+    setSessions((previous) => previous.filter((session) => session.sessionId !== request.sessionId));
+    setLinkedAgentSessions((previous) => previous.filter((session) => session.sessionId !== request.sessionId));
+    window.clauding.getSessionGroups().then(setGroupState);
+    window.clauding.getAgents().then(setAgentState);
+  }, [deleteRequest, language]);
+
+  // ⌘⌫, the way Claude Code does it: once stops (hide), twice deletes. On a
+  // row that is on screen it hides the session — which also stops it — and
+  // on a row already under "Hidden (N)" it asks whether the transcript may
+  // go. Nothing is deleted without that question.
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key !== "Backspace" || !event.metaKey || event.altKey || event.ctrlKey) {
+        return;
+      }
+      const sessionId = selectedSessionIdRef.current || (activeTerminal && activeTerminal.sessionId) || null;
+      if (!sessionId) {
+        return;
+      }
+      event.preventDefault();
+      if (groupState.hidden.includes(sessionId)) {
+        requestSessionDelete(sessionId);
+      } else {
+        groupActions.hideSession(sessionId);
+      }
+    }
+    // Captured on the way down: the terminal has the keyboard most of the
+    // time, and xterm would otherwise swallow the shortcut.
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [activeTerminal, groupState, groupActions, requestSessionDelete]);
 
   // The two meta actions. Both fork the conversation into a second terminal
   // that has one job, and leave the original exactly as it is — the same
@@ -782,9 +972,9 @@ export default function App() {
       restoreBuiltin() {
         window.clauding.restoreBuiltinAgents().then(setAgentState);
       },
-      assignSession: assignSessionToAgent
+      assignSession: requestAgentAssignment
     }),
-    [assignSessionToAgent]
+    [requestAgentAssignment]
   );
 
   // A session opened from a group header's "+" joins that group as soon as
@@ -829,6 +1019,18 @@ export default function App() {
     [agentById, agentState]
   );
 
+  // What the "Assign to agent" menus offer: the most used agents first, so
+  // the ten in the menu are the ten worth having there. Everything else is
+  // behind "More…".
+  const rankedAgents = useMemo(
+    () =>
+      rankAgentsByUse(agentState.agents, {
+        sessionAgents: agentState.sessionAgents,
+        liveAgentIds: terminals.filter((terminal) => !terminal.exited).map((terminal) => terminal.agentId)
+      }),
+    [agentState, terminals]
+  );
+
   const allSessions = useMemo(() => {
     const listedIds = new Set(sessions.map((session) => session.sessionId));
     const agentByTerminalSession = new Map();
@@ -865,6 +1067,10 @@ export default function App() {
     (activeTerminal && activeTerminal.agentId ? agentById.get(activeTerminal.agentId) : null) ||
     (selectedSession ? selectedSession.agent : null) ||
     null;
+  // Assigned with "Assign only" while this very terminal was running: the
+  // chip says so until the terminal is restarted or the session resumed.
+  const headerSessionId = (activeTerminal && activeTerminal.sessionId) || selectedSessionId;
+  const agentDefinitionPending = Boolean(headerSessionId && pendingDefinitionTerminals[headerSessionId]);
 
   // The right panel's tabs belong to the session on screen (a terminal that
   // has not registered its session yet uses a temporary key, see panelTabs.js).
@@ -1052,28 +1258,34 @@ export default function App() {
           groupActions={groupActions}
           agentSessions={agentTabSessions}
           agents={agentState.agents}
+          menuAgents={rankedAgents}
           agentActions={agentActions}
           sessionAgents={agentState.sessionAgents}
           onRenameSession={renameSession}
+          onDeleteSession={requestSessionDelete}
           definitionSuggestions={definitionSuggestions}
           onDismissSuggestion={dismissDefinitionSuggestion}
           onCreateAgentFromSession={createAgentFromConversation}
           onHarvestSkillsFromSession={harvestSkillsFromConversation}
           onReadAgentDefinition={readAgentDefinition}
+          onOpenAgentPicker={setAgentPickerSessionId}
         />
         <div className="resize-handle" data-resize-handle="left" onPointerDown={(event) => beginDrag(event, "left")} />
         <MiddleColumn
           session={selectedSession}
           terminal={activeTerminal}
           agent={selectedAgent}
-          agents={agentState.agents}
+          agentDefinitionPending={agentDefinitionPending}
+          agents={rankedAgents}
           panelOpen={panelOpen}
           onTogglePanel={() => setPanelVisible(!panelOpen)}
           onRename={handleRenameSelected}
           onFork={forkSelectedSession}
-          onAssignAgent={assignSessionToAgent}
+          onAssignAgent={requestAgentAssignment}
+          onOpenAgentPicker={setAgentPickerSessionId}
           onCreateAgent={() => createAgentFromConversation(null)}
           onHarvestSkills={() => harvestSkillsFromConversation(null)}
+          onDeleteSession={requestSessionDelete}
           reader={reader}
           onCloseReader={() => setReader(null)}
           onOpenReaderInPanel={openReaderInPanel}
@@ -1118,6 +1330,32 @@ export default function App() {
           <BuiltinSkillSheet
             skillsRoot={settings.skillsRoot}
             onAnswer={(install) => window.clauding.answerBuiltinSkill(install).then(setSettings)}
+          />
+        )}
+        {/* "Assign to agent" asks here, before anything is written: Cancel
+            leaves agents.json, the row badge and the header chip exactly as
+            they were. */}
+        {assignRequest && <AssignAgentDialog request={assignRequest} onChoose={resolveAgentAssignment} />}
+        {/* "More…": every agent there is, with a search box. Picking one
+            only opens the same question the menu would have. */}
+        {agentPickerSessionId && (
+          <AgentPickerSheet
+            agents={rankedAgents}
+            currentAgentId={agentState.sessionAgents[agentPickerSessionId] || null}
+            onPick={(agentId) => {
+              const sessionId = agentPickerSessionId;
+              setAgentPickerSessionId(null);
+              requestAgentAssignment(sessionId, agentId);
+            }}
+            onClose={() => setAgentPickerSessionId(null)}
+          />
+        )}
+        {/* The only destructive confirmation in the app. */}
+        {deleteRequest && (
+          <DeleteSessionDialog
+            sessionTitle={deleteRequest.title}
+            onConfirm={confirmSessionDelete}
+            onCancel={() => setDeleteRequest(null)}
           />
         )}
         {draggingHandle ? <div className="drag-overlay" data-drag-overlay /> : null}

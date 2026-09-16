@@ -6,7 +6,7 @@ import DocumentReader from "./DocumentReader.jsx";
 import { DotsIcon, FolderIcon, ForkIcon, PencilIcon, SparkIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuLabel, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentChip } from "./AgentBadge.jsx";
-import { titleWithoutAgentEmoji } from "../agentConstants.js";
+import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
 
 // "Create agent from this conversation" and "Harvest skills": both fork the
 // conversation into a second terminal that does one job — the Agent Maker
@@ -46,7 +46,17 @@ function MetaActionButtons({ sessionId, onCreateAgent, onHarvestSkills }) {
 
 // The header's own "…": which agent this session is assigned to, and the
 // two meta actions again, for the people who look for them in a menu.
-function HeaderMenuButton({ sessionId, agents, currentAgentId, onAssignAgent, onCreateAgent, onHarvestSkills }) {
+function HeaderMenuButton({
+  sessionId,
+  agents,
+  currentAgentId,
+  runsElsewhere,
+  onAssignAgent,
+  onOpenAgentPicker,
+  onCreateAgent,
+  onHarvestSkills,
+  onDeleteSession
+}) {
   const { translate } = useTranslation();
   const [menuAnchor, setMenuAnchor] = useState(null);
   const menuButtonRef = useRef(null);
@@ -66,9 +76,20 @@ function HeaderMenuButton({ sessionId, agents, currentAgentId, onAssignAgent, on
       {menuAnchor && (
         <PopupMenu anchor={menuAnchor} onClose={() => setMenuAnchor(null)}>
           <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
-          {agents.map((agent) => (
+          <MenuItem
+            marker="assign-none"
+            selected={!currentAgentId}
+            onClick={() => {
+              setMenuAnchor(null);
+              onAssignAgent(sessionId, null);
+            }}
+          >
+            {translate("row.noAgent")}
+          </MenuItem>
+          {agents.slice(0, MENU_AGENT_LIMIT).map((agent) => (
             <MenuItem
               key={agent.id}
+              marker={`assign-${agent.id}`}
               selected={agent.id === currentAgentId}
               onClick={() => {
                 setMenuAnchor(null);
@@ -78,15 +99,17 @@ function HeaderMenuButton({ sessionId, agents, currentAgentId, onAssignAgent, on
               {`${agent.emoji} ${agent.name}`}
             </MenuItem>
           ))}
-          <MenuItem
-            selected={!currentAgentId}
-            onClick={() => {
-              setMenuAnchor(null);
-              onAssignAgent(sessionId, null);
-            }}
-          >
-            {translate("row.noAgent")}
-          </MenuItem>
+          {agents.length > MENU_AGENT_LIMIT && onOpenAgentPicker && (
+            <MenuItem
+              marker="assign-more"
+              onClick={() => {
+                setMenuAnchor(null);
+                onOpenAgentPicker(sessionId);
+              }}
+            >
+              {translate("agents.more")}
+            </MenuItem>
+          )}
           <MenuSeparator />
           <MenuItem
             disabled={!sessionId}
@@ -106,6 +129,23 @@ function HeaderMenuButton({ sessionId, agents, currentAgentId, onAssignAgent, on
           >
             {translate("meta.harvestSkills")}
           </MenuItem>
+          {onDeleteSession && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                marker="delete-session"
+                tone="danger"
+                disabled={!sessionId || runsElsewhere}
+                title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint")}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onDeleteSession(sessionId);
+                }}
+              >
+                {translate("row.delete")}
+              </MenuItem>
+            </>
+          )}
         </PopupMenu>
       )}
     </>
@@ -237,14 +277,17 @@ export default function MiddleColumn({
   session,
   terminal,
   agent,
+  agentDefinitionPending = false,
   agents,
   panelOpen,
   onTogglePanel,
   onRename,
   onFork,
   onAssignAgent,
+  onOpenAgentPicker,
   onCreateAgent,
   onHarvestSkills,
+  onDeleteSession,
   reader,
   onCloseReader,
   onOpenReaderInPanel,
@@ -322,7 +365,7 @@ export default function MiddleColumn({
         <header className="transcript-header">
           <div className="header-top">
             <EditableTitle title={title} onRename={session ? onRename : null} />
-            <AgentChip agent={agent} />
+            <AgentChip agent={agent} definitionPending={agentDefinitionPending} />
             <StatusPill statusGroup={terminalStatusGroup(terminal, session)} />
             <KickoffHint terminal={terminal} />
             {onFork && terminal.sessionId && <ForkButton onFork={onFork} />}
@@ -331,9 +374,12 @@ export default function MiddleColumn({
               sessionId={sessionId}
               agents={agents || []}
               currentAgentId={agent ? agent.id : null}
+              onOpenAgentPicker={onOpenAgentPicker}
+              runsElsewhere={Boolean(session && session.liveStatus && session.liveStatus.source !== "app")}
               onAssignAgent={onAssignAgent}
               onCreateAgent={onCreateAgent}
               onHarvestSkills={onHarvestSkills}
+              onDeleteSession={onDeleteSession}
             />
             {underTools}
             <button type="button" className="panel-toggle" onClick={onTogglePanel}>

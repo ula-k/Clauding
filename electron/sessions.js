@@ -1,6 +1,6 @@
 // Session listing: the SDK gives us the raw list, we enrich each row with a
 // project short name, a project colour and the live status group.
-import { listSessions, getSessionInfo, renameSession } from "@anthropic-ai/claude-agent-sdk";
+import { listSessions, getSessionInfo, renameSession, deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { projectShortName, projectFolderLabel, projectColorIndex, shortenHomePath } from "./projects.js";
 import { collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
 import { isInsideSmokeFolder } from "./smokeFolder.js";
@@ -114,4 +114,12 @@ export async function getSession(sessionId, ownedStates = new Map()) {
 export async function renameSessionTitle(sessionId, title) {
   await renameSession(sessionId, title);
   return { sessionId, title };
+}
+
+// "Delete session": the transcript itself goes, through the SDK — this is
+// the one place in the app that removes somebody's conversation, and it is
+// only ever reached from a confirmation the user answered.
+export async function deleteSessionTranscript(sessionId) {
+  await deleteSession(sessionId);
+  return { sessionId, deleted: true };
 }

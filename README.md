@@ -196,6 +196,7 @@ builtin/agents/agent-maker/agent-maker.md   the Agent Maker's own definition
 builtin/skills/skill-maker/SKILL.md         the skill-maker skill, as shipped
 builtin/skills/clauding-agents/SKILL.md     the `clauding` command, as a skill
 electron/smokeAgents.js    CLAUDING_SMOKE_AGENTS automation for the agents (dev only)
+electron/smokeAssign.js    CLAUDING_SMOKE_ASSIGN: "Assign to agent" end to end (dev only)
 electron/smokeEmoji.js     CLAUDING_SMOKE_EMOJI: the agent form's emoji field (dev only)
 electron/smokeGroups.js    CLAUDING_SMOKE_GROUPS automation for the list (dev only)
 electron/smokeCollapse.js  CLAUDING_SMOKE_COLLAPSE automation for folding a group shut (dev only)
@@ -221,6 +222,10 @@ src/renderer/components/AgentForm.jsx      add / edit an agent (name, emoji, col
 src/renderer/components/EmojiPicker.jsx    the built-in emoji list under the form's emoji field
 src/renderer/emojiChoices.js       the first-grapheme rule + the 64 curated emoji and their keywords
 src/renderer/components/AgentBadge.jsx     the emoji in its coloured circle (rows) and the header chip
+src/renderer/components/AssignAgentDialog.jsx  the "Assign to agent" question, asked before anything is written
+src/renderer/assignmentPlan.js     what each of that dialog's buttons means (write the link? restart?)
+src/renderer/components/DeleteSessionDialog.jsx  the one destructive confirmation: delete a session
+src/renderer/components/AgentPickerSheet.jsx     "More…": every agent, with a search box
 src/renderer/components/WindowTools.jsx    the Skills and settings popovers (top-right)
 src/renderer/components/DocumentReader.jsx a skill / an agent definition read over the terminal
 src/renderer/components/SkillsScanSheet.jsx  "Scan for skills…": candidates found on the Mac
@@ -616,6 +621,7 @@ The grouping is the user's, never derived from anything:
   ],
   "membership": { "<sessionId>": "<groupId>" },
   "hidden": ["<sessionId>"],
+  "hiddenSince": { "<sessionId>": { "at": 1730000000000, "awaitingIdle": false } },
   "collapsed": ["<groupId>"]
 }
 ```
@@ -637,8 +643,8 @@ Enter). Each header shows, on hover, a `+` (new session in *this* group: the
 folder sheet opens and the session joins the group as soon as its CLI
 registers a session id) and a `…` menu with **Rename**, **Move up**,
 **Move down** and **Delete group**. Each row has a `…` menu (and a right-click)
-with **Move to** ▸ the groups, **Rename session** (the SDK rename) and
-**Hide**. A row can also be **dragged onto a group header** (HTML5 drag and
+with **Move to** ▸ the groups, **Rename session** (the SDK rename), **Hide**
+and **Delete session…**. A row can also be **dragged onto a group header** (HTML5 drag and
 drop). Sessions started with the top "+ New" land in Default.
 
 **Collapsing.** Every header (Default included) has a **chevron** on the left:
@@ -659,18 +665,53 @@ everything open.
 * Collapsing changes nothing else — membership, hiding and status are
   untouched, and deleting a group also drops it from `collapsed`.
 
-**Hiding.** `hidden` only lists session ids; the group membership is
-untouched, so unhiding puts a session back exactly where it was. Hidden
-sessions leave the groups and are counted on one collapsed line at the very
-bottom — **Hidden (N)** — which expands into plain rows with an **Unhide**
-button each. A hidden session whose CLI the registry shows as **busy** again
-(or that one of our terminals picks up) is unhidden automatically:
-`syncHiddenWithLiveStatus()` in `main.js` runs on every registry change.
+**Hiding is stop-and-put-away.** Hide on a session that is open in one of the
+app's terminals **hangs that terminal up first** (SIGHUP; the conversation
+stays on disk, untouched) and only then hides it — a session left running was
+alive in the registry and came straight back, which made Hide look broken.
+`hidden` only lists session ids; the group membership is untouched, so
+unhiding puts a session back exactly where it was. Hidden sessions leave the
+groups and are counted on one collapsed line at the very bottom —
+**Hidden (N)** — which expands into plain rows with **Unhide** and **Delete
+session** on each.
+
+**What brings a hidden row back** is something that happens *after* it was
+hidden, never the mere fact that the session exists:
+
+* it **needs an answer** at a later poll, or
+* it **goes busy** at a later poll — and for a session that was *already
+  busy* when it was hidden (one running in a terminal outside the app, which
+  the app cannot stop), only after it has been seen quiet once: busy → quiet
+  → busy. That is what `hiddenSince.awaitingIdle` remembers.
+
+A session hidden while quiet stays hidden however long it sits there.
+`unhideOnActivity()` in `sessionGroups.js` decides this from what
+`syncHiddenWithLiveStatus()` in `main.js` reports on every registry change;
+an older groups.json without `hiddenSince` is read as "hidden while quiet".
+
+**Deleting a session.** The `…` menu of a row and the terminal header both
+have **Delete session…**, and every hidden row has a **Delete session**
+button. It asks first — *"Delete this session and its transcript? This cannot
+be undone."*, **Delete session** / **Cancel**, Escape cancels — and only then:
+the app's terminal for that session is hung up, the transcript is deleted
+through the SDK's `deleteSession()`, and every file of ours that named the
+session forgets it (`groups.json` membership/hidden/hiddenSince,
+`agents.json` `sessionAgents`, `panel-tabs.json`). The agents themselves are
+never touched. A session **running in a terminal outside the app** cannot be
+deleted: the item is disabled and says *running in another terminal* — it is
+not ours to end.
+
+**⌘⌫ — like Claude Code: once stops, twice deletes.** On a visible row it is
+**Hide** (stop the session, put it under Hidden, no confirmation — one click
+on **Unhide** brings it back). On a row already under **Hidden (N)** it is
+**Delete session**, with the confirmation above. Both row menus say so in
+their tooltips.
 
 IPC: `groups:get`, `groups:create`, `groups:rename`, `groups:move`,
 `groups:delete`, `groups:assign`, `groups:set-hidden`, `groups:set-collapsed`
 (renderer → main) and `groups:changed` (main → renderer, the whole state
-after every write).
+after every write). Deleting is `sessions:delete`, which answers
+`{ deleted, reason }` — the window shows the reason when the answer is no.
 
 ## Agents
 
@@ -968,23 +1009,64 @@ folder that is already there is never replaced without a confirmation.
 
 ### Attaching a session to an agent
 
-A row's `…` menu and the terminal header's `…` both have **Assign to agent** —
-every agent, plus **No agent**. It writes `sessionAgents` in `agents.json`, so
-the badge appears at once and the session joins that agent's sub-list in the
-Agents tab. This is how sessions from long before an agent existed are
-attached to one.
+A row's `…` menu and the terminal header's `…` both have **Assign to agent**:
+**No agent** at the top, then the agents themselves — **at most ten**, the
+ones most likely to be wanted. The order is how much each agent is used (the
+sessions linked to it in `sessionAgents`, plus the terminals running as it
+right now), ties going to whichever was used last (`lastUsedAt` in
+`agents.json`, stamped whenever an agent starts a session or is assigned to
+one) and then to the order they are stored in, so a list that never changes
+never reorders itself. Built-ins are ranked like any other agent. With more
+than ten there is a **More…** item at the end: a small sheet with a search
+box and every agent there is — picking one there asks the same question the
+menu would have. The ranking is `rankAgentsByUse()` in
+`src/renderer/agentConstants.js` (tested in `test/agents.test.js`); the
+Agents tab itself keeps its own order. Picking one only *asks*: a small dialog says
+what the choice means ("From its next message on, this session follows the
+`<agent>` definition…") and **nothing is written until it is answered**. The
+buttons are, for a session open in one of the app's terminals:
+
+* **Assign and restart terminal now** — writes `sessionAgents` in
+  `agents.json`, hangs the pty up (SIGHUP) and starts a new `claude --resume`
+  in the same folder, this time with the definition;
+* **Assign only** — writes the link and leaves the terminal running. The
+  header chip carries a small **"loads on next resume"** note until that
+  terminal is gone;
+* **Cancel** (or Escape, or a click next to the dialog) — writes nothing,
+  changes nothing: no link, no badge on the row, no chip in the header.
+
+A session that is *not* open in an app terminal has nothing to restart, so its
+dialog is simply **Assign** / **Cancel**. **No agent** asks the same way —
+"Remove the `<agent>` assignment?" with **Remove** / **Cancel**. The decision
+itself is one pure function, `assignmentPlan(choice, sessionState)` in
+`src/renderer/assignmentPlan.js`, covered by `test/assignmentPlan.test.js`.
+
+**The agent introduces itself.**  A definition rides in the system prompt,
+where nobody can see it, so the restarted (or resumed) terminal is also given
+its first message, the same way the two meta actions are
+(`electron/lib/terminalKickoff.js`): *"You are now assigned the `<agent>`
+definition. Read it and tell me in two sentences what you will do differently
+in this conversation from now on."* The answer on screen is the proof that
+the definition arrived. After **Assign only** that message waits for the next
+resume the app starts for the session while the app is running — the same
+moment the chip stops saying "loads on next resume". (Quit the app in
+between and the definition still loads on the next resume; only the
+introduction is skipped.)
+
+Once the link is written, the badge appears and the session joins that agent's
+sub-list in the Agents tab. This is how sessions from long before an agent
+existed are attached to one.
 
 **Resume as agent.** From then on, every `claude --resume` the app starts for
 that session carries the agent's definition in the same combined prompt file a
 new agent session gets — which works only because every terminal is started
 with `--system-prompt-snapshot off`, so the system prompt is rendered fresh
 instead of being replayed from the conversation's first request. A session
-that is **already open** in a terminal keeps the prompt it started with, so the
-app offers **"Restart terminal to load the definition"**: a confirmation,
-SIGHUP, and a new `claude --resume` in the same folder. The conversation is
-untouched; the definition applies **from the next message on**. Assigning an
-agent never renames the session — the agent's name is only used for a session
-that is *starting*.
+that is **already open** in a terminal keeps the prompt it started with until
+it is restarted or resumed; the conversation is untouched either way and the
+definition applies **from the next message on**. Assigning an agent never
+renames the session — the agent's name is only used for a session that is
+*starting*.
 
 ### Create agent from this conversation
 
@@ -1122,6 +1204,9 @@ CLAUDING_SCREENSHOT_TERMINAL=/some/folder ...            # open a terminal in th
                                                          # (a scratch folder, never a real project),
                                                          # for anything that needs a live session
 CLAUDING_SCREENSHOT_WAIT=20000 ...                       # wait this many ms more before the shutter
+CLAUDING_SCREENSHOT_RESUME=<sessionId> ...                # that terminal resumes this session, so it
+                                                         # has a session id at once (with
+                                                         # CLAUDING_DRY_SPAWN=1 the id may be invented)
 CLAUDING_SCREENSHOT_CLICK='[data-agents-tab]>>[data-add-agent]' ...
                                                          # click these selectors in order first
                                                          # (a tab, a sheet, a menu item), so any
@@ -1227,6 +1312,20 @@ CLAUDING_SMOKE_AGENTS=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the badge on the row and the chip in the header -> agents-session.png.
     Exits the terminal and deletes the agent it added.
     On failure: agents-failed.png.
+
+CLAUDING_SMOKE_ASSIGN=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
+    "Assign to agent" end to end, in the scratch folder only: writes a small
+    definition ("begin every reply with SCRATCH"), adds it as an agent,
+    starts a real session with no agent, opens the header menu and picks
+    that agent -> assign-dialog.png with nothing written yet; presses Cancel
+    and checks that agents.json, the row badge and the header chip are all
+    unchanged -> assign-cancelled.png; opens the dialog again and presses
+    "Assign and restart terminal now", then checks that the old pty is gone,
+    that the new one resumes the SAME session with the definition in its
+    prompt file, that the app typed the assignment message in by itself and
+    prints the answer that came back -> assign-restarted.png. Exits the
+    terminal and deletes the agent it added. On failure: assign-failed.png.
+    Run it with its own profile (`--user-data-dir`).
 
 CLAUDING_SMOKE_FORK=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the Fork button, in the scratch folder only: opens a terminal, gets a

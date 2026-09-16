@@ -14,7 +14,8 @@
 //         "color": "--project-color-3",
 //         "definitionFolder": "/Users/<you>/Documents/agents/spec-writer",
 //         "definitionFile": "/Users/<you>/Documents/agents/spec-writer/spec-writer.md",
-//         "lastWorkingDirectory": "/Users/<you>/Documents/projects/website"
+//         "lastWorkingDirectory": "/Users/<you>/Documents/projects/website",
+//         "lastUsedAt": 1730000000000
 //       }
 //     ],
 //     "sessionAgents": { "<sessionId>": "<agentId>" }
@@ -134,6 +135,10 @@ function sanitizeAgent(entry) {
     definitionFolder,
     definitionFile,
     lastWorkingDirectory: lastWorkingDirectory || null,
+    // When this agent was last put to work: a session started as it, or a
+    // session assigned to it. The "Assign to agent" menus show the most
+    // used agents first and settle ties with this.
+    lastUsedAt: Number.isFinite(entry.lastUsedAt) ? Number(entry.lastUsedAt) : null,
     // Which built-in this agent is ("agent-maker"), or null for the user's
     // own. A built-in can be recoloured and renamed but never deleted, and
     // the app puts a missing one back at the next start.
@@ -434,6 +439,20 @@ export function createAgentStore({ storagePath, onChange, log }) {
       return false;
     }
     state.sessionAgents[sessionId] = agentId;
+    const assigned = state.agents.find((agent) => agent.id === agentId);
+    if (assigned) {
+      assigned.lastUsedAt = Date.now();
+    }
+    announce();
+    return true;
+  }
+
+  // The session was deleted: the link to its agent goes with it.
+  function forgetSession(sessionId) {
+    if (!sessionId || !(sessionId in state.sessionAgents)) {
+      return false;
+    }
+    delete state.sessionAgents[sessionId];
     announce();
     return true;
   }
@@ -456,12 +475,18 @@ export function createAgentStore({ storagePath, onChange, log }) {
   function rememberWorkingDirectory(agentId, workingDirectory) {
     const agent = state.agents.find((entry) => entry.id === agentId);
     const folder = cleanFolder(workingDirectory);
-    if (!agent || !folder || agent.lastWorkingDirectory === folder) {
+    if (!agent) {
       return false;
     }
-    agent.lastWorkingDirectory = folder;
+    const sameFolder = !folder || agent.lastWorkingDirectory === folder;
+    if (folder) {
+      agent.lastWorkingDirectory = folder;
+    }
+    // Starting a session as an agent is using it, whether or not the folder
+    // is the same one as last time.
+    agent.lastUsedAt = Date.now();
     announce();
-    return true;
+    return !sameFolder;
   }
 
   return {
@@ -472,6 +497,7 @@ export function createAgentStore({ storagePath, onChange, log }) {
     deleteAgent,
     ensureBuiltinAgent,
     setSessionAgent,
+    forgetSession,
     linkSession,
     rememberWorkingDirectory
   };
