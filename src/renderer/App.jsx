@@ -15,6 +15,7 @@ import {
   newAgentSessionName
 } from "./metaPrompts.js";
 import { assignmentPlan, definitionLoadsOnNextResume } from "./assignmentPlan.js";
+import { flagsChangePlan } from "./sessionFlagsPlan.js";
 import { rankAgentsByUse } from "./agentConstants.js";
 import SessionsColumn from "./components/SessionsColumn.jsx";
 import MiddleColumn from "./components/MiddleColumn.jsx";
@@ -23,6 +24,7 @@ import WindowTools from "./components/WindowTools.jsx";
 import SkillsScanSheet from "./components/SkillsScanSheet.jsx";
 import BuiltinSkillSheet from "./components/BuiltinSkillSheet.jsx";
 import AssignAgentDialog from "./components/AssignAgentDialog.jsx";
+import SessionFlagsDialog from "./components/SessionFlagsDialog.jsx";
 import DeleteSessionDialog from "./components/DeleteSessionDialog.jsx";
 import AgentPickerSheet from "./components/AgentPickerSheet.jsx";
 
@@ -163,6 +165,14 @@ export default function App() {
   // chip says the definition loads on the next resume. The entry goes as
   // soon as that terminal is gone.
   const [pendingDefinitionTerminals, setPendingDefinitionTerminals] = useState({});
+  // The open "Extra claude flags…" dialog, or null. Like the assignment
+  // question, nothing is written until one of its buttons is pressed.
+  const [flagsRequest, setFlagsRequest] = useState(null);
+  // The per-session `claude` flags (session-flags.json), kept in the main
+  // process. Read here so the dialog can be filled in with what this
+  // conversation already carries — and so a change to the file itself
+  // arrives without a restart.
+  const [sessionFlagsState, setSessionFlagsState] = useState({ sessionFlags: {} });
   // The session the delete confirmation is asking about, or null. Nothing is
   // deleted until it is answered — and a session running in a terminal
   // outside the app never gets here at all.
@@ -366,6 +376,15 @@ export default function App() {
   useEffect(() => {
     window.clauding.getSettings().then(setSettings);
     return window.clauding.onSettingsChanged(setSettings);
+  }, []);
+
+  // The flags each conversation carries (session-flags.json). The main
+  // process pushes the whole store whenever it changes — a save from this
+  // dialog, a terminal filing its flags under a new session id, or the file
+  // being edited by hand while the app runs.
+  useEffect(() => {
+    window.clauding.getSessionFlags().then(setSessionFlagsState);
+    return window.clauding.onSessionFlagsChanged(setSessionFlagsState);
   }, []);
 
   // The Skills item in the macOS menu bar, and "Scan for skills…" next to it.
@@ -812,6 +831,79 @@ export default function App() {
       });
     },
     [assignRequest, openTerminal]
+  );
+
+  // "Extra claude flags…" from a row menu or from the terminal header. The
+  // flags of a conversation could only be typed in the "+ New" sheet before
+  // it started, so a session already running could not be given, say, a
+  // Telegram channel without starting a second one. Picking the item only
+  // *asks*: the dialog is filled in with what session-flags.json holds and
+  // nothing is written until one of its buttons is pressed.
+  const requestSessionFlags = useCallback(
+    (sessionId) => {
+      if (!sessionId) {
+        return;
+      }
+      const terminal = terminalsRef.current.find((record) => record.sessionId === sessionId && !record.exited) || null;
+      const session = sessionsRef.current.find((record) => record.sessionId === sessionId) || null;
+      const agentId = agentLinksRef.current[sessionId] || (terminal && terminal.agentId) || null;
+      const agent = agentId ? agentState.agents.find((entry) => entry.id === agentId) || null : null;
+      setFlagsRequest({
+        sessionId,
+        sessionTitle:
+          (session && session.title) ||
+          (terminal && terminal.sessionName) ||
+          translateInLanguage(language, "newSession.untitled"),
+        flags: sessionFlagsState.sessionFlags[sessionId] || "",
+        // The other two levels, so the dialog can show the whole command
+        // line the next `claude` would get and not only its last third.
+        globalFlags: settings.extraClaudeArguments || "",
+        agentFlags: (agent && agent.extraClaudeArguments) || "",
+        hasOpenTerminal: Boolean(terminal)
+      });
+    },
+    [agentState, settings, sessionFlagsState, language]
+  );
+
+  // The answer to that dialog (flagsChangePlan in sessionFlagsPlan.js):
+  //   Cancel                      nothing at all
+  //   Save only / Save            the session's line in session-flags.json
+  //   Save and restart terminal   that, then SIGHUP and a fresh
+  //                               `claude --resume` of the same conversation
+  // The restart passes no flags of its own: the main process puts the
+  // session's own back out of the store it has just been told about, which
+  // is also what makes an emptied field really empty the command line.
+  const resolveSessionFlags = useCallback(
+    async (choice, flags) => {
+      const request = flagsRequest;
+      setFlagsRequest(null);
+      if (!request) {
+        return;
+      }
+      const sessionState = { hasOpenTerminal: request.hasOpenTerminal };
+      const plan = flagsChangePlan(choice, sessionState);
+      if (!plan.writeFlags) {
+        return;
+      }
+      const state = await window.clauding.setSessionFlags(request.sessionId, flags);
+      setSessionFlagsState(state);
+      const terminal =
+        terminalsRef.current.find((record) => record.sessionId === request.sessionId && !record.exited) || null;
+      if (!plan.restart || !terminal) {
+        return;
+      }
+      const session = sessionsRef.current.find((record) => record.sessionId === request.sessionId) || null;
+      const workingDirectory = terminal.workingDirectory || (session && session.workingDirectory);
+      // The agent this session runs as goes into the new terminal too, so a
+      // flag change never quietly drops the definition it was working with.
+      const agentId = terminal.agentId || agentLinksRef.current[request.sessionId] || null;
+      await window.clauding.closeTerminal(terminal.terminalId);
+      // The pty needs a moment to hang up before a second `claude --resume`
+      // takes the same session over.
+      await new Promise((settle) => setTimeout(settle, 500));
+      openTerminal({ workingDirectory, resumeSessionId: request.sessionId, agentId });
+    },
+    [flagsRequest, openTerminal]
   );
 
   // The "loads on next resume" note belongs to one terminal: once that
@@ -1302,6 +1394,7 @@ export default function App() {
           onDismissSuggestion={dismissDefinitionSuggestion}
           onCreateAgentFromSession={createAgentFromConversation}
           onHarvestSkillsFromSession={harvestSkillsFromConversation}
+          onEditSessionFlags={requestSessionFlags}
           onReadAgentDefinition={readAgentDefinition}
           onOpenAgentPicker={setAgentPickerSessionId}
         />
@@ -1320,6 +1413,7 @@ export default function App() {
           onOpenAgentPicker={setAgentPickerSessionId}
           onCreateAgent={() => createAgentFromConversation(null)}
           onHarvestSkills={() => harvestSkillsFromConversation(null)}
+          onEditSessionFlags={requestSessionFlags}
           onDeleteSession={requestSessionDelete}
           reader={reader}
           onCloseReader={() => setReader(null)}
@@ -1374,6 +1468,10 @@ export default function App() {
             leaves agents.json, the row badge and the header chip exactly as
             they were. */}
         {assignRequest && <AssignAgentDialog request={assignRequest} onChoose={resolveAgentAssignment} />}
+        {/* "Extra claude flags…" asks the same way: session-flags.json is
+            written only when Save is pressed, and only the restart makes
+            the flags reach the `claude` that is already running. */}
+        {flagsRequest && <SessionFlagsDialog request={flagsRequest} onChoose={resolveSessionFlags} />}
         {/* "More…": every agent there is, with a search box. Picking one
             only opens the same question the menu would have. */}
         {agentPickerSessionId && (

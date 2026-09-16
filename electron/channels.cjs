@@ -30,6 +30,13 @@ const CHANNELS = {
   // A definition folder that appeared under the agents root: the app offers
   // to add it as an agent.
   agentsDefinitionFound: "agents:definition-found",
+  // The extra `claude` flags of one conversation (session-flags.json):
+  // "Extra claude flags…" in a row's or the header's "…" menu reads and
+  // writes them, and the app broadcasts the store whenever it changes —
+  // including when the file itself is edited on disk.
+  sessionFlagsGet: "session-flags:get",
+  sessionFlagsSet: "session-flags:set",
+  sessionFlagsChanged: "session-flags:changed",
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
   settingsPickAgentsRoot: "settings:pick-agents-root",

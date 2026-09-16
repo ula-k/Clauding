@@ -43,6 +43,7 @@ export default function SessionsColumn({
   onDismissSuggestion,
   onCreateAgentFromSession,
   onHarvestSkillsFromSession,
+  onEditSessionFlags,
   onReadAgentDefinition
 }) {
   const { translate, language, setLanguage } = useTranslation();
@@ -250,6 +251,7 @@ export default function SessionsColumn({
                     onAssignAgent={agentActions.assignSession}
                     onCreateAgent={onCreateAgentFromSession}
                     onHarvestSkills={onHarvestSkillsFromSession}
+                    onEditSessionFlags={onEditSessionFlags}
                   />
                 ))
               )}

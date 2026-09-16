@@ -937,6 +937,40 @@ agent", a click on the row, a fork. Without that a `--channels` conversation
 would silently lose its channel the first time it was resumed, and the
 messages would simply stop arriving.
 
+**Changing them on a conversation that is already running.** A row's `…`
+menu and the terminal header's `…` both have **Extra claude flags…**. It
+opens a small dialog — "Extra claude flags for `<session>`" — with the
+session's own line of `session-flags.json` in a field, the whole command
+line the next `claude` would get under it (global, then the agent's, then
+these) and the same refusal of the app's own flags as the three fields
+above. The buttons, for a session open in one of the app's terminals:
+
+* **Save and restart terminal** — writes `session-flags.json`, hangs the pty
+  up (SIGHUP) and starts a new `claude --resume <the same id>` in the same
+  pane with the new flags. The conversation is kept; the scrollback is the
+  CLI's own fresh one, and the header does not change.
+* **Save only** — writes the flags and leaves the terminal running. They
+  arrive at the next resume the app starts for that session.
+* **Cancel** (or Escape, or a click next to the dialog) — writes nothing.
+
+A session that is not open in an app terminal has no restart to offer, so
+its dialog is **Save only** / **Cancel** and says the flags apply when it is
+resumed here. This is how a conversation that has been going for an hour is
+given a Telegram channel: open the dialog on it, type
+`--channels plugin:telegram@claude-plugins-official`, press **Save and
+restart terminal**, and the same conversation comes back in the same pane,
+now reachable from Telegram. The decision itself is one pure function,
+`flagsChangePlan(choice, sessionState)` in
+`src/renderer/sessionFlagsPlan.js`, covered by
+`test/sessionFlagsPlan.test.js`.
+
+**The stores are re-read when their files change.** `session-flags.json`,
+`settings.json` and `agents.json` are watched while the app runs (debounced,
+`electron/fileWatch.js`), so editing one by hand in *Application Support* —
+or a change written by something else — is picked up without restarting the
+app. Each store compares what it reads with what it already holds, so the
+echo of the app's own save is not mistaken for news.
+
 **What cannot be typed.** `--resume`, `--print` / `-p`, `--output-format`,
 `--append-system-prompt*` and `--system-prompt-snapshot` are the app's own:
 a second `--resume` would fight with the one Clauding passes, and `--print`
@@ -1422,6 +1456,21 @@ CLAUDING_DRY_SPAWN=1 CLAUDING_SMOKE_FLAGS=1 CLAUDING_SMOKE_FOLDER=/some/folder n
     and a fork get the flags back out of session-flags.json, and that a
     reserved flag written into settings.json reaches neither the file nor
     the command line. Run it with its own profile (`--user-data-dir`).
+
+CLAUDING_SMOKE_SESSION_FLAGS=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
+    "Extra claude flags…" on a session that already exists: opens a terminal
+    in the scratch folder, opens the header menu and picks the item ->
+    session-flags-dialog.png with nothing written yet; presses Cancel and
+    checks session-flags.json is still empty; opens it again, types
+    `--model sonnet` in and presses "Save and restart terminal" — then
+    checks the store was written, the old pty is gone and the new command
+    line carries both `--resume <the same id>` and the new flag; finally
+    writes session-flags.json by hand and checks the running app re-reads
+    it by itself. Add CLAUDING_DRY_SPAWN=1 to check all of that without
+    spawning a single `claude`; without it the run is real (a few cents) and
+    the restarted terminal's banner is printed, so the model change can be
+    seen -> session-flags-restarted.png. Run it with its own profile
+    (`--user-data-dir`). On failure: session-flags-failed.png.
 
 CLAUDING_SMOKE_AGENT_START=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the first message a session started *as an agent* gets, in the scratch

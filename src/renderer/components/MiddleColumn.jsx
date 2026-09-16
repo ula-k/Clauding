@@ -55,6 +55,7 @@ function HeaderMenuButton({
   onOpenAgentPicker,
   onCreateAgent,
   onHarvestSkills,
+  onEditSessionFlags,
   onDeleteSession
 }) {
   const { translate } = useTranslation();
@@ -129,6 +130,21 @@ function HeaderMenuButton({
           >
             {translate("meta.harvestSkills")}
           </MenuItem>
+          {onEditSessionFlags && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                marker="session-flags"
+                disabled={!sessionId}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onEditSessionFlags(sessionId);
+                }}
+              >
+                {translate("flags.sessionMenu")}
+              </MenuItem>
+            </>
+          )}
           {onDeleteSession && (
             <>
               <MenuSeparator />
@@ -287,6 +303,7 @@ export default function MiddleColumn({
   onOpenAgentPicker,
   onCreateAgent,
   onHarvestSkills,
+  onEditSessionFlags,
   onDeleteSession,
   reader,
   onCloseReader,
@@ -387,6 +404,7 @@ export default function MiddleColumn({
               onAssignAgent={onAssignAgent}
               onCreateAgent={onCreateAgent}
               onHarvestSkills={onHarvestSkills}
+              onEditSessionFlags={onEditSessionFlags}
               onDeleteSession={onDeleteSession}
             />
             {underTools}

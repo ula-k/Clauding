@@ -44,6 +44,7 @@ export default function SessionRow({
   onOpenAgentPicker,
   onCreateAgent,
   onHarvestSkills,
+  onEditSessionFlags,
   hiddenVariant = false
 }) {
   const { translate } = useTranslation();
@@ -234,6 +235,20 @@ export default function SessionRow({
                 }}
               >
                 {translate("meta.harvestSkills")}
+              </MenuItem>
+            </>
+          )}
+          {onEditSessionFlags && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                marker="session-flags"
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onEditSessionFlags(session.sessionId);
+                }}
+              >
+                {translate("flags.sessionMenu")}
               </MenuItem>
             </>
           )}

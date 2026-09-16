@@ -503,6 +503,30 @@ export function createAgentStore({ storagePath, onChange, log }) {
     return !sameFolder;
   }
 
+  // agents.json was edited outside the app (main.js watches it). Compared
+  // as the renderer would see it, so the store's own saves — which write
+  // the very same thing back — raise no change; an unreadable or
+  // half-written file changes nothing at all.
+  function reloadFromDisk() {
+    let loaded = null;
+    try {
+      loaded = sanitize(JSON.parse(fs.readFileSync(storagePath, "utf8")));
+    } catch (error) {
+      return false;
+    }
+    if (JSON.stringify(loaded) === JSON.stringify(state)) {
+      return false;
+    }
+    state = loaded;
+    if (log) {
+      log(`[agents] re-read ${storagePath} after a change on disk`);
+    }
+    if (onChange) {
+      onChange(get());
+    }
+    return true;
+  }
+
   return {
     get,
     agentById,
@@ -513,6 +537,7 @@ export function createAgentStore({ storagePath, onChange, log }) {
     setSessionAgent,
     forgetSession,
     linkSession,
-    rememberWorkingDirectory
+    rememberWorkingDirectory,
+    reloadFromDisk
   };
 }

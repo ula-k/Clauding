@@ -180,5 +180,29 @@ export function createSettingsStore({ storagePath, onChange, log }) {
     return get();
   }
 
-  return { get, update, ensureAgentsRoot, addSkillScanRoot };
+  // settings.json was edited outside the app (main.js watches it). An
+  // unreadable or half-written file changes nothing, and a file that says
+  // what is already held raises no change — so the store's own saves do not
+  // come back as news.
+  function reloadFromDisk() {
+    let loaded = null;
+    try {
+      loaded = sanitize(JSON.parse(fs.readFileSync(storagePath, "utf8")));
+    } catch (error) {
+      return false;
+    }
+    if (sameSettings(loaded, state)) {
+      return false;
+    }
+    state = loaded;
+    if (log) {
+      log(`[settings] re-read ${storagePath} after a change on disk`);
+    }
+    if (onChange) {
+      onChange(get());
+    }
+    return true;
+  }
+
+  return { get, update, ensureAgentsRoot, addSkillScanRoot, reloadFromDisk };
 }

@@ -112,6 +112,18 @@ contextBridge.exposeInMainWorld("clauding", {
   onAgentDefinitionFound(listener) {
     return subscribe(CHANNELS.agentsDefinitionFound, listener);
   },
+  // The extra `claude` flags one conversation carries (session-flags.json).
+  // Read for the dialog behind "Extra claude flags…", written when it is
+  // saved; an empty string takes the session's own flags away again.
+  getSessionFlags() {
+    return ipcRenderer.invoke(CHANNELS.sessionFlagsGet);
+  },
+  setSessionFlags(sessionId, flags) {
+    return ipcRenderer.invoke(CHANNELS.sessionFlagsSet, { sessionId, flags: flags || "" });
+  },
+  onSessionFlagsChanged(listener) {
+    return subscribe(CHANNELS.sessionFlagsChanged, listener);
+  },
   // The app's own settings (settings.json): where new agent definitions are
   // written and where Claude Code reads skills from.
   getSettings() {

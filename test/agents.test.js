@@ -340,3 +340,23 @@ test("using an agent stamps lastUsedAt, so the menus can put it first", () => {
   store.setSessionAgent("session-one", agent.id);
   assert.ok(store.get().agents[0].lastUsedAt >= afterStart, "assigning it is using it too");
 });
+
+test("agents.json edited on disk is re-read, and the store's own state is not re-announced", () => {
+  const folder = scratchFolder();
+  const { storagePath, store } = storeIn(folder, { version: 1, agents: [], sessionAgents: {} });
+  const added = store.addAgent({
+    name: "Spec Writer",
+    emoji: "📝",
+    definitionFolder: folder,
+    definitionFile: path.join(folder, "spec-writer.md")
+  });
+  // The same agent, renamed by hand in the file while the app runs.
+  const onDisk = JSON.parse(JSON.stringify({ version: 1, agents: [{ ...added, name: "Renamed by hand" }], sessionAgents: {} }));
+  fs.writeFileSync(storagePath, JSON.stringify(onDisk, null, 2));
+  assert.equal(store.reloadFromDisk(), true);
+  assert.equal(store.get().agents[0].name, "Renamed by hand");
+  assert.equal(store.reloadFromDisk(), false);
+  fs.writeFileSync(storagePath, "{ not json");
+  assert.equal(store.reloadFromDisk(), false);
+  assert.equal(store.get().agents[0].name, "Renamed by hand");
+});

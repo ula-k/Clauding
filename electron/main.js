@@ -26,6 +26,7 @@ import { runCollapseSmoke } from "./smokeCollapse.js";
 import { runAgentsSmoke } from "./smokeAgents.js";
 import { runAgentStartSmoke } from "./smokeAgentStart.js";
 import { runFlagsSmoke } from "./smokeFlags.js";
+import { runSessionFlagsSmoke } from "./smokeSessionFlags.js";
 import {
   UPDATE_BY_HAND_ADVICE,
   projectRootFolder,
@@ -52,7 +53,7 @@ import { createPanelTabStore, describeTarget } from "./panelTabs.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
-import { createFileWatchRegistry } from "./fileWatch.js";
+import { createFileWatchRegistry, watchFile } from "./fileWatch.js";
 
 // A GUI-launched app inherits a minimal PATH; the Claude CLI and the tools it
 // runs need ~/.local/bin, Homebrew and /usr/local/bin like in a terminal.
@@ -126,6 +127,7 @@ const smokeAgentsMode = process.env.CLAUDING_SMOKE_AGENTS === "1";
 const smokeAssignMode = process.env.CLAUDING_SMOKE_ASSIGN === "1";
 const smokeAgentStartMode = process.env.CLAUDING_SMOKE_AGENT_START === "1";
 const smokeFlagsMode = process.env.CLAUDING_SMOKE_FLAGS === "1";
+const smokeSessionFlagsMode = process.env.CLAUDING_SMOKE_SESSION_FLAGS === "1";
 const smokeEmojiMode = process.env.CLAUDING_SMOKE_EMOJI === "1";
 const smokeKickoffMode = process.env.CLAUDING_SMOKE_KICKOFF === "1";
 // Any automation at all: the first-run questions stay out of its way.
@@ -140,6 +142,7 @@ const anySmokeMode =
   smokeAssignMode ||
   smokeAgentStartMode ||
   smokeFlagsMode ||
+  smokeSessionFlagsMode ||
   smokeEmojiMode ||
   smokeKickoffMode;
 
@@ -152,6 +155,8 @@ let sessionGroups = null;
 let agents = null;
 let settings = null;
 let stopWatchingAgentsRoot = null;
+// One watcher per store file in Application Support (see watchStoreFiles).
+let stopWatchingStoreFiles = [];
 // ~/Library/Application Support/Clauding: panel-tabs.json, groups.json,
 // agents.json, preamble.md, clauding.sock, prompts/
 const userDataDirectory = app.getPath("userData");
@@ -465,6 +470,22 @@ function createWindow() {
         settings,
         agents,
         sessionFlags,
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeSessionFlagsMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runSessionFlagsSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        sessionFlags,
+        sessionFlagsPath: path.join(userDataDirectory, "session-flags.json"),
+        dryRun: process.env.CLAUDING_DRY_SPAWN === "1",
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
         quit() {
           app.quit();
         }
@@ -979,6 +1000,26 @@ function scanAgentsRoot({ announce }) {
   }
 }
 
+// The three JSON files in Application Support the app keeps in memory are
+// watched (debounced in fileWatch.js), so a change written by hand — or by
+// a second window — is picked up without restarting the app. Each store
+// compares what it reads with what it holds, so the echo of the app's own
+// save is not mistaken for news.
+function watchStoreFiles() {
+  for (const stopWatching of stopWatchingStoreFiles) {
+    stopWatching();
+  }
+  stopWatchingStoreFiles = [];
+  const watched = [
+    [path.join(userDataDirectory, "session-flags.json"), () => sessionFlags && sessionFlags.reloadFromDisk()],
+    [path.join(userDataDirectory, "settings.json"), () => settings && settings.reloadFromDisk()],
+    [path.join(userDataDirectory, "agents.json"), () => agents && agents.reloadFromDisk()]
+  ];
+  for (const [storagePath, reload] of watched) {
+    stopWatchingStoreFiles.push(watchFile(storagePath, reload));
+  }
+}
+
 // The agents root is watched so the definition the Agent Maker just wrote
 // can be offered as an agent with one click, without the user hunting for
 // the folder.
@@ -1269,6 +1310,22 @@ function registerIpc() {
     seedBuiltins({ agentStore: agents, skillsRoot: settings.get().skillsRoot, log: (line) => console.log(line) });
     installApplicationMenu();
     return agents.get();
+  });
+
+  // The per-session `claude` flags behind "Extra claude flags…". Writing
+  // them is all this does: whether the terminal on screen is restarted so
+  // they take effect now is the renderer's decision (flagsChangePlan in
+  // src/renderer/sessionFlagsPlan.js), and it does that by hanging the pty
+  // up and resuming the same session — the store is read again there.
+  ipcMain.handle(CHANNELS.sessionFlagsGet, async () => {
+    return sessionFlags ? sessionFlags.get() : { sessionFlags: {} };
+  });
+
+  ipcMain.handle(CHANNELS.sessionFlagsSet, async (event, { sessionId, flags }) => {
+    if (sessionFlags && sessionId) {
+      sessionFlags.remember(sessionId, flags || "");
+    }
+    return sessionFlags ? sessionFlags.get() : { sessionFlags: {} };
   });
 
   ipcMain.handle(CHANNELS.settingsGet, async () => {
@@ -1589,10 +1646,14 @@ app.whenReady().then(() => {
   watchAgentsRoot();
   sessionFlags = createSessionFlagsStore({
     storagePath: path.join(userDataDirectory, "session-flags.json"),
+    onChange(state) {
+      sendToWindow(CHANNELS.sessionFlagsChanged, state);
+    },
     log(line) {
       console.log(line);
     }
   });
+  watchStoreFiles();
   panelTabs = createPanelTabStore({
     storagePath: path.join(userDataDirectory, "panel-tabs.json"),
     onChange(change) {
@@ -1654,4 +1715,8 @@ app.on("before-quit", () => {
     stopWatchingAgentsRoot();
     stopWatchingAgentsRoot = null;
   }
+  for (const stopWatching of stopWatchingStoreFiles) {
+    stopWatching();
+  }
+  stopWatchingStoreFiles = [];
 });
