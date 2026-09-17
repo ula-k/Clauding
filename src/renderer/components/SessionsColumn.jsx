@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation, LANGUAGES } from "../i18n.js";
 import SessionRow from "./SessionRow.jsx";
 import GroupHeader from "./GroupHeader.jsx";
@@ -7,6 +7,8 @@ import NewSessionSheet from "./NewSessionSheet.jsx";
 import AgentsTab from "./AgentsTab.jsx";
 import AgentForm from "./AgentForm.jsx";
 import { buildGroupedList, groupIdForSession } from "../sessionGrouping.js";
+import { hasChosenColor, sessionColorToken } from "../sessionColors.js";
+import { commandKeyPressed } from "../platform.js";
 
 // The left column: two tabs. "Sessions" is the user's own groups, each a header
 // with plain name-only rows under it and a single "Hidden (N)" line at the
@@ -44,7 +46,15 @@ export default function SessionsColumn({
   onCreateAgentFromSession,
   onHarvestSkillsFromSession,
   onEditSessionFlags,
-  onReadAgentDefinition
+  onReadAgentDefinition,
+  // Several rows at once: the ids picked out, what a click on a row means,
+  // and the four things the bulk menu does with them.
+  selectedSessionIds = [],
+  onRowClick,
+  onSetSessionColor,
+  onSelectAllVisible,
+  onClearSelection,
+  bulkActions
 }) {
   const { translate, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState("sessions");
@@ -56,6 +66,8 @@ export default function SessionsColumn({
   const [hiddenExpanded, setHiddenExpanded] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const listRef = useRef(null);
+  const lastSearchTextRef = useRef(searchText);
 
   const { buckets, hiddenSessions, visibleCount } = useMemo(
     () =>
@@ -69,6 +81,77 @@ export default function SessionsColumn({
       }),
     [sessions, groupState, searchText]
   );
+
+  // The rows as they are drawn, top to bottom: that is the order a
+  // Shift-click takes its range from, and what ⌘A picks out. A collapsed
+  // group draws no rows, so nothing of it is in here; the hidden ones only
+  // count while the "Hidden (N)" line is open.
+  const visibleOrder = useMemo(() => {
+    const order = [];
+    for (const bucket of buckets) {
+      if (bucket.collapsed) {
+        continue;
+      }
+      for (const session of bucket.sessions) {
+        order.push(session.sessionId);
+      }
+    }
+    if (hiddenExpanded) {
+      for (const session of hiddenSessions) {
+        order.push(session.sessionId);
+      }
+    }
+    return order;
+  }, [buckets, hiddenSessions, hiddenExpanded]);
+
+  const pickedIds = useMemo(() => new Set(selectedSessionIds || []), [selectedSessionIds]);
+  const selectionCount = pickedIds.size;
+  // Only a real selection — two rows or more — turns the row menus into the
+  // bulk one; one picked row is just the row it always was.
+  const bulkMenu = selectionCount > 1 && bulkActions ? { count: selectionCount, ...bulkActions } : null;
+  const storedColors = groupState.colors || {};
+
+  // The colour a row's name is drawn in, and whether the menu should tick
+  // "Automatic" rather than one of the swatches.
+  function rowColorProps(sessionId) {
+    return {
+      colorToken: sessionColorToken(sessionId, storedColors),
+      colorIsAutomatic: !hasChosenColor(sessionId, storedColors)
+    };
+  }
+
+  // A search puts the selection away: the rows it narrows the list to are
+  // not the rows that were picked out, and a bulk action must never reach a
+  // row nobody can see any more.
+  useEffect(() => {
+    if (lastSearchTextRef.current === searchText) {
+      return;
+    }
+    lastSearchTextRef.current = searchText;
+    onClearSelection();
+  }, [searchText, onClearSelection]);
+
+  // ⌘A picks out every row on screen, but only while the list has the
+  // keyboard: the same keys belong to the terminal and to every text field
+  // in the window, and neither should lose them to this.
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key !== "a" && event.key !== "A") {
+        return;
+      }
+      if (!commandKeyPressed(event) || event.shiftKey || event.altKey) {
+        return;
+      }
+      const list = listRef.current;
+      if (!list || !document.activeElement || !list.contains(document.activeElement)) {
+        return;
+      }
+      event.preventDefault();
+      onSelectAllVisible(visibleOrder);
+    }
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [visibleOrder, onSelectAllVisible]);
 
   function confirmNewGroup() {
     const trimmed = newGroupName.trim();
@@ -153,7 +236,11 @@ export default function SessionsColumn({
             <input
               type="search"
               value={searchText}
-              placeholder={translate("search.placeholder")}
+              placeholder={
+                selectionCount > 1 && !searchText
+                  ? translate("row.selectedCount", { count: selectionCount })
+                  : translate("search.placeholder")
+              }
               onChange={(event) => setSearchText(event.target.value)}
               spellCheck={false}
             />
@@ -166,6 +253,7 @@ export default function SessionsColumn({
           agents={agents}
           sessions={agentSessions || sessions}
           sessionAgents={sessionAgents}
+          sessionColors={storedColors}
           hiddenSessionIds={groupState.hidden}
           selectedSessionId={selectedSessionId}
           onSelectSession={onSelectSession}
@@ -183,7 +271,7 @@ export default function SessionsColumn({
           onDismissSuggestion={onDismissSuggestion}
         />
       ) : (
-        <div className="session-list">
+        <div className="session-list" ref={listRef} data-session-list>
           {loading && sessions.length === 0 && <div className="list-note">{translate("list.loading")}</div>}
           {error && <div className="list-note">{translate("list.error")}</div>}
           {!loading && !error && visibleCount === 0 && searchText && <div className="list-note">{translate("list.empty")}</div>}
@@ -237,7 +325,9 @@ export default function SessionsColumn({
                     key={session.sessionId}
                     session={session}
                     isSelected={session.sessionId === selectedSessionId}
-                    onSelect={onSelectSession}
+                    isMultiSelected={pickedIds.has(session.sessionId)}
+                    bulk={bulkMenu}
+                    onSelect={(sessionId, modifiers) => onRowClick(sessionId, modifiers, visibleOrder)}
                     now={now}
                     groups={groupState.groups}
                     currentGroupId={groupIdForSession(session.sessionId, groupState.membership, groupState.groups)}
@@ -252,6 +342,8 @@ export default function SessionsColumn({
                     onCreateAgent={onCreateAgentFromSession}
                     onHarvestSkills={onHarvestSkillsFromSession}
                     onEditSessionFlags={onEditSessionFlags}
+                    onSetColor={onSetSessionColor}
+                    {...rowColorProps(session.sessionId)}
                   />
                 ))
               )}
@@ -276,7 +368,9 @@ export default function SessionsColumn({
                     key={session.sessionId}
                     session={session}
                     isSelected={session.sessionId === selectedSessionId}
-                    onSelect={onSelectSession}
+                    isMultiSelected={pickedIds.has(session.sessionId)}
+                    bulk={bulkMenu}
+                    onSelect={(sessionId, modifiers) => onRowClick(sessionId, modifiers, visibleOrder)}
                     now={now}
                     groups={groupState.groups}
                     currentGroupId={groupIdForSession(session.sessionId, groupState.membership, groupState.groups)}
@@ -285,6 +379,8 @@ export default function SessionsColumn({
                     onUnhide={groupActions.unhideSession}
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
+                    onSetColor={onSetSessionColor}
+                    {...rowColorProps(session.sessionId)}
                     hiddenVariant
                   />
                 ))}

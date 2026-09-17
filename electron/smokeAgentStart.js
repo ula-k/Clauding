@@ -31,7 +31,6 @@ const SMOKE_WORKING_DIRECTORY = smokeWorkingDirectory();
 const DEFINITION_FOLDER = path.join(SMOKE_DIRECTORY, "scratch-starter");
 const AGENT_NAME = "Scratch Starter";
 const AGENT_EMOJI = "🚀";
-const AGENT_COLOR = "--project-color-4";
 const ESCAPE = "\x1b";
 const DOWN_ARROW = "\x1b[B";
 
@@ -179,7 +178,6 @@ export async function runAgentStartSmoke({ window, registry, agents, sendCommand
     const added = agents.addAgent({
       name: AGENT_NAME,
       emoji: AGENT_EMOJI,
-      color: AGENT_COLOR,
       definitionFolder: DEFINITION_FOLDER,
       definitionFile: path.join(DEFINITION_FOLDER, "scratch-starter.md")
     });

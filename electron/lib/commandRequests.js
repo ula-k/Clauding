@@ -14,18 +14,9 @@
 // itself instead of asking the user to click through the form.
 import fs from "node:fs";
 import path from "node:path";
-import { AGENT_COLOR_TOKENS, inspectDefinitionFolder } from "../agents.js";
+import { inspectDefinitionFolder } from "../agents.js";
 
 const PANEL_COMMANDS = ["open", "panel", "tabs"];
-
-// The colour a new agent gets: the first swatch of the palette nobody uses
-// yet, so two agents added in a row are never the same colour. Once every
-// swatch is taken the palette starts again from the beginning.
-export function nextFreeAgentColor(existingAgents) {
-  const taken = new Set((existingAgents || []).map((agent) => agent.color));
-  const free = AGENT_COLOR_TOKENS.find((token) => !taken.has(token));
-  return free || AGENT_COLOR_TOKENS[(existingAgents || []).length % AGENT_COLOR_TOKENS.length];
-}
 
 // Which tab set a `clauding` command goes to, in order:
 //   1. the terminal it was run in (CLAUDING_TERMINAL_ID from the pty),
@@ -116,8 +107,8 @@ export function createCommandRequestHandler({
   }
 
   // `clauding agent add <folder>`: the same suggestions the "+ Add agent"
-  // form makes (definition file, name, emoji), the next free colour, and the
-  // flags the caller passed on top of them. The folder is what identifies an
+  // form makes (definition file, name, emoji) and the flags the caller
+  // passed on top of them. The folder is what identifies an
   // agent, so the same one is never registered twice.
   function addAgent(request) {
     const rawFolder = String(request.definitionFolder || "").trim();
@@ -145,7 +136,6 @@ export function createCommandRequestHandler({
     const draft = {
       name: String(request.name || "").trim() || suggestion.name,
       emoji: String(request.emoji || "").trim() || suggestion.emoji,
-      color: String(request.color || "").trim() || nextFreeAgentColor(agents.list()),
       definitionFolder,
       definitionFile: suggestion.definitionFile
     };

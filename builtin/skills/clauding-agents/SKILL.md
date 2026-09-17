@@ -15,7 +15,7 @@ the app you are running in.
 After you have written a definition **and the user has approved it**:
 
 ```
-clauding agent add <definition folder> [--name "Release Notes Writer"] [--emoji "📝"] [--color --project-color-3]
+clauding agent add <definition folder> [--name "Release Notes Writer"] [--emoji "📝"]
 ```
 
 * The **definition folder** is the folder holding the `.md` file, not the
@@ -23,8 +23,8 @@ clauding agent add <definition folder> [--name "Release Notes Writer"] [--emoji 
   is picked per session in the app's "+ New" sheet.
 * Without the flags the app suggests everything itself: the definition file
   (`<folder>/<folder name>.md`, else `README.md`, else the only `.md` there),
-  the name from the `# Agent: …` heading, the emoji from the file, and the
-  next free colour of the palette.
+  the name from the `# Agent: …` heading and the emoji from the file. There
+  is no colour to give an agent: the emoji is what tells one from another.
 * The same folder is never registered twice; a second attempt prints the name
   it is already registered under.
 * On success it prints `Added agent "<name>" to Clauding.`, and on refusal

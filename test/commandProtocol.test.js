@@ -11,8 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createPanelTabStore, describeTarget } from "../electron/panelTabs.js";
-import { createCommandRequestHandler, nextFreeAgentColor } from "../electron/lib/commandRequests.js";
-import { AGENT_COLOR_TOKENS } from "../electron/agents.js";
+import { createCommandRequestHandler } from "../electron/lib/commandRequests.js";
 
 function scratchFolder() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "clauding-test-command-"));
@@ -345,11 +344,10 @@ test("agent add registers the folder with the name, emoji and colour it suggests
   assert.equal(added.definitionFolder, definitionFolder, "a relative folder is resolved against the caller's cwd");
   assert.equal(added.definitionFile, path.join(definitionFolder, "release-notes-writer.md"));
   assert.equal(added.emoji, "📝");
-  assert.equal(added.color, nextFreeAgentColor([]));
 });
 
-test("agent add takes the flags over its own suggestions, and the next free colour", async () => {
-  const agents = fakeAgentList([{ id: "one", name: "Agent Maker", emoji: "🧬", color: AGENT_COLOR_TOKENS[0], definitionFolder: "/elsewhere" }]);
+test("agent add takes the flags over its own suggestions", async () => {
+  const agents = fakeAgentList([{ id: "one", name: "Agent Maker", emoji: "🧬", definitionFolder: "/elsewhere" }]);
   const { handler, folder } = appWithAgents(agents);
   definitionFolderIn(folder, "invoice-checker", "# Agent: Invoice Checker ✅\n");
   const answer = await handler.handleCommandRequest({
@@ -364,7 +362,6 @@ test("agent add takes the flags over its own suggestions, and the next free colo
   const added = agents.registered[1];
   assert.equal(added.name, "Faktury");
   assert.equal(added.emoji, "🧾");
-  assert.equal(added.color, AGENT_COLOR_TOKENS[1], "the colour the Agent Maker already has is skipped");
 });
 
 test("agent add refuses a folder twice, a folder that is not there and one without a definition", async () => {

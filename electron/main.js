@@ -11,6 +11,7 @@ import {
   isScratchWorkingDirectory,
   renameSessionTitle,
   deleteSessionTranscript,
+  forgetNeedsAnswer,
   searchSessionTranscript,
   DEFAULT_PAGE_SIZE
 } from "./sessions.js";
@@ -707,20 +708,43 @@ async function captureScreenshotAndQuit() {
   // CLAUDING_SCREENSHOT_CLICK: CSS selectors to click before the capture,
   // separated by ">>" and clicked in order, so any sheet or menu can be put
   // on screen without a smoke run of its own.
+  //
+  // A selector may carry a modifier in front of it — `cmd:` or `shift:` —
+  // for the one thing a plain click cannot photograph: picking several
+  // session rows out of the list. A plain click there opens a terminal; a
+  // modifier click only changes the selection, which is exactly what the
+  // picture is of.
   const clickSelectors = (process.env.CLAUDING_SCREENSHOT_CLICK || "").split(">>").filter(Boolean);
-  for (const selector of clickSelectors) {
+  for (const entry of clickSelectors) {
     if (!mainWindow) {
       break;
     }
+    // ⌘ on macOS, Ctrl on Windows — and never both, because the window
+    // reads "the command key, and not the other one" (platform.js).
+    const withCommandKey = entry.startsWith("cmd:");
+    const commandIsControl = process.platform === "win32";
+    const withShiftKey = entry.startsWith("shift:");
+    const selector = withCommandKey ? entry.slice(4) : withShiftKey ? entry.slice(6) : entry;
     const clicked = await mainWindow.webContents.executeJavaScript(
       `(() => {
         const target = Array.from(document.querySelectorAll(${JSON.stringify(selector)}))
           .find((node) => node.offsetParent !== null) || document.querySelector(${JSON.stringify(selector)});
-        if (target) { target.click(); }
-        return Boolean(target);
+        if (!target) { return false; }
+        if (${withCommandKey} || ${withShiftKey}) {
+          target.dispatchEvent(new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            metaKey: ${withCommandKey && !commandIsControl},
+            ctrlKey: ${withCommandKey && commandIsControl},
+            shiftKey: ${withShiftKey}
+          }));
+        } else {
+          target.click();
+        }
+        return true;
       })()`
     );
-    console.log(`[screenshot] clicked ${selector}: ${clicked}`);
+    console.log(`[screenshot] clicked ${entry}: ${clicked}`);
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
   if (process.env.CLAUDING_SCREENSHOT_NEW === "1" && mainWindow) {
@@ -1205,6 +1229,7 @@ function registerIpc() {
     sessionGroups.forgetSession(sessionId);
     agents.forgetSession(sessionId);
     panelTabs.forgetSession(sessionId);
+    forgetNeedsAnswer(sessionId);
     forgetLinkedSessions();
     sendToWindow(CHANNELS.sessionsChanged, { reason: "deleted" });
     console.log(`[sessions] deleted ${sessionId} and everything the app remembered about it`);
@@ -1289,6 +1314,10 @@ function registerIpc() {
 
   ipcMain.handle(CHANNELS.groupsSetCollapsed, async (event, { groupId, collapsed }) => {
     return sessionGroups.setCollapsed(groupId, Boolean(collapsed));
+  });
+
+  ipcMain.handle(CHANNELS.groupsSetColor, async (event, { sessionId, color }) => {
+    return sessionGroups.setSessionColor(sessionId, color || null);
   });
 
   ipcMain.handle(CHANNELS.agentsGet, async () => {

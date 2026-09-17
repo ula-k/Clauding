@@ -1,4 +1,4 @@
-// The user's agents: a name, an emoji, a colour, and the folder a definition is
+// The user's agents: a name, an emoji, and the folder a definition is
 // read from. The definition folder is NOT the folder the agent works in —
 // that one is picked per session in the "+ New" sheet. Saved to
 // <userData>/agents.json.
@@ -11,7 +11,7 @@
 //         "id": "<uuid>",
 //         "name": "Spec Writer",
 //         "emoji": "✦",
-//         "color": "--project-color-3",
+//         "color": "--project-color-0",
 //         "definitionFolder": "/Users/<you>/Documents/agents/spec-writer",
 //         "definitionFile": "/Users/<you>/Documents/agents/spec-writer/spec-writer.md",
 //         "lastWorkingDirectory": "/Users/<you>/Documents/projects/website",
@@ -22,10 +22,14 @@
 //     "sessionAgents": { "<sessionId>": "<agentId>" }
 //   }
 //
-// `color` is the name of a token in styles/theme.css, never a hex value, so
-// the palette stays in one place; `sessionAgents` says which agent a session
-// was started with, so the list can draw its badge long after the terminal
-// is gone. Anything unexpected in the file is dropped when it is read — a
+// `color` is still written, and always has the same value: agents are not
+// coloured any more. What tells one agent from another is its emoji, which
+// sits in one neutral circle wherever it is drawn, and the palette belongs
+// to the sessions instead (see electron/sessionGroups.js). The key is kept
+// so an agents.json written by an older version still reads, and one
+// written here still opens in an older one. `sessionAgents` says which
+// agent a session was started with, so the list can draw its badge long
+// after the terminal is gone. Anything unexpected in the file is dropped when it is read — a
 // broken agents.json must never keep the app from starting.
 import fs from "node:fs";
 import path from "node:path";
@@ -36,22 +40,12 @@ const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_NAME_LENGTH = 60;
 const DEFINITION_PREVIEW_CHARACTERS = 20000;
 
-// The eight swatches the form offers, in the order they are drawn. They are
-// the same tokens the project dots use, so an agent's colour always belongs
-// to the palette in theme.css.
-export const AGENT_COLOR_TOKENS = [
-  "--project-color-0",
-  "--project-color-1",
-  "--project-color-2",
-  "--project-color-3",
-  "--project-color-4",
-  "--project-color-5",
-  "--project-color-6",
-  "--project-color-7"
-];
-
 export const DEFAULT_AGENT_EMOJI = "✦";
-export const DEFAULT_AGENT_COLOR = AGENT_COLOR_TOKENS[0];
+
+// The one value the `color` field of an agent ever has. Nothing reads it any
+// more — the badge is a neutral circle — but the field stays in agents.json
+// so the file keeps its shape across versions.
+export const IGNORED_AGENT_COLOR = "--project-color-0";
 
 // One emoji including its variation selector, skin tone and any ZWJ parts,
 // so "👩‍💻" is taken as one character and not as three.
@@ -83,11 +77,6 @@ function cleanEmoji(rawEmoji) {
     return DEFAULT_AGENT_EMOJI;
   }
   return firstGrapheme(text) || DEFAULT_AGENT_EMOJI;
-}
-
-function cleanColor(rawColor) {
-  const token = String(rawColor || "").trim();
-  return AGENT_COLOR_TOKENS.includes(token) ? token : DEFAULT_AGENT_COLOR;
 }
 
 // The marker that says an agent came with the app rather than from the
@@ -140,7 +129,8 @@ function sanitizeAgent(entry) {
     id: entry.id,
     name,
     emoji: cleanEmoji(entry.emoji),
-    color: cleanColor(entry.color),
+    // Kept in the file, ignored everywhere: see IGNORED_AGENT_COLOR.
+    color: IGNORED_AGENT_COLOR,
     definitionFolder,
     definitionFile,
     lastWorkingDirectory: lastWorkingDirectory || null,

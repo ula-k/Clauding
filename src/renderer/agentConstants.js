@@ -1,22 +1,11 @@
-// The eight colours an agent can wear. They are the same tokens the project
-// dots use (theme.css), repeated here so the renderer does not import from
-// the Electron side — electron/agents.js keeps the identical list and is the
-// one that decides what may be stored.
+// The small helpers the agent list, the form and the badges share.
+//
+// Agents have no colour of their own: what tells one from another is its
+// emoji, drawn in one neutral circle wherever it appears. The palette
+// belongs to the sessions — see sessionColors.js.
 import { lastSegmentOf, segmentsOf, separatorOf } from "./paths.js";
 
-export const AGENT_COLOR_TOKENS = [
-  "--project-color-0",
-  "--project-color-1",
-  "--project-color-2",
-  "--project-color-3",
-  "--project-color-4",
-  "--project-color-5",
-  "--project-color-6",
-  "--project-color-7"
-];
-
 export const DEFAULT_AGENT_EMOJI = "✦";
-export const DEFAULT_AGENT_COLOR = AGENT_COLOR_TOKENS[0];
 
 // "…/agenci/spec-writer" — the last two parts of the definition folder, the
 // dim second line of an agent row. A Windows folder is split the same way

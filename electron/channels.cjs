@@ -22,6 +22,7 @@ const CHANNELS = {
   groupsAssign: "groups:assign",
   groupsSetHidden: "groups:set-hidden",
   groupsSetCollapsed: "groups:set-collapsed",
+  groupsSetColor: "groups:set-color",
   groupsChanged: "groups:changed",
   agentsGet: "agents:get",
   agentsAdd: "agents:add",

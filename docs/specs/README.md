@@ -1,6 +1,7 @@
 # Clauding test specifications
 
-Twenty specifications, one per item of the accepted QA plan, in nine areas.
+Twenty-three specifications, one per item of the accepted QA plan, in nine
+areas.
 Each one says what must be true, how to get there by clicking, and what proves
 it. They describe **state and meaning** ("the row says the session is running
 elsewhere"), never the exact wording on screen — wording is quoted only as
@@ -45,8 +46,11 @@ elsewhere"), never the exact wording on screen — wording is quoted only as
 | [CL-18](CL-18-languages.md) | Languages | P3 | dry test `test/i18n.test.js` + manual |
 | [CL-19](CL-19-windows.md) | App · Windows | P2 | dry test `test/platform.test.js` + CI on `windows-latest`; manual **not done yet** |
 | [CL-20](CL-20-find-in-conversation.md) | Panel · find in conversation | P2 | dry test `test/transcriptSearch.test.js` + manual |
+| [CL-21](CL-21-selecting-several-sessions.md) | List · selecting several sessions | P2 | dry test `test/selectionPlan.test.js` + manual |
+| [CL-22](CL-22-session-colours.md) | List · session colours | P2 | dry test `test/selectionPlan.test.js`, `test/sessionGroups.test.js` + manual |
+| [CL-23](CL-23-needs-answer.md) | List · when a session says NEEDS ANSWER | P2 | dry test `test/needsAnswer.test.js` + manual |
 
-Eleven P1, six P2, two P3.
+Eleven P1, nine P2, two P3.
 
 ## Rules every specification follows
 

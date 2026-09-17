@@ -29,9 +29,9 @@ the app has you in the first row of the Agents tab.
    Apply their corrections to the same file and let the panel reload it.
 7. **Register it.** Once the user has approved the draft, run
    `clauding agent add <definition folder>` and **report the line it printed**
-   (`Added agent "<name>" to Clauding.`, or the refusal). Add `--name`,
-   `--emoji` or `--color` only when the user asked for something the app would
-   not suggest by itself.
+   (`Added agent "<name>" to Clauding.`, or the refusal). Add `--name` or
+   `--emoji` only when the user asked for something the app would not
+   suggest by itself.
 8. **Say where it landed** — the definition path and the name it is registered
    under.
 

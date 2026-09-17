@@ -39,7 +39,6 @@ export const AGENT_MAKER = {
   builtin: BUILTIN_AGENT_MAKER,
   name: "Agent Maker",
   emoji: "🧬",
-  color: "--project-color-0",
   definitionFolder: path.join(builtinFolder, "agents", "agent-maker"),
   definitionFile: path.join(builtinFolder, "agents", "agent-maker", "agent-maker.md")
 };
@@ -54,20 +53,23 @@ export function builtinSkillSource(skillName) {
 // so it is replaced with the current one; anything else is the user's and
 // stays. When the shipped skill changes, add the hash of the text being
 // replaced here:  shasum -a 256 builtin/skills/skill-maker/SKILL.md
-const PREVIOUS_BUILTIN_SKILL_HASHES = [];
+const PREVIOUS_BUILTIN_SKILL_HASHES = [
+  // clauding-agents, before agents stopped having a colour (--color went
+  // from `clauding agent add`).
+  "a25f50cf370dc0458286044b12e89a4c61436ffcd068abca63e20af5d8d88b2c"
+];
 
 function hashOf(text) {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 // The agent's own definition, as the store wants it. The name, folder and
-// file are ours; the emoji and the colour are only defaults, because the
-// user is allowed to recolour a built-in agent.
+// file are ours; the emoji is only a default, because the user is allowed
+// to rename a built-in agent and give it another emoji.
 export function builtinAgentDraft() {
   return {
     name: AGENT_MAKER.name,
     emoji: AGENT_MAKER.emoji,
-    color: AGENT_MAKER.color,
     definitionFolder: AGENT_MAKER.definitionFolder,
     definitionFile: AGENT_MAKER.definitionFile,
     builtin: AGENT_MAKER.builtin

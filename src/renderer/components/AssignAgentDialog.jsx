@@ -66,7 +66,6 @@ export default function AssignAgentDialog({ request, onChoose }) {
             the line under it), so there is no second copy of it here. */}
         <div
           className="sheet-title assign-dialog-title"
-          style={shownAgent ? { "--agent-color": `var(${shownAgent.color})` } : undefined}
         >
           {title}
         </div>

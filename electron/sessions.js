@@ -9,6 +9,7 @@ import path from "node:path";
 import { isInsideSmokeFolder } from "./smokeFolder.js";
 import { claudeRegistryPaths } from "./lib/platformPaths.js";
 import { searchTranscriptFiles } from "./lib/transcriptSearch.js";
+import { TAIL_BYTES, createNeedsAnswerCache } from "./lib/needsAnswer.js";
 
 export const DEFAULT_PAGE_SIZE = 60;
 
@@ -46,14 +47,76 @@ function ownedGroup(ownedState, liveStatus) {
   return ownedState.registryStatus === "idle" ? STATUS_GROUPS.waiting : STATUS_GROUPS.running;
 }
 
-// The "needs answer" badge in the list: only a job that says it is blocked
-// on something (a permission prompt, a question) earns it. A plain idle CLI
-// is not "waiting for an answer", it is simply sitting at its prompt.
-function needsAnswer(liveStatus) {
+// The last bytes of a file, without reading the rest of it: a transcript
+// that has run for an hour is megabytes, and the only thing that decides
+// whether a session is waiting for an answer is the end of it.
+function readFileTail(filePath, byteCount = TAIL_BYTES) {
+  let handle = null;
+  try {
+    handle = fs.openSync(filePath, "r");
+    const { size } = fs.fstatSync(handle);
+    const length = Math.min(size, byteCount);
+    const buffer = Buffer.alloc(length);
+    fs.readSync(handle, buffer, 0, length, Math.max(0, size - length));
+    return buffer.toString("utf8");
+  } catch (error) {
+    return "";
+  } finally {
+    if (handle !== null) {
+      try {
+        fs.closeSync(handle);
+      } catch (error) {
+        // Nothing to do about a file that closed itself.
+      }
+    }
+  }
+}
+
+// One answer per session, kept until its transcript changes size or time
+// (electron/lib/needsAnswer.js decides, this only reads the file).
+const needsAnswerCache = createNeedsAnswerCache({ readTail: (filePath) => readFileTail(filePath) });
+
+export function forgetNeedsAnswer(sessionId) {
+  needsAnswerCache.forget(sessionId);
+}
+
+// The transcript of a session and how it stands right now, as a stamp the
+// cache can compare: null when the session has not written one yet.
+function transcriptStamp(sessionId) {
+  const files = transcriptFilesFor(sessionId);
+  if (files.length === 0) {
+    return null;
+  }
+  const filePath = files[0].filePath;
+  try {
+    const stats = fs.statSync(filePath);
+    return { filePath, stamp: `${stats.mtimeMs}:${stats.size}` };
+  } catch (error) {
+    return null;
+  }
+}
+
+// The "needs answer" badge in the list. A job says so itself; an ordinary
+// session cannot, so the end of its conversation is read and the last thing
+// it said decides (see electron/lib/needsAnswer.js). Only sessions that are
+// **alive and not busy** are looked at: a session nobody is running is not
+// waiting for an answer, and a busy one is still writing.
+function needsAnswer(sessionId, liveStatus) {
   if (!liveStatus) {
     return false;
   }
-  return Boolean(liveStatus.needs) || liveStatus.rawStatus === "blocked";
+  if (Boolean(liveStatus.needs) || liveStatus.rawStatus === "blocked") {
+    return true;
+  }
+  if (liveStatus.group === STATUS_GROUPS.running) {
+    needsAnswerCache.forget(sessionId);
+    return false;
+  }
+  const transcript = transcriptStamp(sessionId);
+  if (!transcript) {
+    return false;
+  }
+  return needsAnswerCache.lookup(sessionId, { ...transcript, busy: false });
 }
 
 export function enrichSession(session, statusBySession, ownedStates = new Map()) {
@@ -87,7 +150,7 @@ export function enrichSession(session, statusBySession, ownedStates = new Map())
     fileSize: session.fileSize || null,
     tag: session.tag || null,
     statusGroup,
-    needsAnswer: needsAnswer(liveStatus),
+    needsAnswer: needsAnswer(session.sessionId, liveStatus),
     ownedByApp: Boolean(ownedState),
     liveStatus
   };

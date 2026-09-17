@@ -16,6 +16,7 @@ import {
   newAgentSessionName
 } from "./metaPrompts.js";
 import { assignmentPlan, definitionLoadsOnNextResume } from "./assignmentPlan.js";
+import { bulkSessionPlan, confirmationTitles, selectionPlan, selectionWithin } from "./selectionPlan.js";
 import { flagsChangePlan } from "./sessionFlagsPlan.js";
 import { rankAgentsByUse } from "./agentConstants.js";
 import SessionsColumn from "./components/SessionsColumn.jsx";
@@ -82,7 +83,13 @@ function storeValue(storageKey, value) {
 
 const EMPTY_PANEL_STATE = { tabs: [], activeTabId: null, panelVisible: false };
 // Until groups.json has been read: one group holding everything, nothing hidden.
-const INITIAL_GROUP_STATE = { groups: [{ id: "default", name: null, order: 0 }], membership: {}, hidden: [], collapsed: [] };
+const INITIAL_GROUP_STATE = {
+  groups: [{ id: "default", name: null, order: 0 }],
+  membership: {},
+  hidden: [],
+  collapsed: [],
+  colors: {}
+};
 // Until agents.json has been read: no agents, so no badges anywhere.
 const INITIAL_AGENT_STATE = { agents: [], sessionAgents: {} };
 // Until settings.json has been read. The real defaults are decided in the
@@ -176,8 +183,15 @@ export default function App() {
   const [sessionFlagsState, setSessionFlagsState] = useState({ sessionFlags: {} });
   // The session the delete confirmation is asking about, or null. Nothing is
   // deleted until it is answered — and a session running in a terminal
-  // outside the app never gets here at all.
+  // outside the app never gets here at all. A bulk delete asks the same
+  // question once, with the count and the first few titles in it.
   const [deleteRequest, setDeleteRequest] = useState(null);
+  // Several rows picked out of the list: the ids, and the row a Shift-click
+  // measures its range from. A plain click leaves exactly one id in here, so
+  // there is only ever one idea of "what is picked".
+  const [selection, setSelection] = useState({ sessionIds: [], anchorId: null });
+  // "More…" from the bulk menu: the agent picker for the whole selection.
+  const [bulkAgentPickerOpen, setBulkAgentPickerOpen] = useState(false);
   // The session the "More…" agent picker was opened for, or null.
   const [agentPickerSessionId, setAgentPickerSessionId] = useState(null);
   // Whether the panel is open belongs to the session on screen and comes
@@ -217,6 +231,9 @@ export default function App() {
   // the group is set the moment the CLI registers its session id.
   const pendingGroupByTerminalRef = useRef(new Map());
   const selectedSessionIdRef = useRef(null);
+  // The selection as it is right now, for the menu callbacks, which must not
+  // be rebuilt every time a row is picked out.
+  const selectionRef = useRef({ sessionIds: [], anchorId: null });
   const selectedTerminalIdRef = useRef(null);
   const terminalsRef = useRef([]);
   const sessionsRef = useRef([]);
@@ -252,6 +269,7 @@ export default function App() {
   panelWidthRef.current = panelWidth;
   panelOpenRef.current = panelOpen;
   selectedTerminalIdRef.current = selectedTerminalId;
+  selectionRef.current = selection;
   terminalsRef.current = terminals;
   agentLinksRef.current = agentState.sessionAgents;
 
@@ -629,6 +647,9 @@ export default function App() {
     // reader belongs to the moment, not to the session.
     setReader(null);
     setSelectedSessionId(sessionId);
+    // A plain click is one row: whatever was picked out before is dropped,
+    // wherever the click came from (the list, the Agents tab, a smoke run).
+    setSelection({ sessionIds: [sessionId], anchorId: sessionId });
     const owner = terminalsRef.current.find((record) => record.sessionId === sessionId);
     if (owner) {
       setSelectedTerminalId(owner.terminalId);
@@ -659,6 +680,40 @@ export default function App() {
       openedByClick: true
     });
   }, [openTerminal]);
+
+  // A click on a row, with whatever modifier was held. What it means is
+  // worked out in selectionPlan.js and nowhere else: a plain click is one
+  // row and a terminal, ⌘-click adds or removes a row, Shift-click takes
+  // the range from the last row clicked — and neither modifier ever opens a
+  // terminal, because picking five rows out would start five `claude`s.
+  const handleRowClick = useCallback(
+    (sessionId, modifiers, orderedIds) => {
+      const wanted = modifiers && modifiers.range ? "range" : modifiers && modifiers.toggle ? "toggle" : "single";
+      const plan = selectionPlan(selectionRef.current, { kind: wanted, sessionId, orderedIds });
+      setSelection({ sessionIds: plan.sessionIds, anchorId: plan.anchorId });
+      if (plan.openSessionId) {
+        selectSession(plan.openSessionId);
+      }
+    },
+    [selectSession]
+  );
+
+  // ⌘A inside the list.
+  const selectAllVisible = useCallback((orderedIds) => {
+    const plan = selectionPlan(selectionRef.current, { kind: "all", orderedIds });
+    setSelection({ sessionIds: plan.sessionIds, anchorId: plan.anchorId });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelection({ sessionIds: [], anchorId: null });
+  }, []);
+
+  // The colour one row's name is drawn in (groups.json). `token` null is
+  // "Automatic": the stored colour goes and the list works one out from the
+  // session id again.
+  const setSessionColor = useCallback((sessionId, token) => {
+    window.clauding.setSessionColor(sessionId, token).then(setGroupState);
+  }, []);
 
   // Fork: a *new* terminal runs `claude --resume <id> --fork-session --name
   // "<title> (fork)"` in the original's folder. The original terminal is not
@@ -756,6 +811,75 @@ export default function App() {
       }
     }),
     []
+  );
+
+  // "Delete N sessions…": one question for the whole selection. Sessions
+  // running in a terminal outside the app are not ours to end, so they are
+  // left out of it and named in the question instead of disappearing from
+  // it without a word.
+  const requestBulkDelete = useCallback(() => {
+    const plan = bulkSessionPlan({
+      sessionIds: selectionRef.current.sessionIds,
+      sessions: sessionsRef.current,
+      operation: "delete"
+    });
+    if (plan.count === 0) {
+      window.alert(translateInLanguage(language, "row.deleteRunningElsewhere"));
+      return;
+    }
+    setDeleteRequest({
+      sessionIds: plan.affected.map((entry) => entry.sessionId),
+      count: plan.count,
+      titles: confirmationTitles(plan.affected),
+      skippedTitles: plan.skipped.map((entry) => entry.title)
+    });
+  }, [language]);
+
+  // Everything the bulk menu does. Each one works on the selection as it is
+  // at that moment and then lets it go, so a menu cannot act twice on rows
+  // that are not picked out any more.
+  const bulkActions = useMemo(
+    () => ({
+      onHide() {
+        const plan = bulkSessionPlan({
+          sessionIds: selectionRef.current.sessionIds,
+          sessions: sessionsRef.current,
+          operation: "hide"
+        });
+        for (const entry of plan.affected) {
+          groupActions.hideSession(entry.sessionId);
+        }
+        setSelection({ sessionIds: [], anchorId: null });
+      },
+      onDelete: requestBulkDelete,
+      // Bulk assignment is the "Assign only" half of the single question:
+      // the link is written for every picked session and no terminal is
+      // restarted, because restarting ten of them at once is not something
+      // a menu item may decide.
+      async onAssignAgent(agentId) {
+        let state = null;
+        for (const sessionId of selectionRef.current.sessionIds) {
+          state = await window.clauding.assignSessionToAgent(sessionId, agentId || null);
+        }
+        if (state) {
+          setAgentState(state);
+        }
+      },
+      onOpenAgentPicker() {
+        setBulkAgentPickerOpen(true);
+      },
+      onMoveToGroup(groupId) {
+        for (const sessionId of selectionRef.current.sessionIds) {
+          groupActions.assignSession(sessionId, groupId);
+        }
+      },
+      onSetColor(token) {
+        for (const sessionId of selectionRef.current.sessionIds) {
+          window.clauding.setSessionColor(sessionId, token).then(setGroupState);
+        }
+      }
+    }),
+    [groupActions, requestBulkDelete]
   );
 
   // Everything the Agents tab and the agent form do. Each call returns the
@@ -957,7 +1081,12 @@ export default function App() {
     if (session && session.liveStatus && session.liveStatus.source !== "app") {
       return;
     }
-    setDeleteRequest({ sessionId, title: session ? session.title : null });
+    setDeleteRequest({
+      sessionIds: [sessionId],
+      count: 1,
+      titles: session && session.title ? [session.title] : [],
+      skippedTitles: []
+    });
   }, []);
 
   const confirmSessionDelete = useCallback(async () => {
@@ -966,28 +1095,46 @@ export default function App() {
     if (!request) {
       return;
     }
-    let answer = null;
-    try {
-      answer = await window.clauding.deleteSession(request.sessionId);
-    } catch (error) {
-      answer = { deleted: false, message: String(error && error.message ? error.message : error) };
+    // One session or twenty, the same loop: each transcript goes through
+    // the SDK's deleteSession and every file of ours forgets the id. The
+    // first refusal is the one the user is told about — the rest of the
+    // list is still deleted.
+    const deletedIds = [];
+    let failureMessage = null;
+    for (const sessionId of request.sessionIds) {
+      let answer = null;
+      try {
+        answer = await window.clauding.deleteSession(sessionId);
+      } catch (error) {
+        answer = { deleted: false, message: String(error && error.message ? error.message : error) };
+      }
+      if (answer && answer.deleted) {
+        deletedIds.push(sessionId);
+        continue;
+      }
+      if (!failureMessage) {
+        failureMessage =
+          answer && answer.reason === "running-elsewhere"
+            ? translateInLanguage(language, "row.deleteRunningElsewhere")
+            : (answer && answer.message) || "";
+      }
     }
-    if (!answer || !answer.deleted) {
-      const message =
-        answer && answer.reason === "running-elsewhere"
-          ? translateInLanguage(language, "row.deleteRunningElsewhere")
-          : (answer && answer.message) || "";
-      window.alert(translateInLanguage(language, "row.deleteFailed", { message }));
-      return;
-    }
-    if (selectedSessionIdRef.current === request.sessionId) {
+    if (deletedIds.includes(selectedSessionIdRef.current)) {
       setSelectedSessionId(null);
       setSelectedTerminalId(null);
     }
-    setSessions((previous) => previous.filter((session) => session.sessionId !== request.sessionId));
-    setLinkedAgentSessions((previous) => previous.filter((session) => session.sessionId !== request.sessionId));
+    const goneIds = new Set(deletedIds);
+    setSessions((previous) => previous.filter((session) => !goneIds.has(session.sessionId)));
+    setLinkedAgentSessions((previous) => previous.filter((session) => !goneIds.has(session.sessionId)));
+    setSelection((previous) => ({
+      sessionIds: previous.sessionIds.filter((sessionId) => !goneIds.has(sessionId)),
+      anchorId: goneIds.has(previous.anchorId) ? null : previous.anchorId
+    }));
     window.clauding.getSessionGroups().then(setGroupState);
     window.clauding.getAgents().then(setAgentState);
+    if (failureMessage) {
+      window.alert(translateInLanguage(language, "row.deleteFailed", { message: failureMessage }));
+    }
   }, [deleteRequest, language]);
 
   // ⌘⌫ (Ctrl+Backspace on Windows), the way Claude Code does it: once stops
@@ -998,6 +1145,21 @@ export default function App() {
     function handleKeyDown(event) {
       const wantedKey = isWindowsPlatform() ? ["Backspace", "Delete"] : ["Backspace"];
       if (!wantedKey.includes(event.key) || !commandKeyPressed(event) || event.altKey) {
+        return;
+      }
+      // With several rows picked out the shortcut is about all of them: a
+      // selection of rows that are all already under "Hidden (N)" is the
+      // second press, so it asks whether they may go; anything else is the
+      // first press, which stops them and puts them away.
+      const picked = selectionRef.current.sessionIds;
+      if (picked.length > 1) {
+        event.preventDefault();
+        const allHidden = picked.every((entry) => groupState.hidden.includes(entry));
+        if (allHidden) {
+          requestBulkDelete();
+        } else {
+          bulkActions.onHide();
+        }
         return;
       }
       const sessionId = selectedSessionIdRef.current || (activeTerminal && activeTerminal.sessionId) || null;
@@ -1015,7 +1177,24 @@ export default function App() {
     // time, and xterm would otherwise swallow the shortcut.
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [activeTerminal, groupState, groupActions, requestSessionDelete]);
+  }, [activeTerminal, groupState, groupActions, requestSessionDelete, requestBulkDelete, bulkActions]);
+
+  // Escape puts a selection away — but only when it is the top thing on
+  // screen: an open menu, a dialog or the find bar answer Escape first, and
+  // the selection is still there afterwards.
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key !== "Escape" || selectionRef.current.sessionIds.length < 2) {
+        return;
+      }
+      if (document.querySelector("[data-popup-menu]") || document.querySelector(".sheet-backdrop")) {
+        return;
+      }
+      clearSelection();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clearSelection]);
 
   // The two meta actions. Both fork the conversation into a second terminal
   // that has one job, and leave the original exactly as it is — the same
@@ -1510,6 +1689,12 @@ export default function App() {
           onEditSessionFlags={requestSessionFlags}
           onReadAgentDefinition={readAgentDefinition}
           onOpenAgentPicker={setAgentPickerSessionId}
+          selectedSessionIds={selection.sessionIds}
+          onRowClick={handleRowClick}
+          onSelectAllVisible={selectAllVisible}
+          onSetSessionColor={setSessionColor}
+          onClearSelection={clearSelection}
+          bulkActions={bulkActions}
         />
         <div className="resize-handle" data-resize-handle="left" onPointerDown={(event) => beginDrag(event, "left")} />
         <MiddleColumn
@@ -1595,6 +1780,19 @@ export default function App() {
         {flagsRequest && <SessionFlagsDialog request={flagsRequest} onChoose={resolveSessionFlags} />}
         {/* "More…": every agent there is, with a search box. Picking one
             only opens the same question the menu would have. */}
+        {/* "More…" from the bulk menu: the same picker, for every picked
+            session at once. */}
+        {bulkAgentPickerOpen && (
+          <AgentPickerSheet
+            agents={rankedAgents}
+            currentAgentId={null}
+            onPick={(agentId) => {
+              setBulkAgentPickerOpen(false);
+              bulkActions.onAssignAgent(agentId);
+            }}
+            onClose={() => setBulkAgentPickerOpen(false)}
+          />
+        )}
         {agentPickerSessionId && (
           <AgentPickerSheet
             agents={rankedAgents}
@@ -1610,7 +1808,9 @@ export default function App() {
         {/* The only destructive confirmation in the app. */}
         {deleteRequest && (
           <DeleteSessionDialog
-            sessionTitle={deleteRequest.title}
+            count={deleteRequest.count}
+            sessionTitles={deleteRequest.titles}
+            skippedTitles={deleteRequest.skippedTitles}
             onConfirm={confirmSessionDelete}
             onCancel={() => setDeleteRequest(null)}
           />

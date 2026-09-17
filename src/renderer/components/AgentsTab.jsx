@@ -5,6 +5,7 @@ import { DotsIcon, PlusIcon, ReadIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentBadge } from "./AgentBadge.jsx";
 import { definitionFolderLabel, titleWithoutAgentEmoji } from "../agentConstants.js";
+import { sessionColorToken } from "../sessionColors.js";
 import { buildAgentSessionList } from "../sessionGrouping.js";
 
 // running -> working, waiting for you -> waiting, everything else -> idle:
@@ -22,7 +23,7 @@ function statusName(session) {
 // One session this agent started, under its row: the same status dot, name
 // and right-aligned time as in the Sessions list, and the same click — the
 // session opens in a terminal exactly as it would over there.
-function AgentSessionRow({ session, isSelected, onSelect, now }) {
+function AgentSessionRow({ session, isSelected, onSelect, now, colorToken }) {
   const { translate } = useTranslation();
   const classNames = ["session-row", "agent-session-row", `is-${statusName(session)}`];
   if (isSelected) {
@@ -36,6 +37,7 @@ function AgentSessionRow({ session, isSelected, onSelect, now }) {
       data-agent-session-row={session.sessionId}
       data-status={statusName(session)}
       title={session.workingDirectoryShort || session.projectLabel || ""}
+      style={colorToken ? { "--session-color": `var(${colorToken})` } : undefined}
       onClick={() => onSelect(session.sessionId)}
     >
       <span className="row-status-dot" />
@@ -52,6 +54,7 @@ function AgentSessionRow({ session, isSelected, onSelect, now }) {
 function AgentRow({
   agent,
   sessions,
+  sessionColors,
   hiddenCount,
   selectedSessionId,
   onSelectSession,
@@ -183,6 +186,7 @@ function AgentRow({
               isSelected={session.sessionId === selectedSessionId}
               onSelect={onSelectSession}
               now={now}
+              colorToken={sessionColorToken(session.sessionId, sessionColors)}
             />
           ))}
           {hiddenCount > 0 && (
@@ -203,6 +207,7 @@ export default function AgentsTab({
   agents,
   sessions,
   sessionAgents,
+  sessionColors,
   hiddenSessionIds,
   selectedSessionId,
   onSelectSession,
@@ -268,6 +273,7 @@ export default function AgentsTab({
               key={agent.id}
               agent={agent}
               sessions={own.sessions}
+              sessionColors={sessionColors}
               hiddenCount={own.hiddenCount}
               selectedSessionId={selectedSessionId}
               onSelectSession={onSelectSession}

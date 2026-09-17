@@ -1,7 +1,10 @@
-// How an agent shows itself: a small circle in its own colour with its
-// emoji inside. The session rows use the circle alone (before the name, next
-// to the status dot); the terminal header uses the chip, which adds the
-// name. Both take their colour from a theme.css token, never a stored hex.
+// How an agent shows itself: its emoji in a small neutral circle. The
+// session rows use the circle alone (before the name, next to the status
+// dot); the terminal header uses the chip, which adds the name.
+//
+// The circle is the same light grey for every agent on purpose: colour in
+// this window means the session (see sessionColors.js), and a coloured disc
+// behind a coloured emoji only made the emoji harder to read.
 import { useTranslation } from "../i18n.js";
 
 export function AgentBadge({ agent }) {
@@ -11,7 +14,6 @@ export function AgentBadge({ agent }) {
   return (
     <span
       className="agent-badge"
-      style={{ "--agent-color": `var(${agent.color})` }}
       title={agent.name}
       aria-label={agent.name}
       data-agent-badge={agent.id}
@@ -38,7 +40,6 @@ export function AgentChip({ agent, definitionPending = false, starting = false }
     <>
       <span
         className="agent-chip"
-        style={{ "--agent-color": `var(${agent.color})` }}
         title={agent.name}
         data-agent-chip={agent.id}
       >

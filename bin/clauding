@@ -6,7 +6,7 @@
 //   clauding panel show|hide      show or hide the right panel
 //   clauding tabs                 list the open tabs of this session
 //   clauding agent add <folder>   register an agent definition in the app
-//                                 (--name, --emoji, --color override what
+//                                 (--name and --emoji override what
 //                                 the app would suggest from the folder)
 //   clauding agent list           the agents registered in the app
 //
@@ -45,16 +45,15 @@ function failAndExit(reason) {
 function usage() {
   process.stderr.write(
     "usage: clauding open <path or URL> | clauding panel show|hide | clauding tabs\n" +
-      '       clauding agent add <definition folder> [--name "…"] [--emoji "…"] [--color <token>] | clauding agent list\n'
+      '       clauding agent add <definition folder> [--name "…"] [--emoji "…"] | clauding agent list\n'
   );
   process.exit(1);
 }
 
-// `--name "Release Notes Writer" --emoji 📝 --color --project-color-3`:
-// everything the app would otherwise suggest from the definition folder.
-// The value of --color is itself a token starting with two dashes, so a flag
-// always takes the next argument as its value, whatever it looks like.
-const AGENT_FLAGS = { "--name": "name", "--emoji": "emoji", "--color": "color" };
+// `--name "Release Notes Writer" --emoji 📝`: what the app would otherwise
+// suggest from the definition folder. A flag always takes the next argument
+// as its value, whatever it looks like.
+const AGENT_FLAGS = { "--name": "name", "--emoji": "emoji" };
 
 function readAgentFlags(flagArguments) {
   const values = {};

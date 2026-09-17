@@ -28,7 +28,6 @@ const SMOKE_DIRECTORY = smokeFolderPath();
 const SMOKE_WORKING_DIRECTORY = smokeWorkingDirectory();
 const DEFINITION_FOLDER = path.join(SMOKE_DIRECTORY, "scratch-reviewer");
 const AGENT_EMOJI = "🧪";
-const AGENT_COLOR = "--project-color-3";
 const HELLO_PROMPT = "Say hello in one short line.";
 const ESCAPE = "\x1b";
 const DOWN_ARROW = "\x1b[B";
@@ -182,7 +181,6 @@ export async function runAssignSmoke({ window, registry, agents, sendCommand, qu
     const added = agents.addAgent({
       name: "Scratch Reviewer",
       emoji: AGENT_EMOJI,
-      color: AGENT_COLOR,
       definitionFolder: DEFINITION_FOLDER,
       definitionFile: path.join(DEFINITION_FOLDER, "scratch-reviewer.md")
     });

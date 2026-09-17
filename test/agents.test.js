@@ -8,8 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  AGENT_COLOR_TOKENS,
-  DEFAULT_AGENT_COLOR,
+  IGNORED_AGENT_COLOR,
   DEFAULT_AGENT_EMOJI,
   buildAgentSystemPrompt,
   createAgentStore,
@@ -158,7 +157,7 @@ test("a definition file given by its bare name is resolved inside the folder", (
   assert.equal(agent.definitionFile, path.join(folder, "spec-writer.md"));
 });
 
-test("the emoji is cut to one whole character and the colour must be a palette token", () => {
+test("the emoji is cut to one whole character, and the colour field is always the same", () => {
   const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
   const { store } = storeIn(scratchFolder());
   const draft = { name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" };
@@ -166,8 +165,10 @@ test("the emoji is cut to one whole character and the colour must be a palette t
   assert.equal(store.addAgent({ ...draft, emoji: "✅ Test" }).emoji, "✅");
   assert.equal(store.addAgent({ ...draft, emoji: "  🧑‍💻 dev  " }).emoji, "🧑‍💻");
   assert.equal(store.addAgent({ ...draft, emoji: "" }).emoji, DEFAULT_AGENT_EMOJI);
-  assert.equal(store.addAgent({ ...draft, color: "#ff0000" }).color, DEFAULT_AGENT_COLOR);
-  assert.equal(store.addAgent({ ...draft, color: AGENT_COLOR_TOKENS[3] }).color, AGENT_COLOR_TOKENS[3]);
+  // Agents have no colour any more: whatever arrives, the key that stays in
+  // agents.json is the one constant (see IGNORED_AGENT_COLOR).
+  assert.equal(store.addAgent({ ...draft, color: "#ff0000" }).color, IGNORED_AGENT_COLOR);
+  assert.equal(store.addAgent({ ...draft, color: "--project-color-3" }).color, IGNORED_AGENT_COLOR);
 });
 
 test("deleting an agent takes every session link with it", () => {
@@ -231,7 +232,7 @@ test("an agents.json full of rubbish still gives a usable Agents tab", () => {
   });
   const state = store.get();
   assert.deepEqual(state.agents.map((agent) => agent.name), ["Good"]);
-  assert.equal(state.agents[0].color, DEFAULT_AGENT_COLOR);
+  assert.equal(state.agents[0].color, IGNORED_AGENT_COLOR);
   assert.deepEqual(state.sessionAgents, { "session-one": "good" });
 });
 

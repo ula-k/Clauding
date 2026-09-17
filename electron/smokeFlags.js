@@ -95,7 +95,6 @@ export async function runFlagsSmoke({ window, registry, settings, agents, sessio
     const added = agents.addAgent({
       name: "Flagged",
       emoji: "🚩",
-      color: "--project-color-5",
       definitionFolder: SMOKE_WORKING_DIRECTORY,
       definitionFile: `${SMOKE_WORKING_DIRECTORY}/flagged.md`,
       extraClaudeArguments: AGENT_FLAGS

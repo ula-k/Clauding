@@ -2,11 +2,12 @@ import { useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { relativeTime } from "../time.js";
 import { DotsIcon } from "./Icons.jsx";
-import PopupMenu, { MenuItem, MenuLabel, MenuSeparator } from "./PopupMenu.jsx";
+import PopupMenu, { MenuItem, MenuLabel, MenuSeparator, MenuSubmenu } from "./PopupMenu.jsx";
+import ColorMenuItems from "./ColorMenu.jsx";
 import { AgentBadge } from "./AgentBadge.jsx";
 import { groupDisplayName } from "../groupConstants.js";
 import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
-import { shortcutLabels } from "../platform.js";
+import { commandKeyPressed, shortcutLabels } from "../platform.js";
 
 export const SESSION_DRAG_TYPE = "application/x-clauding-session";
 
@@ -28,9 +29,20 @@ function statusName(session) {
 
 // One line: a status dot, the name, and a dim relative time. The folder is
 // only in the tooltip — names, not a second line of noise.
+//
+// The **name is drawn in the session's own colour** (the row menu's
+// "Colour", or one worked out from the session id), and a quiet session's
+// name is faded; the **dot** says what the session is doing right now. Two
+// signals, two places, and neither borrows the other's colour.
+//
 // A session started with an agent shows that agent's emoji in a small
-// coloured circle between the dot and the name (`session.agent`, attached in
-// App.jsx); a session without one looks exactly as it always did.
+// neutral circle between the dot and the name (`session.agent`, attached in
+// App.jsx).
+//
+// Clicking works like every list: a plain click selects this one row and
+// opens its terminal, ⌘-click adds or removes a row, Shift-click takes the
+// range from the last one. A modifier click never opens a terminal — five
+// picked rows would be five `claude` processes.
 export default function SessionRow({
   session,
   isSelected,
@@ -50,6 +62,13 @@ export default function SessionRow({
   onCreateAgent,
   onHarvestSkills,
   onEditSessionFlags,
+  colorToken,
+  colorIsAutomatic = true,
+  onSetColor,
+  // Part of a selection of several rows: the row is drawn as picked out, and
+  // its menu is the bulk one as soon as there are two or more.
+  isMultiSelected = false,
+  bulk = null,
   hiddenVariant = false
 }) {
   const { translate } = useTranslation();
@@ -66,6 +85,13 @@ export default function SessionRow({
   if (isSelected) {
     rowClassNames.push("is-selected");
   }
+  if (isMultiSelected) {
+    rowClassNames.push("is-picked");
+  }
+  const bulkMenu = isMultiSelected && bulk && bulk.count > 1 ? bulk : null;
+  // A hidden row has buttons instead of a menu — unless it is part of a
+  // selection, where the right-click is the only way to the bulk menu.
+  const rightClickOpensMenu = !hiddenVariant || Boolean(bulkMenu);
 
   function openMenuFromButton() {
     if (menuButtonRef.current) {
@@ -117,7 +143,7 @@ export default function SessionRow({
         event.dataTransfer.setData("text/plain", session.sessionId);
         event.dataTransfer.effectAllowed = "move";
       }}
-      onContextMenu={hiddenVariant ? undefined : openMenuAtPointer}
+      onContextMenu={rightClickOpensMenu ? openMenuAtPointer : undefined}
     >
       <button
         type="button"
@@ -125,8 +151,11 @@ export default function SessionRow({
         data-session-row={session.sessionId}
         data-status={statusName(session)}
         data-running-elsewhere={runsElsewhere ? "1" : "0"}
-        onClick={() => onSelect(session.sessionId)}
+        onClick={(event) =>
+          onSelect(session.sessionId, { toggle: commandKeyPressed(event), range: event.shiftKey })
+        }
         title={session.workingDirectoryShort || session.projectLabel || ""}
+        style={colorToken ? { "--session-color": `var(${colorToken})` } : undefined}
       >
         <span className="row-status-dot" />
         <AgentBadge agent={session.agent} />
@@ -165,7 +194,96 @@ export default function SessionRow({
           <DotsIcon />
         </button>
       )}
-      {menuAnchor && (
+      {/* Two or more rows picked out: the menu is about all of them, and
+          nothing in it is about this one row alone. */}
+      {menuAnchor && bulkMenu && (
+        <PopupMenu anchor={menuAnchor} onClose={() => setMenuAnchor(null)}>
+          <MenuLabel>{translate("row.selectedCount", { count: bulkMenu.count })}</MenuLabel>
+          <MenuItem
+            marker="bulk-hide"
+            title={translate("row.hideHint", HIDE_SHORTCUT)}
+            onClick={() => {
+              setMenuAnchor(null);
+              bulkMenu.onHide();
+            }}
+          >
+            {translate("row.hideMany", { count: bulkMenu.count })}
+          </MenuItem>
+          <MenuItem
+            marker="bulk-delete"
+            tone="danger"
+            onClick={() => {
+              setMenuAnchor(null);
+              bulkMenu.onDelete();
+            }}
+          >
+            {translate("row.deleteMany", { count: bulkMenu.count })}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuSubmenu label={translate("row.assignToAgent")} marker="bulk-assign-agent">
+            <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
+            <MenuItem
+              marker="bulk-assign-none"
+              onClick={() => {
+                setMenuAnchor(null);
+                bulkMenu.onAssignAgent(null);
+              }}
+            >
+              {translate("row.noAgent")}
+            </MenuItem>
+            {agents.slice(0, MENU_AGENT_LIMIT).map((agent) => (
+              <MenuItem
+                key={agent.id}
+                marker={`bulk-assign-${agent.id}`}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  bulkMenu.onAssignAgent(agent.id);
+                }}
+              >
+                {`${agent.emoji} ${agent.name}`}
+              </MenuItem>
+            ))}
+            {agents.length > MENU_AGENT_LIMIT && bulkMenu.onOpenAgentPicker && (
+              <MenuItem
+                marker="bulk-assign-more"
+                onClick={() => {
+                  setMenuAnchor(null);
+                  bulkMenu.onOpenAgentPicker();
+                }}
+              >
+                {translate("agents.more")}
+              </MenuItem>
+            )}
+          </MenuSubmenu>
+          <MenuSubmenu label={translate("row.moveTo")} marker="bulk-move-to-group">
+            <MenuLabel>{translate("row.moveTo")}</MenuLabel>
+            {groups.map((group) => (
+              <MenuItem
+                key={group.id}
+                marker={`bulk-group-${group.id}`}
+                onClick={() => {
+                  setMenuAnchor(null);
+                  bulkMenu.onMoveToGroup(group.id);
+                }}
+              >
+                {groupDisplayName(group, translate)}
+              </MenuItem>
+            ))}
+          </MenuSubmenu>
+          <MenuSubmenu label={translate("row.color")} marker="bulk-color">
+            <MenuLabel>{translate("row.color")}</MenuLabel>
+            <ColorMenuItems
+              automatic={false}
+              currentToken={null}
+              onPick={(token) => {
+                setMenuAnchor(null);
+                bulkMenu.onSetColor(token);
+              }}
+            />
+          </MenuSubmenu>
+        </PopupMenu>
+      )}
+      {menuAnchor && !bulkMenu && (
         <PopupMenu anchor={menuAnchor} onClose={() => setMenuAnchor(null)}>
           <MenuLabel>{translate("row.moveTo")}</MenuLabel>
           {groups.map((group) => (
@@ -255,6 +373,22 @@ export default function SessionRow({
               >
                 {translate("flags.sessionMenu")}
               </MenuItem>
+            </>
+          )}
+          {onSetColor && (
+            <>
+              <MenuSeparator />
+              <MenuSubmenu label={translate("row.color")} marker="session-color">
+                <MenuLabel>{translate("row.color")}</MenuLabel>
+                <ColorMenuItems
+                  currentToken={colorToken}
+                  automatic={colorIsAutomatic}
+                  onPick={(token) => {
+                    setMenuAnchor(null);
+                    onSetColor(session.sessionId, token);
+                  }}
+                />
+              </MenuSubmenu>
             </>
           )}
           <MenuSeparator />

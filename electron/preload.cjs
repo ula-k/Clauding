@@ -71,6 +71,11 @@ contextBridge.exposeInMainWorld("clauding", {
   setSessionHidden(sessionId, hidden) {
     return ipcRenderer.invoke(CHANNELS.groupsSetHidden, { sessionId, hidden });
   },
+  // The colour one session's name is drawn in, from the row menu's
+  // "Colour": a palette token, or null for "Automatic" (groups.json).
+  setSessionColor(sessionId, color) {
+    return ipcRenderer.invoke(CHANNELS.groupsSetColor, { sessionId, color: color || null });
+  },
   // Folding a group shut in the list (remembered in groups.json).
   setSessionGroupCollapsed(groupId, collapsed) {
     return ipcRenderer.invoke(CHANNELS.groupsSetCollapsed, { groupId, collapsed });

@@ -27,7 +27,6 @@ const DEFINITION_FOLDER =
   process.env.CLAUDING_SMOKE_AGENT_FOLDER || path.join(SMOKE_DIRECTORY, "spec-writer");
 const USES_OWN_DEFINITION_FOLDER = !process.env.CLAUDING_SMOKE_AGENT_FOLDER;
 const AGENT_EMOJI = process.env.CLAUDING_SMOKE_AGENT_EMOJI || "📐";
-const AGENT_COLOR = "--project-color-2";
 const IDENTITY_PROMPT = "Which agent are you and where does your definition live? One line.";
 const ESCAPE = "\x1b";
 const DOWN_ARROW = "\x1b[B";
@@ -167,12 +166,11 @@ export async function runAgentsSmoke({ window, registry, agents, sendCommand, qu
     const added = agents.addAgent({
       name: inspection.name,
       emoji: AGENT_EMOJI,
-      color: AGENT_COLOR,
       definitionFolder: inspection.definitionFolder,
       definitionFile: inspection.definitionFile
     });
     addedAgentId = added.id;
-    console.log(`[agents-smoke] agent added: ${added.id} ${added.emoji} "${added.name}" (${added.color})`);
+    console.log(`[agents-smoke] agent added: ${added.id} ${added.emoji} "${added.name}"`);
     await wait(1200);
     await clickInWindow(window, "[data-agents-tab]");
     await wait(1200);
@@ -208,7 +206,7 @@ export async function runAgentsSmoke({ window, registry, agents, sendCommand, qu
           emoji: form.querySelector("[data-agent-emoji-input]").value,
           file: select.value,
           fileOptions: Array.from(select.options).map((option) => option.value),
-          swatches: form.querySelectorAll("[data-agent-swatch]").length
+          emojiField: Boolean(form.querySelector("[data-agent-emoji-input]"))
         });
       })()`
     );

@@ -9,8 +9,15 @@
 //     "membership": { "<sessionId>": "<groupId>", … },
 //     "hidden": ["<sessionId>", …],
 //     "hiddenSince": { "<sessionId>": { "at": 1730000000000, "awaitingIdle": false }, … },
-//     "collapsed": ["<groupId>", …]
+//     "collapsed": ["<groupId>", …],
+//     "colors": { "<sessionId>": "--project-color-3", … }
 //   }
+//
+// `colors` holds only the colours the user picked by hand — the colour a
+// session's name is drawn in. A session that is not named there has no
+// stored colour at all and the list works one out from its id
+// (src/renderer/sessionColors.js), so picking "Automatic" in the menu simply
+// removes the entry again.
 //
 // `collapsed` lists the groups folded shut in the list (Default may be one of
 // them). A group not named there is open — that is the default, so an older
@@ -38,6 +45,23 @@ const MAXIMUM_NAME_LENGTH = 60;
 
 export const DEFAULT_GROUP_ID = "default";
 
+// The eight colours a session's name can be drawn in. They are the tokens
+// the project dots use in styles/theme.css, so a session colour always
+// belongs to the palette and never arrives here as a hex value;
+// src/renderer/sessionColors.js keeps the identical list for the renderer,
+// which also works out the automatic colour of a session nobody has
+// coloured by hand.
+export const SESSION_COLOR_TOKENS = [
+  "--project-color-0",
+  "--project-color-1",
+  "--project-color-2",
+  "--project-color-3",
+  "--project-color-4",
+  "--project-color-5",
+  "--project-color-6",
+  "--project-color-7"
+];
+
 function cleanName(rawName) {
   return String(rawName || "").replace(/\s+/g, " ").trim().slice(0, MAXIMUM_NAME_LENGTH);
 }
@@ -48,7 +72,8 @@ function emptyState() {
     membership: {},
     hidden: [],
     hiddenSince: {},
-    collapsed: []
+    collapsed: [],
+    colors: {}
   };
 }
 
@@ -109,6 +134,16 @@ function sanitize(saved) {
       };
     }
   }
+  // A colour is a palette token and nothing else: a hex value, a token that
+  // is not in the palette, or anything that is not a string is dropped, and
+  // the session simply goes back to its automatic colour.
+  if (saved.colors && typeof saved.colors === "object") {
+    for (const [sessionId, token] of Object.entries(saved.colors)) {
+      if (typeof sessionId === "string" && sessionId && SESSION_COLOR_TOKENS.includes(token)) {
+        state.colors[sessionId] = token;
+      }
+    }
+  }
   // Only groups that still exist can be collapsed; anything else is dropped.
   if (Array.isArray(saved.collapsed)) {
     state.collapsed = saved.collapsed.filter((groupId) => typeof groupId === "string" && seenIds.has(groupId));
@@ -152,7 +187,8 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
       hiddenSince: Object.fromEntries(
         Object.entries(state.hiddenSince).map(([sessionId, entry]) => [sessionId, { ...entry }])
       ),
-      collapsed: state.collapsed.slice()
+      collapsed: state.collapsed.slice(),
+      colors: { ...state.colors }
     };
   }
 
@@ -297,6 +333,30 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
     return get();
   }
 
+  // The colour of one session, picked from the row's "Colour" menu. `token`
+  // null is "Automatic": the entry goes away and the list works the colour
+  // out from the session id again, which is what an uncoloured session has
+  // always had.
+  function setSessionColor(sessionId, token) {
+    if (!sessionId) {
+      return get();
+    }
+    if (token === null || token === undefined || token === "") {
+      if (!(sessionId in state.colors)) {
+        return get();
+      }
+      delete state.colors[sessionId];
+      announce();
+      return get();
+    }
+    if (!SESSION_COLOR_TOKENS.includes(token) || state.colors[sessionId] === token) {
+      return get();
+    }
+    state.colors[sessionId] = token;
+    announce();
+    return get();
+  }
+
   // Every session this store knows nothing about any more (deleted) is
   // forgotten here: its group, its place in `hidden`, its hiding note.
   function forgetSession(sessionId) {
@@ -304,12 +364,16 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
       return get();
     }
     const known =
-      sessionId in state.membership || state.hidden.includes(sessionId) || sessionId in state.hiddenSince;
+      sessionId in state.membership ||
+      state.hidden.includes(sessionId) ||
+      sessionId in state.hiddenSince ||
+      sessionId in state.colors;
     if (!known) {
       return get();
     }
     delete state.membership[sessionId];
     delete state.hiddenSince[sessionId];
+    delete state.colors[sessionId];
     state.hidden = state.hidden.filter((entry) => entry !== sessionId);
     announce();
     return get();
@@ -364,6 +428,7 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
     deleteGroup,
     assignSession,
     setCollapsed,
+    setSessionColor,
     setHidden,
     forgetSession,
     unhideOnActivity

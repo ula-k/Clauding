@@ -5,17 +5,13 @@ import { FolderIcon } from "./Icons.jsx";
 import EmojiPicker from "./EmojiPicker.jsx";
 import { firstGrapheme } from "../emojiChoices.js";
 import { nativeEmojiPanelAvailable, shortcutLabels } from "../platform.js";
-import {
-  AGENT_COLOR_TOKENS,
-  DEFAULT_AGENT_COLOR,
-  DEFAULT_AGENT_EMOJI,
-  definitionFolderLabel,
-  fileNameOf
-} from "../agentConstants.js";
+import { DEFAULT_AGENT_EMOJI, definitionFolderLabel, fileNameOf } from "../agentConstants.js";
 
 // The form behind "+ Add agent" and the row menu's "Edit": a name, an emoji,
-// one of the eight palette colours, the folder the definition is read from
-// and which .md file inside it is the definition.
+// the folder the definition is read from and which .md file inside it is
+// the definition. There is no colour to pick — the emoji is what tells one
+// agent from another, and the palette belongs to the sessions
+// (sessionColors.js).
 //
 // The folder comes first in practice: picking it fills the file select, and
 // the file fills the name and the emoji, so in the normal case the user picks a
@@ -29,7 +25,6 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
   const prefill = agent ? null : initialFolder;
   const [name, setName] = useState(agent ? agent.name : (prefill && prefill.name) || "");
   const [emoji, setEmoji] = useState(agent ? agent.emoji : (prefill && prefill.emoji) || DEFAULT_AGENT_EMOJI);
-  const [color, setColor] = useState(agent ? agent.color : DEFAULT_AGENT_COLOR);
   const [definitionFolder, setDefinitionFolder] = useState(
     agent ? agent.definitionFolder : (prefill && prefill.definitionFolder) || ""
   );
@@ -160,7 +155,6 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
     onSave({
       name: name.trim(),
       emoji: emoji || DEFAULT_AGENT_EMOJI,
-      color,
       definitionFolder,
       definitionFile,
       extraClaudeArguments: extraFlags.trim()
@@ -231,21 +225,6 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
           {translate("agents.emojiHint", { shortcut: shortcutLabels().emojiPanel })}
         </div>
         {emojiPickerOpen && <EmojiPicker onPick={pickEmojiFromList} />}
-      </div>
-
-      <span className="sheet-label">{translate("agents.color")}</span>
-      <div className="agent-swatches">
-        {AGENT_COLOR_TOKENS.map((token) => (
-          <button
-            type="button"
-            key={token}
-            className={token === color ? "agent-swatch is-selected" : "agent-swatch"}
-            style={{ "--agent-color": `var(${token})` }}
-            aria-label={token}
-            data-agent-swatch={token}
-            onClick={() => setColor(token)}
-          />
-        ))}
       </div>
 
       <span className="sheet-label">{translate("agents.definitionFolder")}</span>

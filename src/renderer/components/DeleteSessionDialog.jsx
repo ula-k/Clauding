@@ -6,7 +6,17 @@ import { useTranslation } from "../i18n.js";
 // Cancel, and nothing happens until Delete is pressed. Cancel keeps the
 // focus, so the dangerous button is never the one under the fingers by
 // accident: Delete has to be aimed at.
-export default function DeleteSessionDialog({ sessionTitle, onConfirm, onCancel }) {
+//
+// One session or a whole selection, it is the same question asked once: the
+// count, the first few titles, and — for a bulk delete — the sessions that
+// are running somewhere outside the app and are therefore being left alone.
+export default function DeleteSessionDialog({
+  count = 1,
+  sessionTitles = [],
+  skippedTitles = [],
+  onConfirm,
+  onCancel
+}) {
   const { translate } = useTranslation();
   const cancelButtonRef = useRef(null);
   const dialogRef = useRef(null);
@@ -43,17 +53,35 @@ export default function DeleteSessionDialog({ sessionTitle, onConfirm, onCancel 
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={translate("row.deleteTitle")}
+        aria-label={count > 1 ? translate("row.deleteManyTitle", { count }) : translate("row.deleteTitle")}
       >
-        <div className="sheet-title assign-dialog-title">{translate("row.deleteTitle")}</div>
-        {sessionTitle && <div className="delete-dialog-session">{sessionTitle}</div>}
-        <p className="sheet-hint assign-dialog-text">{translate("row.deleteText")}</p>
+        <div className="sheet-title assign-dialog-title">
+          {count > 1 ? translate("row.deleteManyTitle", { count }) : translate("row.deleteTitle")}
+        </div>
+        {sessionTitles.map((sessionTitle) => (
+          <div className="delete-dialog-session" key={sessionTitle}>
+            {sessionTitle}
+          </div>
+        ))}
+        {count > sessionTitles.length && (
+          <div className="delete-dialog-more">
+            {translate("row.deleteManyMore", { count: count - sessionTitles.length })}
+          </div>
+        )}
+        <p className="sheet-hint assign-dialog-text">
+          {count > 1 ? translate("row.deleteManyText") : translate("row.deleteText")}
+        </p>
+        {skippedTitles.length > 0 && (
+          <p className="sheet-hint delete-dialog-skipped" data-delete-skipped>
+            {translate("row.deleteManySkipped", { names: skippedTitles.join(", ") })}
+          </p>
+        )}
         <div className="sheet-actions">
           <button type="button" className="button is-ghost" ref={cancelButtonRef} data-delete-cancel onClick={onCancel}>
             {translate("agents.assignCancel")}
           </button>
           <button type="button" className="button is-danger" data-delete-confirm onClick={onConfirm}>
-            {translate("row.deleteConfirmButton")}
+            {count > 1 ? translate("row.deleteManyConfirmButton", { count }) : translate("row.deleteConfirmButton")}
           </button>
         </div>
       </div>

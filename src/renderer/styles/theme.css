@@ -50,6 +50,12 @@
   --status-idle: var(--text-faint);
   --status-idle-soft: rgba(111, 122, 111, 0.18);
 
+  /* the circle an agent's emoji sits in, wherever it is drawn: one light,
+     neutral disc for every agent, so the emoji itself is what is read. The
+     palette below belongs to the sessions, not to the agents. */
+  --emoji-circle: #4b564d;
+  --emoji-circle-edge: rgba(230, 235, 228, 0.22);
+
   /* tertiary, rarely used: muted rose (destructive hover) and coral (errors) */
   --rose: #d9a3b5;
   --rose-soft: rgba(217, 163, 181, 0.16);

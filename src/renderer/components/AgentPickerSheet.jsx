@@ -57,7 +57,7 @@ export default function AgentPickerSheet({ agents, currentAgentId, onPick, onClo
               data-agent-picker-row={agent.id}
               onClick={() => onPick(agent.id)}
             >
-              <span className="agent-badge" style={{ "--agent-color": `var(${agent.color})` }}>
+              <span className="agent-badge">
                 {agent.emoji}
               </span>
               <span className="agent-picker-name">{agent.name}</span>

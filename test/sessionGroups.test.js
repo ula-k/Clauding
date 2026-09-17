@@ -280,3 +280,63 @@ test("the state handed out is a copy, not the store's own objects", () => {
   assert.equal(store.get().groups[0].name, null);
   assert.deepEqual(store.get().hidden, []);
 });
+
+// ---- Session colours -------------------------------------------------
+// The colour a row's name is drawn in is the user's choice, kept in the
+// same file as the groups. Only a palette token may be stored, and
+// "Automatic" is the absence of an entry rather than a value of its own.
+
+test("a session colour is stored, changed and taken away again", () => {
+  const { store } = storeIn(scratchFolder());
+  assert.deepEqual(store.get().colors, {});
+
+  store.setSessionColor("session-one", "--project-color-3");
+  assert.deepEqual(store.get().colors, { "session-one": "--project-color-3" });
+
+  store.setSessionColor("session-one", "--project-color-5");
+  assert.deepEqual(store.get().colors, { "session-one": "--project-color-5" });
+
+  // null is "Automatic": the entry goes, and the list works the colour out
+  // from the session id again.
+  store.setSessionColor("session-one", null);
+  assert.deepEqual(store.get().colors, {});
+});
+
+test("only a palette token may be a session colour", () => {
+  const { store } = storeIn(scratchFolder());
+  store.setSessionColor("session-one", "#ff0000");
+  store.setSessionColor("session-two", "--project-color-9");
+  store.setSessionColor("", "--project-color-1");
+  assert.deepEqual(store.get().colors, {});
+});
+
+test("a colours map full of rubbish is dropped when the file is read", () => {
+  const { store } = storeIn(scratchFolder(), {
+    version: 1,
+    colors: {
+      good: "--project-color-2",
+      hex: "#123456",
+      unknown: "--project-color-42",
+      wrongType: 7
+    }
+  });
+  assert.deepEqual(store.get().colors, { good: "--project-color-2" });
+});
+
+test("a deleted session takes its colour with it", () => {
+  const { store } = storeIn(scratchFolder());
+  store.setSessionColor("session-one", "--project-color-4");
+  store.forgetSession("session-one");
+  assert.deepEqual(store.get().colors, {});
+});
+
+test("colours survive a round trip through the file", async () => {
+  const folder = scratchFolder();
+  const { store, storagePath } = storeIn(folder);
+  store.setSessionColor("session-one", "--project-color-6");
+  await waitForSave();
+  const written = JSON.parse(fs.readFileSync(storagePath, "utf8"));
+  assert.deepEqual(written.colors, { "session-one": "--project-color-6" });
+  const { store: reopened } = storeIn(folder);
+  assert.deepEqual(reopened.get().colors, { "session-one": "--project-color-6" });
+});
