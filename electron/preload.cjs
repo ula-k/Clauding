@@ -16,6 +16,11 @@ function subscribe(channel, listener) {
 }
 
 contextBridge.exposeInMainWorld("clauding", {
+  // The system the window is drawn on ("darwin", "win32", "linux"). The
+  // renderer has no Node, and the two things that differ — the modifier key
+  // and whether there is a native emoji panel — have to be decided while
+  // drawing, not after an await. See src/renderer/platform.js.
+  platform: process.platform,
   listSessions(options) {
     return ipcRenderer.invoke(CHANNELS.sessionsList, options || {});
   },

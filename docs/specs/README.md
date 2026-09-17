@@ -1,6 +1,6 @@
 # Clauding test specifications
 
-Eighteen specifications, one per item of the accepted QA plan, in eight areas.
+Nineteen specifications, one per item of the accepted QA plan, in nine areas.
 Each one says what must be true, how to get there by clicking, and what proves
 it. They describe **state and meaning** ("the row says the session is running
 elsewhere"), never the exact wording on screen — wording is quoted only as
@@ -43,8 +43,9 @@ elsewhere"), never the exact wording on screen — wording is quoted only as
 | [CL-16](CL-16-single-instance-and-relaunch.md) | App · one instance and relaunch | P1 | manual |
 | [CL-17](CL-17-installer.md) | App · installer | P2 | dry test `test/installApp.test.js` + manual |
 | [CL-18](CL-18-languages.md) | Languages | P3 | dry test `test/i18n.test.js` + manual |
+| [CL-19](CL-19-windows.md) | App · Windows | P2 | dry test `test/platform.test.js` + CI on `windows-latest`; manual **not done yet** |
 
-Eleven P1, five P2, two P3.
+Eleven P1, six P2, two P3.
 
 ## Rules every specification follows
 

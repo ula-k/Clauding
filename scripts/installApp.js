@@ -1,22 +1,32 @@
-// `npm run install-app`: builds the renderer, then puts a real macOS
-// application bundle at /Applications/Clauding.app.
+// `npm run install-app`: builds the renderer, then makes the app startable
+// like any other — from Launchpad and Spotlight on macOS, from the Start
+// Menu on Windows.
 //
-// The bundle is a renamed copy of the Electron.app in this checkout's
-// node_modules (see scripts/lib/appBundle.js for why a copy and not a
-// launcher script). It holds no code of the app: its entry imports this
-// checkout's electron/main.js by absolute path, so the running app is always
-// the project folder and the last `npm run build`. After `git pull` run this
-// again — the Electron version, the version number and the icon in the
-// bundle are the ones that were current when it was written.
+// **macOS.** A real application bundle at /Applications/Clauding.app: a
+// renamed copy of the Electron.app in this checkout's node_modules (see
+// scripts/lib/appBundle.js for why a copy and not a launcher script). It
+// holds no code of the app: its entry imports this checkout's
+// electron/main.js by absolute path.
 //
-// CLAUDING_APP_BUNDLE=<path> writes the bundle somewhere else instead, which
-// is how it can be inspected without touching /Applications.
+// **Windows.** No bundle: `app.setName()` is what names the window there, so
+// the install is a launcher and an icon in
+// %LOCALAPPDATA%\Programs\Clauding\ plus a Start Menu shortcut — all of them
+// pointing at this checkout (see scripts/lib/windowsLauncher.js).
+//
+// Either way the running app is always the project folder and the last
+// `npm run build`; after `git pull` run this again.
+//
+// CLAUDING_APP_BUNDLE=<path> writes the macOS bundle somewhere else instead,
+// which is how it can be inspected without touching /Applications.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { buildApplicationBundle } from "./lib/appBundle.js";
+import { buildApplicationBundle, packageVersion } from "./lib/appBundle.js";
+import { writeIcoFromIconset } from "./lib/icoEncoder.js";
+import { windowsInstallPlan } from "./lib/windowsLauncher.js";
+import { isMacOS, isWindows } from "../electron/lib/platformPaths.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bundlePath = process.env.CLAUDING_APP_BUNDLE || "/Applications/Clauding.app";
@@ -29,7 +39,10 @@ function report(line) {
 
 function buildRenderer() {
   report("npm run build");
-  execFileSync("npm", ["run", "build"], { cwd: projectRoot, stdio: "inherit" });
+  // npm on Windows is npm.cmd, a batch file, and execFile needs a shell for
+  // one; git and node do not.
+  const npmCommand = isWindows() ? "npm.cmd" : "npm";
+  execFileSync(npmCommand, ["run", "build"], { cwd: projectRoot, stdio: "inherit", shell: isWindows() });
 }
 
 // The bundle is assembled outside its final home and only then moved into
@@ -71,11 +84,7 @@ function refreshFinder() {
   }
 }
 
-function main() {
-  if (process.platform !== "darwin") {
-    report("this application bundle only makes sense on macOS.");
-    process.exit(1);
-  }
+function installOnMacOS() {
   if (!fs.existsSync(path.join(electronBundlePath, "Contents", "MacOS", "Electron"))) {
     report("Electron is not installed yet — run `npm install` first.");
     process.exit(1);
@@ -88,6 +97,76 @@ function main() {
   refreshFinder();
   report(`${bundlePath} now runs Clauding from ${projectRoot}`);
   report("open it from Launchpad, Spotlight, or with: open -a Clauding");
+}
+
+// The icon the shortcut points at. build/icon/Clauding.ico is generated from
+// the PNG frames — by this script when it is missing, so a fresh checkout
+// needs nothing extra.
+function ensureWindowsIcon(plan) {
+  if (fs.existsSync(plan.iconSourcePath)) {
+    return plan.iconSourcePath;
+  }
+  try {
+    const written = writeIcoFromIconset({
+      iconsetFolder: plan.iconFramesFolder,
+      targetPath: plan.iconSourcePath
+    });
+    report(`wrote ${plan.iconSourcePath} from ${written.framePaths.length} PNG frames`);
+    return plan.iconSourcePath;
+  } catch (error) {
+    report(`no icon: ${error.message}`);
+    return "";
+  }
+}
+
+function installOnWindows() {
+  const plan = windowsInstallPlan({
+    projectRoot,
+    version: packageVersion(projectRoot),
+    environment: process.env,
+    homeDirectory: os.homedir()
+  });
+  if (!fs.existsSync(plan.electronExecutablePath)) {
+    report("Electron is not installed yet — run `npm install` first.");
+    process.exit(1);
+  }
+  buildRenderer();
+  fs.mkdirSync(plan.installFolder, { recursive: true });
+  for (const file of plan.files) {
+    fs.writeFileSync(file.path, file.contents);
+    report(`wrote ${file.path}`);
+  }
+  const iconSource = ensureWindowsIcon(plan);
+  if (iconSource) {
+    fs.copyFileSync(iconSource, plan.iconPath);
+  }
+  fs.writeFileSync(plan.markerPath, plan.markerContents);
+  try {
+    execFileSync(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", plan.shortcutScript],
+      { stdio: "pipe" }
+    );
+    report(`Start Menu shortcut at ${plan.shortcutPath}`);
+  } catch (error) {
+    report(`could not create the Start Menu shortcut: ${error.message}`);
+    report(`start it from ${plan.files[0].path} instead`);
+  }
+  report(`${plan.installFolder} now runs Clauding from ${projectRoot}`);
+  report("open it from the Start Menu, or by double-clicking Clauding.vbs in that folder.");
+}
+
+function main() {
+  if (isMacOS()) {
+    installOnMacOS();
+    return;
+  }
+  if (isWindows()) {
+    installOnWindows();
+    return;
+  }
+  report("only macOS and Windows have an install step; elsewhere start the app with `npm start`.");
+  process.exit(1);
 }
 
 main();

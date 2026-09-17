@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LanguageContext, detectSystemLanguage, loadSavedLanguage, saveLanguage, translateInLanguage } from "./i18n.js";
-import { folderLabel } from "./paths.js";
+import { folderLabel, lastSegmentOf, shortenHomeFolder } from "./paths.js";
+import { commandKeyPressed, isWindowsPlatform } from "./platform.js";
 import { disposeInstance, ensureInstance, hasInstance, lastTerminalDimensions, writeToInstance } from "./terminalInstances.js";
 import { groupIdForSession } from "./sessionGrouping.js";
 import { forkDisplayName } from "./forkName.js";
@@ -108,8 +109,8 @@ function placeholderSession(terminal, language) {
     summary: null,
     firstPrompt: null,
     workingDirectory: terminal.workingDirectory,
-    workingDirectoryShort: terminal.workingDirectory.replace(/^\/Users\/[^/]+/, "~"),
-    projectName: terminal.workingDirectory.split("/").filter(Boolean).pop() || terminal.workingDirectory,
+    workingDirectoryShort: shortenHomeFolder(terminal.workingDirectory),
+    projectName: lastSegmentOf(terminal.workingDirectory) || terminal.workingDirectory,
     projectLabel: folderLabel(terminal.workingDirectory),
     projectColorIndex: 0,
     gitBranch: null,
@@ -969,13 +970,14 @@ export default function App() {
     window.clauding.getAgents().then(setAgentState);
   }, [deleteRequest, language]);
 
-  // ⌘⌫, the way Claude Code does it: once stops (hide), twice deletes. On a
-  // row that is on screen it hides the session — which also stops it — and
-  // on a row already under "Hidden (N)" it asks whether the transcript may
-  // go. Nothing is deleted without that question.
+  // ⌘⌫ (Ctrl+Backspace on Windows), the way Claude Code does it: once stops
+  // (hide), twice deletes. On a row that is on screen it hides the session —
+  // which also stops it — and on a row already under "Hidden (N)" it asks
+  // whether the transcript may go. Nothing is deleted without that question.
   useEffect(() => {
     function handleKeyDown(event) {
-      if (event.key !== "Backspace" || !event.metaKey || event.altKey || event.ctrlKey) {
+      const wantedKey = isWindowsPlatform() ? ["Backspace", "Delete"] : ["Backspace"];
+      if (!wantedKey.includes(event.key) || !commandKeyPressed(event) || event.altKey) {
         return;
       }
       const sessionId = selectedSessionIdRef.current || (activeTerminal && activeTerminal.sessionId) || null;

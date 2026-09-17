@@ -6,17 +6,18 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
+import { commandKeyPressed } from "./platform.js";
+import { localPagePattern, terminalKeyDecision } from "./terminalKeys.js";
 
 const SCROLLBACK_LINES = 10000;
-// Absolute or ~/ paths to pages the right panel can show.
-const LOCAL_PAGE_PATTERN = /(?<![\w:/.-])(?:~|\/)[^\s"'`<>()[\]|]*?\.(?:html?|md|markdown)\b/g;
 const instances = new Map();
 let lastKnownDimensions = { columns: 100, rows: 30 };
 
 // A click on a link opens it in the right panel of this terminal's session;
-// Cmd+click hands it to the system (Chrome for URLs, the default app for files).
+// Cmd+click (Ctrl+click on Windows) hands it to the system instead — Chrome
+// for URLs, the default application for files.
 function openLinkFromTerminal(terminalId, event, target) {
-  if (event && event.metaKey) {
+  if (commandKeyPressed(event)) {
     window.clauding.openExternally(target).catch((error) => console.error("Could not open externally", error));
     return;
   }
@@ -71,7 +72,7 @@ function localPageLinkProvider(terminal, terminalId) {
       const lineIndex = bufferLineNumber - 1;
       const logical = logicalLineAt(buffer, columns, lineIndex);
       const links = [];
-      for (const match of logical.text.matchAll(LOCAL_PAGE_PATTERN)) {
+      for (const match of logical.text.matchAll(localPagePattern())) {
         const startIndex = match.index;
         const endIndex = startIndex + match[0].length - 1;
         const start = logical.positionOf(startIndex);
@@ -130,22 +131,16 @@ export function lastTerminalDimensions() {
   return lastKnownDimensions;
 }
 
-// Cmd+K clears like in Terminal.app. Cmd+C / Cmd+V are left to the
-// application menu: Electron turns them into copy / paste events on xterm's
-// hidden textarea, which xterm handles (selection out, clipboard text in).
+// What Cmd / Ctrl plus a letter means in the terminal lives in
+// terminalKeys.js, so it can be checked without xterm.
 function customKeyHandler(terminal) {
   return function handleKey(event) {
-    if (event.type !== "keydown" || !event.metaKey) {
-      return true;
-    }
-    if (event.key === "k") {
+    const decision = terminalKeyDecision(event);
+    if (decision === "clear") {
       terminal.clear();
       return false;
     }
-    if (event.key === "c" || event.key === "v" || event.key === "a" || event.key === "q" || event.key === "w") {
-      return false;
-    }
-    return true;
+    return decision !== "leave-to-menu";
   };
 }
 

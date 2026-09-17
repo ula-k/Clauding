@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { windowsInstallPlan } from "../scripts/lib/windowsLauncher.js";
 import {
   APPLICATION_NAME,
   BUNDLE_IDENTIFIER,
@@ -205,4 +206,20 @@ test("the same version gives the same property list edits and manifest", () => {
   assert.ok(informationPropertyEdits("1.2.3").some(([key, value]) => key === "CFBundleVersion" && value === "1.2.3"));
   assert.equal(bundlePackageManifest("1.2.3"), bundlePackageManifest("1.2.3"));
   assert.ok(bundlePackageManifest("1.2.3").includes('"version": "1.2.3"'));
+});
+
+test("the Windows install is a different thing entirely, and never names /Applications", () => {
+  // The macOS bundle is untouched by the port: Windows gets a launcher and
+  // a shortcut instead (scripts/lib/windowsLauncher.js, and the whole plan
+  // is read back in test/platform.test.js).
+  const plan = windowsInstallPlan({
+    projectRoot: "C:\\Users\\ula\\clauding",
+    environment: { LOCALAPPDATA: "C:\\Users\\ula\\AppData\\Local", APPDATA: "C:\\Users\\ula\\AppData\\Roaming" }
+  });
+  const everything = [plan.installFolder, plan.shortcutPath, plan.shortcutScript]
+    .concat(plan.files.map((file) => `${file.path}${file.contents}`))
+    .join(" ");
+  assert.equal(everything.includes("/Applications"), false);
+  assert.equal(everything.includes(".app"), false, "there is no bundle on Windows");
+  assert.equal(everything.includes("codesign"), false, "and nothing to sign");
 });

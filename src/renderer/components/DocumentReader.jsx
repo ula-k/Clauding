@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { renderMarkdown, withoutFrontmatter } from "../markdown.js";
 import { ArrowLeftIcon, FolderIcon, ReadIcon } from "./Icons.jsx";
+import { parentFolderOf, shortenHomeFolder } from "../paths.js";
 
 // The reader that takes over the middle column: a skill's SKILL.md or an
 // agent's definition, shown *where the conversation is* instead of in the
@@ -15,17 +16,13 @@ import { ArrowLeftIcon, FolderIcon, ReadIcon } from "./Icons.jsx";
 
 const COPIED_FEEDBACK_MILLISECONDS = 1200;
 
-// "/Users/you/.claude/skills/skill-maker" -> "~/.claude/skills/skill-maker".
-function shortFolder(folder) {
-  return String(folder || "").replace(/^\/Users\/[^/]+/, "~");
-}
 
 export default function DocumentReader({ reader, onClose, onOpenInPanel, windowTools }) {
   const { translate } = useTranslation();
   const [text, setText] = useState(null);
   const [failure, setFailure] = useState(null);
   const [copied, setCopied] = useState(false);
-  const folder = reader.folder || reader.filePath.split("/").slice(0, -1).join("/");
+  const folder = reader.folder || parentFolderOf(reader.filePath);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +98,7 @@ export default function DocumentReader({ reader, onClose, onOpenInPanel, windowT
           data-reader-path
         >
           <FolderIcon />
-          {copied ? translate("reader.pathCopied") : shortFolder(folder)}
+          {copied ? translate("reader.pathCopied") : shortenHomeFolder(folder)}
         </button>
       </header>
       <div className="reader-body panel-reading">

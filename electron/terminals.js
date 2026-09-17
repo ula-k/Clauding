@@ -14,7 +14,14 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import nodePty from "node-pty";
 import channels from "./channels.cjs";
-import { claudeExecutablePath, supportsAppendSystemPromptFile, terminalEnvironment } from "./claudeCli.js";
+import {
+  claudeExecutablePath,
+  ptyOptionsFor,
+  spawnPlanFor,
+  supportsAppendSystemPromptFile,
+  terminalEnvironment
+} from "./claudeCli.js";
+import { claudeRegistryPaths, isWindows } from "./lib/platformPaths.js";
 import { buildClaudeArguments, buildTerminalEnvironment, mergeExtraArguments } from "./lib/claudeArguments.js";
 import { buildAgentSystemPrompt } from "./agents.js";
 import { isProcessAlive } from "./liveStatus.js";
@@ -39,7 +46,13 @@ const CLOSE_GRACE_MILLISECONDS = 3000;
 // sat idle this long is hung up, so browsing the list cannot pile up
 // `claude` processes. The session itself stays on disk.
 const UNTOUCHED_IDLE_CLOSE_MILLISECONDS = 20 * 60 * 1000;
-const sessionsRegistryDirectory = path.join(os.homedir(), ".claude", "sessions");
+const sessionsRegistryDirectory = claudeRegistryPaths({ homeDirectory: os.homedir() }).sessionsRegistryDirectory;
+
+// Windows has no signals: node-pty ends the console process whatever it is
+// handed, and passing a name it does not know is the one way to get an error.
+// Everywhere else SIGHUP is the polite hang-up and SIGKILL the last resort.
+const HANG_UP_SIGNAL = isWindows() ? undefined : "SIGHUP";
+const FORCE_SIGNAL = isWindows() ? undefined : "SIGKILL";
 
 function readJsonQuietly(filePath) {
   try {
@@ -489,14 +502,18 @@ export function createTerminalRegistry({
       terminalId,
       commandDirectory
     });
+    // On Windows a `claude.cmd` has to go through `cmd.exe /c`, and the pty
+    // needs ConPTY; spawnPlanFor / ptyOptionsFor answer both (claudeCli.js).
+    const spawnPlan = spawnPlanFor(claudeExecutablePath(), commandArguments);
     const child = dryRunSpawn
       ? dryRunChild(terminalId, commandArguments, workingDirectory, promptFilePath, logLine)
-      : nodePty.spawn(claudeExecutablePath(), commandArguments, {
+      : nodePty.spawn(spawnPlan.file, spawnPlan.commandArguments, {
           name: "xterm-256color",
           cols: Math.max(20, Math.floor(columns)),
           rows: Math.max(5, Math.floor(rows)),
           cwd: workingDirectory,
-          env: environment
+          env: environment,
+          ...ptyOptionsFor()
         });
     const record = {
       terminalId,
@@ -590,14 +607,14 @@ export function createTerminalRegistry({
       return { closed: false };
     }
     try {
-      record.process.kill("SIGHUP");
+      record.process.kill(HANG_UP_SIGNAL);
     } catch (error) {
       // Already gone.
     }
     record.closeTimer = setTimeout(() => {
       if (!record.exited) {
         try {
-          record.process.kill("SIGKILL");
+          record.process.kill(FORCE_SIGNAL);
         } catch (error) {
           // Already gone.
         }
@@ -612,7 +629,7 @@ export function createTerminalRegistry({
         continue;
       }
       try {
-        record.process.kill("SIGHUP");
+        record.process.kill(HANG_UP_SIGNAL);
       } catch (error) {
         // Already gone.
       }

@@ -4,6 +4,7 @@ import { useTranslation } from "../i18n.js";
 import { FolderIcon } from "./Icons.jsx";
 import EmojiPicker from "./EmojiPicker.jsx";
 import { firstGrapheme } from "../emojiChoices.js";
+import { nativeEmojiPanelAvailable, shortcutLabels } from "../platform.js";
 import {
   AGENT_COLOR_TOKENS,
   DEFAULT_AGENT_COLOR,
@@ -126,7 +127,9 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
   }
 
   // The macOS emoji panel (⌃⌘Space) types into whatever has focus, so the
-  // field is focused first and the main process opens the panel.
+  // field is focused first and the main process opens the panel. There is no
+  // Electron call for the Windows picker (Win+.), so the button that asks
+  // for one is not drawn there at all — see nativeEmojiPanelAvailable.
   async function openNativeEmojiPanel() {
     setEmojiPickerOpen(false);
     if (emojiInputRef.current) {
@@ -200,16 +203,18 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
             onChange={(event) => changeEmoji(event.target.value)}
             data-agent-emoji-input
           />
-          <button
-            type="button"
-            className="emoji-tool-button"
-            title={translate("agents.emojiPanel")}
-            aria-label={translate("agents.emojiPanel")}
-            onClick={openNativeEmojiPanel}
-            data-agent-emoji-panel
-          >
-            <span aria-hidden="true">🙂</span>
-          </button>
+          {nativeEmojiPanelAvailable() && (
+            <button
+              type="button"
+              className="emoji-tool-button"
+              title={translate("agents.emojiPanel")}
+              aria-label={translate("agents.emojiPanel")}
+              onClick={openNativeEmojiPanel}
+              data-agent-emoji-panel
+            >
+              <span aria-hidden="true">🙂</span>
+            </button>
+          )}
           <button
             type="button"
             className={emojiPickerOpen ? "emoji-tool-button is-open" : "emoji-tool-button"}
@@ -222,7 +227,9 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
             <span aria-hidden="true">▦</span>
           </button>
         </div>
-        <div className="agent-form-hint">{translate("agents.emojiHint")}</div>
+        <div className="agent-form-hint">
+          {translate("agents.emojiHint", { shortcut: shortcutLabels().emojiPanel })}
+        </div>
         {emojiPickerOpen && <EmojiPicker onPick={pickEmojiFromList} />}
       </div>
 

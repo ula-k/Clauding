@@ -39,6 +39,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { mergeExtraArguments } from "./lib/claudeArguments.js";
+import { claudeRegistryPaths, expandHomeFolder } from "./lib/platformPaths.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_EXTRA_ARGUMENTS_LENGTH = 500;
@@ -48,7 +49,7 @@ export function defaultAgentsRoot() {
 }
 
 export function defaultSkillsRoot() {
-  return path.join(os.homedir(), ".claude", "skills");
+  return claudeRegistryPaths({ homeDirectory: os.homedir() }).skillsDirectory;
 }
 
 function cleanFolder(rawFolder, fallback) {
@@ -56,7 +57,7 @@ function cleanFolder(rawFolder, fallback) {
   if (!folder) {
     return fallback;
   }
-  const expanded = folder.startsWith("~/") ? path.join(os.homedir(), folder.slice(2)) : folder;
+  const expanded = expandHomeFolder(folder);
   return path.isAbsolute(expanded) ? path.normalize(expanded) : fallback;
 }
 

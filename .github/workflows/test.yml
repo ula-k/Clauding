@@ -1,0 +1,50 @@
+name: Tests
+
+# macOS is where the app is written and used; Windows is in here because the
+# Windows port was written without a Windows machine to try it on, so this
+# workflow is the only thing that actually runs those code paths. Both
+# operating systems run the same four steps, and Windows runs one more: a
+# real pty through ConPTY, with no Electron and no window.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` runs the postinstall (scripts/prepareNodePty.js): the
+      # execute bit on macOS, the load check inside Electron on both.
+      - name: Install
+        run: npm ci
+
+      - name: Naming and syntax rules
+        run: npm run check
+
+      - name: Tests
+        run: npm test
+
+      - name: Build the renderer
+        run: npm run build
+
+      # The one thing no dry test on a Mac can answer: does node-pty attach
+      # to a real Windows pseudo-console and give the output back?
+      - name: node-pty through ConPTY
+        if: runner.os == 'Windows'
+        run: node scripts/checkNodePty.js

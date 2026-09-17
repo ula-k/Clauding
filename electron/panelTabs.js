@@ -18,17 +18,24 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { expandHomeFolder, isWindows } from "./lib/platformPaths.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 200;
 
-export function expandHomePath(target) {
-  if (target === "~") {
-    return os.homedir();
+export function expandHomePath(target, platform = process.platform) {
+  return expandHomeFolder(target, { platform, homeDirectory: os.homedir() });
+}
+
+// "file:///Users/me/page.html" -> "/Users/me/page.html"
+// "file:///C:/Users/me/page.html" -> "C:\Users\me\page.html"
+// A Windows file URL carries the drive after the third slash, so that slash
+// has to go or the path starts at the root of the current drive instead.
+export function filePathFromUrl(target, platform = process.platform) {
+  const withoutScheme = decodeURIComponent(String(target || "").replace(/^file:\/\//i, ""));
+  if (isWindows(platform) && /^\/[A-Za-z]:/.test(withoutScheme)) {
+    return withoutScheme.slice(1).replace(/\//g, "\\");
   }
-  if (target.startsWith("~/")) {
-    return path.join(os.homedir(), target.slice(2));
-  }
-  return target;
+  return withoutScheme;
 }
 
 // Turns what the user (or the CLI) typed into a tab description, or throws
@@ -43,7 +50,7 @@ export function describeTarget(rawTarget, baseDirectory) {
   }
   let filePath = trimmed;
   if (/^file:\/\//i.test(filePath)) {
-    filePath = decodeURIComponent(filePath.replace(/^file:\/\//i, ""));
+    filePath = filePathFromUrl(filePath);
   }
   filePath = expandHomePath(filePath);
   if (!path.isAbsolute(filePath)) {

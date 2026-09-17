@@ -1,35 +1,108 @@
 // Where the Claude Code CLI lives and what environment it should get when the
 // app spawns it in a terminal.
+//
+// On Windows the same three questions have different answers: the binary is
+// `claude.exe` or `claude.cmd`, PATH is searched with `where` rather than by
+// letting the spawn resolve a bare name, and a `.cmd` cannot be handed to a
+// pty directly — it is a batch file and needs `cmd.exe /c` in front of it.
+// `spawnPlanFor()` is the one place that decides which of those it is.
 import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
 import { execFileSync } from "node:child_process";
+import {
+  claudeBinaryCandidates,
+  claudeBinaryNamesOnPath,
+  isWindows,
+  pathListSeparator,
+  shellPathFolders
+} from "./lib/platformPaths.js";
 
-const localClaudeBinary = path.join(os.homedir(), ".local", "bin", "claude");
+// A Dock-launched app (and a Start Menu one) inherits a minimal PATH; the CLI
+// and the tools it spawns need the usual folders.
+export function ensureShellPath({
+  platform = process.platform,
+  homeDirectory = os.homedir(),
+  environment = process.env
+} = {}) {
+  const separator = pathListSeparator(platform);
+  const extraFolders = shellPathFolders({ platform, homeDirectory });
+  const currentFolders = String(environment.PATH || "").split(separator).filter(Boolean);
+  const alreadyThere = isWindows(platform)
+    ? currentFolders.map((folder) => folder.toLowerCase())
+    : currentFolders;
+  const missing = extraFolders.filter((folder) =>
+    isWindows(platform) ? !alreadyThere.includes(folder.toLowerCase()) : !alreadyThere.includes(folder)
+  );
+  environment.PATH = missing.concat(currentFolders).join(separator);
+  return environment.PATH;
+}
 
-// A Dock-launched app inherits a minimal PATH; the CLI (and the tools it
-// spawns: git, node, brew-installed binaries) need the usual shell folders.
-export function ensureShellPath() {
-  const extraFolders = [
-    path.join(os.homedir(), ".local", "bin"),
-    "/opt/homebrew/bin",
-    "/usr/local/bin"
-  ];
-  const currentFolders = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
-  const missing = extraFolders.filter((folder) => !currentFolders.includes(folder));
-  process.env.PATH = missing.concat(currentFolders).join(path.delimiter);
+// `where claude.exe` on Windows, `command -v claude` elsewhere. Only the
+// first line matters: `where` prints one path per match.
+function lookUpOnPath(name, platform) {
+  try {
+    const output = isWindows(platform)
+      ? execFileSync("where", [name], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 })
+      : execFileSync("command", ["-v", name], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    const firstLine = String(output || "").split(/\r?\n/).find((line) => line.trim() !== "");
+    return firstLine ? firstLine.trim() : "";
+  } catch (error) {
+    return "";
+  }
 }
 
 // CLAUDING_CLAUDE_BIN wins over everything: it is how a second install, a
 // version manager or a wrapper script is pointed at without touching PATH.
-// After that, ~/.local/bin/claude when it exists (the same binary as in the
-// terminal), otherwise whatever `claude` resolves to on PATH.
-export function claudeExecutablePath() {
-  const chosen = String(process.env.CLAUDING_CLAUDE_BIN || "").trim();
+// After that, ~/.local/bin/claude (claude.exe, then claude.cmd, on Windows),
+// and finally whatever PATH says. On macOS the bare name "claude" is returned
+// when nothing was found, because the spawn resolves it; on Windows a bare
+// name is not enough for a pty, so the PATH lookup is done here.
+export function claudeExecutablePath({
+  platform = process.platform,
+  homeDirectory = os.homedir(),
+  environment = process.env,
+  fileExists = (candidate) => fs.existsSync(candidate),
+  findOnPath = (name) => lookUpOnPath(name, platform)
+} = {}) {
+  const chosen = String(environment.CLAUDING_CLAUDE_BIN || "").trim();
   if (chosen) {
     return chosen;
   }
-  return fs.existsSync(localClaudeBinary) ? localClaudeBinary : "claude";
+  for (const candidate of claudeBinaryCandidates({ platform, homeDirectory })) {
+    if (fileExists(candidate)) {
+      return candidate;
+    }
+  }
+  for (const name of claudeBinaryNamesOnPath(platform)) {
+    const found = findOnPath(name);
+    if (found) {
+      return found;
+    }
+  }
+  return isWindows(platform) ? "claude.cmd" : "claude";
+}
+
+// A batch file is not a program: Windows can only run it through the command
+// interpreter, and node-pty hands its argument list straight to CreateProcess.
+// So a `.cmd` (or `.bat`) is wrapped, and everything else is spawned as it is.
+export function spawnPlanFor(executablePath, commandArguments = [], platform = process.platform) {
+  const wanted = String(executablePath || "");
+  if (isWindows(platform) && /\.(cmd|bat)$/i.test(wanted)) {
+    const interpreter = process.env.COMSPEC || "cmd.exe";
+    return {
+      file: interpreter,
+      commandArguments: ["/c", wanted].concat(commandArguments),
+      throughCommandInterpreter: true
+    };
+  }
+  return { file: wanted, commandArguments: commandArguments.slice(), throughCommandInterpreter: false };
+}
+
+// The pty options that differ between the two systems. ConPTY is the Windows
+// pseudo-console node-pty builds on; without it node-pty falls back to
+// winpty, which needs a helper binary the prebuilt package does not ship.
+export function ptyOptionsFor(platform = process.platform) {
+  return isWindows(platform) ? { useConpty: true } : {};
 }
 
 // Variables a Claude Code process exports into its own child shells. When
@@ -40,6 +113,8 @@ const NESTED_SESSION_VARIABLE = /^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_JO
 
 // `sourceEnvironment` is the app's own environment; it is a parameter only so
 // the dry tests can hand in one of their own instead of the real process.
+// TERM and COLORTERM are set on Windows too: ConPTY understands the escape
+// sequences, and a program that ignores the variables is none the worse.
 export function terminalEnvironment(sourceEnvironment = process.env) {
   const environment = {};
   for (const [name, value] of Object.entries(sourceEnvironment)) {
@@ -73,9 +148,10 @@ export function supportsAppendSystemPromptFile(probeFilePath) {
   if (appendSystemPromptFileSupport !== null) {
     return appendSystemPromptFileSupport;
   }
+  const plan = spawnPlanFor(claudeExecutablePath(), ["--append-system-prompt-file", probeFilePath, "mcp"]);
   let output = "";
   try {
-    output = execFileSync(claudeExecutablePath(), ["--append-system-prompt-file", probeFilePath, "mcp"], {
+    output = execFileSync(plan.file, plan.commandArguments, {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 15000

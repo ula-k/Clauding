@@ -1,23 +1,31 @@
-// The `clauding` command (bin/clauding) talks to the running app over a Unix
-// domain socket at <userData>/clauding.sock. Protocol: one JSON object per
-// line in each direction. Requests carry `command` ("open", "panel", "tabs"),
-// the caller's `terminalId` (from CLAUDING_TERMINAL_ID in the pty) and `cwd`;
-// the reply is { ok: true, message } or { ok: false, error }.
+// The `clauding` command (bin/clauding) talks to the running app over a local
+// channel. Protocol: one JSON object per line in each direction. Requests
+// carry `command` ("open", "panel", "tabs"), the caller's `terminalId` (from
+// CLAUDING_TERMINAL_ID in the pty) and `cwd`; the reply is
+// { ok: true, message } or { ok: false, error }.
 //
-// The socket file is chmod 0600, so only processes of the same user can
-// connect (macOS checks the file mode on connect).
+// The channel is a Unix domain socket at <userData>/clauding.sock on macOS,
+// chmod 0600 so only processes of the same user can connect (macOS checks the
+// file mode on connect). On Windows there are no Unix sockets: `net` listens
+// on a named pipe instead (\\.\pipe\clauding-<hash of the user data folder>),
+// which is not a file — there is nothing to unlink before listening and
+// nothing to chmod afterwards, and the pipe disappears with the process.
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { commandChannelIsFile } from "./lib/platformPaths.js";
 
 const MAX_LINE_CHARACTERS = 64000;
 
 export function startCommandSocket({ socketPath, handleRequest, log }) {
-  fs.mkdirSync(path.dirname(socketPath), { recursive: true });
-  try {
-    fs.unlinkSync(socketPath);
-  } catch (error) {
-    // No stale socket to remove.
+  const isFileChannel = commandChannelIsFile(socketPath);
+  if (isFileChannel) {
+    fs.mkdirSync(path.dirname(socketPath), { recursive: true });
+    try {
+      fs.unlinkSync(socketPath);
+    } catch (error) {
+      // No stale socket to remove.
+    }
   }
 
   const server = net.createServer((connection) => {
@@ -62,10 +70,12 @@ export function startCommandSocket({ socketPath, handleRequest, log }) {
     }
   });
   server.listen(socketPath, () => {
-    try {
-      fs.chmodSync(socketPath, 0o600);
-    } catch (error) {
-      // Best effort; the folder itself is inside the user's Library.
+    if (isFileChannel) {
+      try {
+        fs.chmodSync(socketPath, 0o600);
+      } catch (error) {
+        // Best effort; the folder itself is inside the user's Library.
+      }
     }
     if (log) {
       log(`[socket] listening on ${socketPath}`);
@@ -74,6 +84,9 @@ export function startCommandSocket({ socketPath, handleRequest, log }) {
 
   return function stop() {
     server.close();
+    if (!isFileChannel) {
+      return;
+    }
     try {
       fs.unlinkSync(socketPath);
     } catch (error) {

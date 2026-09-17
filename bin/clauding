@@ -9,16 +9,20 @@
 //                                 (--name, --emoji, --color override what
 //                                 the app would suggest from the folder)
 //   clauding agent list           the agents registered in the app
+//
+// It is started as `clauding` on macOS (this file, executable, with the
+// shebang above) and as `clauding.cmd` on Windows (the little batch file next
+// to it, which runs `node` on this same file).
 import net from "node:net";
-import os from "node:os";
-import path from "node:path";
+import { commandChannelPath, defaultUserDataDirectory } from "../electron/lib/platformPaths.js";
 
-// The running app exports the path of its own socket into every terminal it
-// opens (CLAUDING_SOCKET); the default below is where the installed app keeps
-// it, for a shell that was not started by the app.
+// The running app exports the address of its own channel into every terminal
+// it opens (CLAUDING_SOCKET); the default below is where the installed app
+// keeps it, for a shell that was not started by the app — a socket file
+// inside the app's data folder on macOS, a named pipe on Windows.
 const socketPath =
   process.env.CLAUDING_SOCKET ||
-  path.join(os.homedir(), "Library", "Application Support", "Clauding", "clauding.sock");
+  commandChannelPath({ userDataDirectory: defaultUserDataDirectory() });
 const [commandName, ...commandArguments] = process.argv.slice(2);
 
 // One shape for every failure, so a session reading its own output cannot

@@ -15,6 +15,8 @@ import {
 } from "./sessions.js";
 import { watchLiveStatus, collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
 import { ensureShellPath } from "./claudeCli.js";
+import { claudeRegistryPaths, commandChannelPath, isMacOS } from "./lib/platformPaths.js";
+import { applicationMenuTemplate } from "./lib/applicationMenu.js";
 import { createTerminalRegistry } from "./terminals.js";
 import { listRecentProjects } from "./recentProjects.js";
 import { runTerminalSmoke } from "./smokeTerminal.js";
@@ -155,6 +157,12 @@ const anySmokeMode =
   smokeEmojiMode ||
   smokeKickoffMode;
 
+// The screenshot hook and the smoke runs drive the real window with things
+// only macOS has — `capturePage` against an inset title bar, the standard
+// About panel, the character palette, the /Applications bundle. They are dev
+// tools, not features, so on any other system they say so and do nothing.
+const developmentHooksSupported = isMacOS();
+
 let mainWindow = null;
 let stopWatchingLiveStatus = null;
 let stopWatchingProjects = null;
@@ -174,7 +182,13 @@ const preamblePath = path.join(userDataDirectory, "preamble.md");
 // user-data folder, and the path is exported so every terminal's `clauding`
 // reaches *this* app — an instance started with its own --user-data-dir (the
 // automated tests) then never talks to the installed one.
-const commandSocketPath = path.join(userDataDirectory, "clauding.sock");
+// On Windows this is a named pipe rather than a file (see platformPaths.js);
+// `net` connects to either, and the `clauding` command is told which through
+// CLAUDING_SOCKET.
+const commandSocketPath = commandChannelPath({
+  userDataDirectory,
+  userIdentifier: typeof process.getuid === "function" ? process.getuid() : null
+});
 process.env.CLAUDING_SOCKET = commandSocketPath;
 // One file per terminal running as an agent, holding the preamble plus that
 // agent's whole definition; written at spawn, deleted when the pty exits.
@@ -385,8 +399,11 @@ function createWindow() {
     height: screenshotWindowHeight > 0 ? screenshotWindowHeight : 900,
     minWidth: 1000,
     minHeight: 600,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 18 },
+    // The inset traffic lights are a macOS thing: they are what lets the app
+    // put its own header where the title bar would be. Windows draws its own
+    // caption buttons on the right and the menu bar inside the window, so
+    // there the window keeps the standard frame.
+    ...(isMacOS() ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 18 } } : {}),
     backgroundColor: "#1b171f",
     show: false,
     webPreferences: {
@@ -424,6 +441,14 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  if (!developmentHooksSupported && (anySmokeMode || screenshotPath)) {
+    console.log(
+      "[smoke] the screenshot and smoke hooks are macOS-only (they photograph the window and read the " +
+        "macOS About panel); this run ignores them and leaves the window as it is."
+    );
+    return;
+  }
 
   if (screenshotPath) {
     mainWindow.webContents.once("did-finish-load", () => {
@@ -914,61 +939,25 @@ function checkForNewVersionQuietlyIfDue() {
   checkForNewVersion({ quiet: true });
 }
 
-// The Edit roles are what make Cmd+C / Cmd+V work inside the terminal:
-// Electron turns them into copy / paste events on xterm's hidden textarea.
+// The Edit roles are what make Cmd+C / Cmd+V (Ctrl+C / Ctrl+V on Windows)
+// work inside the terminal: Electron turns them into copy / paste events on
+// xterm's hidden textarea. The template itself, and what differs between the
+// two systems, lives in lib/applicationMenu.js.
 function installApplicationMenu() {
   Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      // macOS draws this title from the bundle, but the label keeps the name
-      // right when the app runs without one (`npm start`). The standard app
-      // menu is written out rather than taken as a role, because the version
-      // check lives in it — new functions go in the menu bar, never into the
-      // window as another control.
-      {
-        label: app.name,
-        submenu: [
-          { role: "about" },
-          { type: "separator" },
-          {
-            label: updateMenuItemLabel(quietUpdatePlan),
-            click() {
-              checkForNewVersion({ quiet: false });
-            }
-          },
-          { type: "separator" },
-          {
-            label: "Settings…",
-            accelerator: "Command+,",
-            click() {
-              sendToWindow(CHANNELS.settingsShow, {});
-            }
-          },
-          { type: "separator" },
-          { role: "services" },
-          { type: "separator" },
-          { role: "hide" },
-          { role: "hideOthers" },
-          { role: "unhide" },
-          { type: "separator" },
-          { role: "quit" }
-        ]
-      },
-      {
-        label: "Edit",
-        submenu: [
-          { role: "undo" },
-          { role: "redo" },
-          { type: "separator" },
-          { role: "cut" },
-          { role: "copy" },
-          { role: "paste" },
-          { role: "selectAll" }
-        ]
-      },
-      skillsMenuTemplate(),
-      { role: "viewMenu" },
-      { role: "windowMenu" }
-    ])
+    Menu.buildFromTemplate(
+      applicationMenuTemplate({
+        applicationName: app.name,
+        updateItemLabel: updateMenuItemLabel(quietUpdatePlan),
+        skillsMenu: skillsMenuTemplate(),
+        onCheckForUpdate() {
+          checkForNewVersion({ quiet: false });
+        },
+        onShowSettings() {
+          sendToWindow(CHANNELS.settingsShow, {});
+        }
+      })
+    )
   );
 }
 
@@ -1555,7 +1544,7 @@ function lockDownWebviews() {
 // New transcripts or appended messages change lastModified and titles, so the
 // session list also refreshes when anything under ~/.claude/projects moves.
 function watchProjectFolders(onChange) {
-  const projectsDirectory = path.join(os.homedir(), ".claude", "projects");
+  const projectsDirectory = claudeRegistryPaths({ homeDirectory: os.homedir() }).projectsDirectory;
   const watchers = [];
   let debounceTimer = null;
   function scheduleChange() {
@@ -1599,7 +1588,9 @@ function watchProjectFolders(onChange) {
 }
 
 app.whenReady().then(() => {
-  if (app.dock && fs.existsSync(applicationIconPath)) {
+  // There is no Dock outside macOS; on Windows the taskbar icon comes from
+  // the launcher's shortcut instead (scripts/lib/windowsLauncher.js).
+  if (isMacOS() && app.dock && fs.existsSync(applicationIconPath)) {
     app.dock.setIcon(applicationIconPath);
   }
   fs.mkdirSync(userDataDirectory, { recursive: true });

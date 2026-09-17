@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isWindows } from "./lib/platformPaths.js";
 
 // The checkout the app runs from: electron/ is one folder down from it.
 export function projectRootFolder() {
@@ -32,12 +33,26 @@ export const UPDATE_BY_HAND_ADVICE =
   "Local changes or another branch — update from a terminal: " +
   "git pull && npm install && npm run build && npm run install-app";
 
+// npm on Windows is `npm.cmd`, a batch file: `execFile` cannot start one
+// without a shell, so those steps are run with `shell: true` and the command
+// name is changed. git is a real `git.exe` and needs neither.
+export function commandForPlatform(command, platform = process.platform) {
+  if (!isWindows(platform)) {
+    return { command, needsShell: false };
+  }
+  if (command === "npm" || command === "npx") {
+    return { command: `${command}.cmd`, needsShell: true };
+  }
+  return { command, needsShell: false };
+}
+
 function runCommand(command, commandArguments, { cwd, timeout }) {
+  const resolved = commandForPlatform(command);
   return new Promise((resolve) => {
     execFile(
-      command,
+      resolved.command,
       commandArguments,
-      { cwd, timeout, maxBuffer: 8 * 1024 * 1024, env: process.env },
+      { cwd, timeout, maxBuffer: 8 * 1024 * 1024, env: process.env, shell: resolved.needsShell },
       (error, standardOutput, standardError) => {
         resolve({
           ok: !error,

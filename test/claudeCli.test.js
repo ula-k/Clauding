@@ -12,7 +12,7 @@ import {
   buildTerminalEnvironment,
   cleanSessionDisplayName
 } from "../electron/lib/claudeArguments.js";
-import { terminalEnvironment } from "../electron/claudeCli.js";
+import { claudeExecutablePath, spawnPlanFor, terminalEnvironment } from "../electron/claudeCli.js";
 import { forkDisplayName, FORK_NAME_MAX_LENGTH, FORK_NAME_SUFFIX } from "../src/renderer/forkName.js";
 
 const AGENT = { id: "agent-one", name: "Spec Writer", emoji: "📐" };
@@ -172,4 +172,29 @@ test("the real environment is only read, never changed", () => {
   const before = { ...process.env };
   terminalEnvironment();
   assert.deepEqual({ ...process.env }, before);
+});
+
+test("the folder separator of PATH is the one this system uses", () => {
+  // path.delimiter is ";" on Windows and ":" everywhere else, so the same
+  // line is right on both — this only pins down that it is not hard-coded.
+  const environment = buildTerminalEnvironment({
+    baseEnvironment: { PATH: `one${path.delimiter}two` },
+    terminalId: "terminal-one",
+    commandDirectory: "front"
+  });
+  assert.equal(environment.PATH, `front${path.delimiter}one${path.delimiter}two`);
+  assert.equal(environment.PATH.includes(process.platform === "win32" ? ";" : ":"), true);
+});
+
+test("the CLI this machine would start is spawned without a wrapper", () => {
+  // macOS: whatever is found is handed to the pty as it is. The Windows
+  // branch (a .cmd through cmd.exe) is in test/platform.test.js, where a
+  // platform can be injected.
+  const executablePath = claudeExecutablePath();
+  assert.equal(typeof executablePath, "string");
+  assert.notEqual(executablePath.trim(), "");
+  const plan = spawnPlanFor(executablePath, ["--resume", "one"]);
+  assert.equal(plan.file, executablePath);
+  assert.deepEqual(plan.commandArguments, ["--resume", "one"]);
+  assert.equal(plan.throughCommandInterpreter, false);
 });

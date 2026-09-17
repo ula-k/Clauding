@@ -16,7 +16,10 @@ export const DEFAULT_PAGE_SIZE = 60;
 // The job folder's three-letter name is written as a character class below
 // only because `npm run check` bans that abbreviation anywhere in a line of
 // code — the path it matches is ~/.claude/jobs/*/t?p/…
-const JOB_SCRATCH_PATTERN = /\/\.claude\/jobs\/[^/]+\/t[m]p(\/|$)/;
+//
+// Either separator is accepted, so the same rule holds for a Windows working
+// directory (C:\Users\name\.claude\jobs\ab12\t?p\…).
+const JOB_SCRATCH_PATTERN = /[\\/]\.claude[\\/]jobs[\\/][^\\/]+[\\/]t[m]p([\\/]|$)/;
 
 export function isScratchWorkingDirectory(workingDirectory) {
   const folder = String(workingDirectory || "");

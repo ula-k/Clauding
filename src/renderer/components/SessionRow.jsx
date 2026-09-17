@@ -6,8 +6,13 @@ import PopupMenu, { MenuItem, MenuLabel, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentBadge } from "./AgentBadge.jsx";
 import { groupDisplayName } from "../groupConstants.js";
 import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
+import { shortcutLabels } from "../platform.js";
 
 export const SESSION_DRAG_TYPE = "application/x-clauding-session";
+
+// "⌘⌫" on macOS, "Ctrl+Backspace" on Windows — the sentence around it is
+// translated, only the keys change (src/renderer/platform.js).
+const HIDE_SHORTCUT = { shortcut: shortcutLabels().hideSession };
 
 // running -> working, waiting for you -> waiting, everything else -> idle.
 // The row shows this as a colour only; the words live in theme.css tokens.
@@ -139,7 +144,7 @@ export default function SessionRow({
               type="button"
               className="row-delete"
               disabled={runsElsewhere}
-              title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint")}
+              title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint", HIDE_SHORTCUT)}
               data-row-delete={session.sessionId}
               onClick={() => onDeleteSession(session.sessionId)}
             >
@@ -264,7 +269,7 @@ export default function SessionRow({
           </MenuItem>
           <MenuItem
             marker="hide-session"
-            title={translate("row.hideHint")}
+            title={translate("row.hideHint", HIDE_SHORTCUT)}
             onClick={() => {
               setMenuAnchor(null);
               onHide(session.sessionId);
@@ -277,7 +282,7 @@ export default function SessionRow({
               marker="delete-session"
               tone="danger"
               disabled={runsElsewhere}
-              title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint")}
+              title={runsElsewhere ? translate("row.deleteRunningElsewhere") : translate("row.deleteHint", HIDE_SHORTCUT)}
               onClick={() => {
                 setMenuAnchor(null);
                 onDeleteSession(session.sessionId);

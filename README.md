@@ -11,6 +11,11 @@ output look exactly like the CLI draws them. Clicking a session **is** a
 terminal — `claude --resume` starts in that session's folder the moment the
 row is clicked.
 
+It also runs on **Windows**, in beta: the logic is platform-aware and tested
+in CI on `windows-latest`, but nobody has opened the window there yet — see
+**[Windows](#windows-beta--ci-tested-logic-not-yet-hand-tested)**. Everything
+else in this file describes the Mac.
+
 ![The three columns: the session list, a real terminal running claude, and a skill open in the side panel](docs/screenshots/three-columns.png)
 
 ## What it does
@@ -61,14 +66,17 @@ them are demo state and nothing real was touched.
 
 ## Requirements
 
-* **macOS 13** or newer.
+* **macOS 13** or newer. (Windows 10/11 works too, in beta — see
+  **[Windows](#windows-beta--ci-tested-logic-not-yet-hand-tested)** below.)
 * **Node.js 22** or newer (`node --version`).
 * **Claude Code CLI**, installed and already logged in — the app never asks
   for credentials, it only starts `claude` the way your terminal does. It
   uses `~/.local/bin/claude` when that file exists, otherwise `claude` from
-  your PATH. Set **`CLAUDING_CLAUDE_BIN=/path/to/claude`** to point it at a
+  your PATH (on Windows: `%USERPROFILE%\.local\bin\claude.exe`, then
+  `claude.cmd` there, then whatever `where claude.exe` / `where claude.cmd`
+  answers). Set **`CLAUDING_CLAUDE_BIN=/path/to/claude`** to point it at a
   different binary — a second install, a version manager, a wrapper script —
-  without touching your PATH; it wins over both.
+  without touching your PATH; it wins over all of them.
 
 ## Install
 
@@ -127,6 +135,114 @@ and changes nothing but the menu item's text, which becomes **"Update
 available (0.3.0)…"**. The decision behind all of this is one pure function,
 `updatePlan()` in `electron/updater.js`, covered by `test/updater.test.js`;
 the tests never fetch, pull or install.
+
+## Windows (beta — CI-tested logic, not yet hand-tested)
+
+**Read this first.** Clauding was written on a Mac and is used on a Mac. The
+Windows support was written *without a Windows machine to try it on*: every
+place that had a macOS assumption in it is now platform-aware, every Windows
+branch is covered by tests that run those code paths on macOS with
+`platform: "win32"` injected (`test/platform.test.js`), and the whole suite
+plus a real `node-pty` pty runs on `windows-latest` in CI
+(`.github/workflows/test.yml`). That is a long way from *tried*: nobody has
+yet opened this window on Windows. Treat it as a beta and expect to report
+things.
+
+### Requirements
+
+* **Windows 10 or 11**, 64-bit.
+* **Node.js 22** or newer (`node --version`).
+* **Claude Code for Windows**, installed and already logged in — the app
+  never asks for credentials, it only starts `claude` the way your terminal
+  does.
+* **Git**, for the clone and for **Check for new version…**.
+
+### Install
+
+```
+git clone https://github.com/ula-k/clauding.git
+cd clauding
+npm install          # also prepares node-pty (ConPTY) for Electron
+npm run install-app  # builds the renderer and writes the launcher + Start Menu entry
+```
+
+`npm run install-app` writes three small things and copies nothing:
+
+| what | where |
+| --- | --- |
+| `Clauding.vbs` | `%LOCALAPPDATA%\Programs\Clauding\` — the launcher; run by `wscript.exe`, so no console window flashes up |
+| `Clauding.cmd` | the same from a command prompt, with the app's log left visible |
+| `Clauding.ico` | the icon, generated from `build/icon/Clauding.iconset/*.png` by `scripts/lib/icoEncoder.js` (no image library, Node only) |
+| `Clauding.lnk` | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\` — made through PowerShell's `WScript.Shell`, pointing straight at this checkout's `node_modules\electron\dist\electron.exe` |
+
+There is no application bundle to rename here, and nothing to sign: on
+Windows the window and the task-bar entry are named by `app.setName()` in
+`electron/main.js`, so the launcher can simply start Electron with the
+checkout as its argument. Everything still runs the project folder and its
+last `npm run build`, exactly like the macOS bundle — re-run
+`npm run install-app` after `git pull` or after moving the checkout.
+`npm run uninstall-app` removes the folder and the shortcut, and only ever
+one this script wrote (it leaves a `clauding-install.json` behind to know).
+
+### What is different from macOS
+
+| | macOS | Windows |
+| --- | --- | --- |
+| the `clauding` channel | a Unix socket, `<userData>/clauding.sock`, chmod 0600 | a named pipe, `\\.\pipe\clauding-<hash of the user data folder>` — not a file, so nothing to unlink or chmod |
+| the `clauding` command | `bin/clauding` (a `#!/usr/bin/env node` script) | `bin/clauding.cmd`, which runs `node bin\clauding`; `bin\` is still what goes in front of the terminal's PATH |
+| the app's data folder | `~/Library/Application Support/Clauding` | `%APPDATA%\Clauding` |
+| the pty | a posix pty | **ConPTY** (`useConpty: true`); a `claude.cmd` is a batch file and is started through `cmd.exe /c`, a `claude.exe` directly |
+| the title bar | inset traffic lights, the app draws its own header | the standard Windows frame, the menu bar inside the window |
+| the menu bar | Clauding / Edit / Skills / View / Window, with Services, Hide, Hide Others, Show All | the same five menus; Windows has no Services or Hide roles, so the Clauding menu is About, the version check, Settings… and Quit |
+| shortcuts | ⌘⌫ hides a session, ⌘, Settings, ⌘K clears, ⌘+click opens in the system browser | Ctrl+Backspace (or Ctrl+Delete), Ctrl+`,`, Ctrl+K, Ctrl+click. **Ctrl+C stays the interrupt** in the terminal, as in every Windows console — copy with a selection and the Edit menu |
+| the emoji field | a 🙂 button opens the macOS character palette (⌃⌘Space) | Electron has no call for the Windows picker, so that button is not drawn; the built-in emoji grid next to it is unchanged, and Win+. types into the field |
+| PATH fix-up | `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` | `%USERPROFILE%\.local\bin` only |
+| "Scan for skills…" | `~/Library/Application Support/Claude` among the roots | `%APPDATA%\Claude` instead; `%USERPROFILE%\.claude\plugins` and `%USERPROFILE%\.hermes\skills` the same as ever |
+| the dev hooks | the screenshot hook and every `CLAUDING_SMOKE_*` run | macOS-only by design: they photograph the window and read the macOS About panel. On Windows they print one line saying so and change nothing |
+| updating | `git`, `npm`, `npm run build`, `npm run install-app` | the same four, with `npm.cmd` (a batch file needs a shell) |
+
+### What is assumed, and has never been checked
+
+The app reads three registries the Claude Code CLI keeps, and the port
+assumes they are **identical on Windows apart from the folder separator**:
+`%USERPROFILE%\.claude\sessions\<pid>.json`,
+`%USERPROFILE%\.claude\jobs\<shortId>\state.json`,
+`%USERPROFILE%\.claude\projects\…` and `%USERPROFILE%\.claude.json` with
+its `projects` map — the same field names, the same `busy` / `idle` and
+`working` / `blocked` values. If Windows Claude Code puts them anywhere else,
+or spells the status differently, the session list will look empty or
+colourless and **that is where to look first**. The assumption is written
+down in `electron/lib/platformPaths.js`, in one place, so changing it is one
+edit.
+
+### Known unknowns
+
+Things no test on a Mac can settle, in the order they are likely to bite:
+
+1. **Whether the pty behaves.** node-pty attaches to ConPTY in CI, but a real
+   `claude` session redrawing a full-screen TUI through ConPTY is another
+   matter: the resize handshake and the alternate screen buffer are the
+   classic sore spots.
+2. **Session linking.** It depends on node-pty's child pid being the pid the
+   CLI writes its registry entry under. Through `cmd.exe /c` it is the
+   interpreter's pid, not `claude`'s — the fallback (a live registry entry in
+   the same folder, started after the spawn) should cover it, but that is a
+   guess. Pointing `CLAUDING_CLAUDE_BIN` at `claude.exe` avoids the wrapper
+   entirely and is the first thing to try.
+3. **Hanging a terminal up.** There are no signals: node-pty ends the console
+   process however it can, so "closes itself after 20 idle minutes", the
+   restart after "Extra claude flags…" and the hang-up on quit may all be
+   blunter than on macOS.
+4. **`--append-system-prompt-file` and long command lines.** Windows caps a
+   command line at about 32 000 characters, so the inline fallback for an
+   agent's whole definition may simply not fit.
+5. **The Start Menu shortcut.** PowerShell's execution policy, or a machine
+   where PowerShell is locked down, will make `install-app` say so and fall
+   back to the `.vbs`.
+6. **Fonts and the emoji field.** The terminal asks for `"SF Mono", Menlo,
+   Monaco, monospace`; on Windows that lands on whatever the system calls
+   monospace, and the agent emoji may render as a flat glyph.
+7. **High-DPI scaling** at anything other than 100%.
 
 ## Run from source
 
@@ -193,13 +309,16 @@ that way.
 ```
 electron/main.js           window, IPC handlers, registry + project watchers, dev hooks
 electron/terminals.js      the terminal registry (one pty per terminal, session linking, idle auto-close)
-electron/claudeCli.js      where `claude` is, PATH fix-up, the environment the pty gets
+electron/claudeCli.js      where `claude` is, PATH fix-up, the environment the pty gets, and how a .cmd is spawned
+electron/lib/platformPaths.js  every path that differs between macOS and Windows, in one place
+electron/lib/applicationMenu.js  the menu bar as a value, and what Windows leaves out
 electron/panelTabs.js      the right panel's tabs and per-session visibility + panel-tabs.json
-electron/commandSocket.js  the Unix socket the `clauding` command talks to
+electron/commandSocket.js  the Unix socket (named pipe on Windows) the `clauding` command talks to
 electron/preamble.js       the system-prompt preamble (preamble.md)
 electron/preamble-default.md   the default preamble text itself
 electron/fileWatch.js      fs.watch helper for auto-reloading local pages
 bin/clauding               the `clauding` command put on every terminal's PATH
+bin/clauding.cmd           the same command on Windows (runs `node bin\clauding`)
 electron/smokeFolder.js    where the dev smoke runs work (and what the list hides)
 electron/smokeTerminal.js  CLAUDING_SMOKE_TERMINAL automation (dev only)
 electron/smokeFork.js      CLAUDING_SMOKE_FORK automation for the Fork button (dev only)
@@ -233,13 +352,18 @@ electron/smokeCollapse.js  CLAUDING_SMOKE_COLLAPSE automation for folding a grou
 electron/liveStatus.js     Running / Waiting derived from ~/.claude registries
 electron/projects.js       folder labels ("…/projects/website"), colour index, ~ paths
 scripts/prepareNodePty.js  postinstall: makes node-pty usable inside Electron
+scripts/checkNodePty.js    CI: a real pty, no Electron — the one thing a Mac cannot answer for Windows
 scripts/start.js           npm start (Vite dev server, then Electron)
 scripts/check.js           npm run check
 scripts/installApp.js      npm run install-app: the /Applications bundle
 scripts/lib/appBundle.js   what goes inside Clauding.app (renamed Electron.app)
+scripts/lib/windowsLauncher.js  the Windows install, as a plan: launcher, icon, Start Menu shortcut
+scripts/lib/icoEncoder.js  PNG frames -> Clauding.ico, with no dependency
 scripts/uninstallApp.js    npm run uninstall-app
 src/renderer/              React 18 + Vite (JSX), styles/theme.css holds every colour
+src/renderer/platform.js   the modifier key, the shortcut labels and whether there is an emoji panel
 src/renderer/terminalInstances.js  the xterm.js instances, kept alive outside React
+src/renderer/terminalKeys.js  what Cmd / Ctrl plus a letter means, and which printed paths are links
 src/renderer/components/TerminalPane.jsx   the visible terminal (fit + focus)
 src/renderer/components/MiddleColumn.jsx   header + terminal, or the short note for a session running elsewhere
 src/renderer/toolbarFit.js         which header controls stay on the one line and which fall into the "…"
@@ -268,6 +392,7 @@ src/renderer/sessionGrouping.js    sessions + groups.json -> what the column dra
 src/renderer/groupConstants.js     the "default" group id and its translated label
 src/renderer/i18n.js               translate(), the language list and the system-language mapping
 src/renderer/locales/      en.json, pl.json, es.json, zh-CN.json — every UI string goes through translate()
+.github/workflows/test.yml the CI run: macOS and Windows, check + tests + build (+ a real pty on Windows)
 ```
 
 The SDK (`@anthropic-ai/claude-agent-sdk`) is only used for reading:
@@ -1569,8 +1694,14 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: dry unit tests of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the terminal header's one-line fit, i18n key
-sets, the installer script). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-18`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
+`npm test` runs `node --test test/*.test.js`: **269 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the terminal header's one-line fit, i18n key
+sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-19`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
+
+`test/platform.test.js` is the odd one out: it runs on macOS and exercises the **Windows** branches by handing in `platform: "win32"` and made-up Windows paths — the CLI lookup order, the `cmd.exe /c` wrapper, the named pipe, the Ctrl shortcuts, the menu without the macOS-only roles, the whole installer plan, the .ico encoder. It proves the decisions, not that Windows obeys them.
+
+### Continuous integration
+
+`.github/workflows/test.yml` runs on every push and pull request, on **`macos-latest` and `windows-latest`** with Node 22: `npm ci` (which runs the `postinstall`), `npm run check`, `npm test`, `npm run build` — and on Windows one step more, `node scripts/checkNodePty.js`, which loads node-pty, opens a real ConPTY pty, runs `cmd.exe /c echo ok` in it and reads the output back. No Electron window is opened anywhere in CI.
 
 ## License
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { renderMarkdown, withoutFrontmatter } from "../markdown.js";
 import { CloseIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon } from "./Icons.jsx";
+import { fileUrlFor, splitAddress } from "../paths.js";
 
 // The right panel: Hermes-style tabs next to the terminal. Each tab is a
 // local HTML file or an http(s) page (rendered in a locked-down <webview>)
@@ -11,19 +12,9 @@ import { CloseIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon } fr
 
 const COPIED_FEEDBACK_MILLISECONDS = 1200;
 
+// A Windows path needs file:///C:/… rather than file://C:\… — see paths.js.
 function fileUrl(filePath) {
-  return `file://${encodeURI(filePath)}`;
-}
-
-// "/Users/<you>/Desktop/page.html" -> folder "/Users/<you>/Desktop/" + name "page.html";
-// "https://example.com/docs/" -> "https://example.com/" + "docs/".
-function splitAddress(target) {
-  const withoutTrailingSlash = target.length > 1 ? target.replace(/\/$/, "") : target;
-  const lastSlash = withoutTrailingSlash.lastIndexOf("/");
-  if (lastSlash <= 0 || (target.startsWith("http") && lastSlash < target.indexOf("//") + 2)) {
-    return { folder: "", name: target };
-  }
-  return { folder: withoutTrailingSlash.slice(0, lastSlash + 1), name: withoutTrailingSlash.slice(lastSlash + 1) };
+  return fileUrlFor(filePath);
 }
 
 function AddressText({ target }) {

@@ -18,16 +18,22 @@ import {
   readJobRegistry,
   readProcessRegistry
 } from "./lib/liveStatusCore.js";
+import { claudeRegistryPaths } from "./lib/platformPaths.js";
 
 // The mapping itself, the two registry readers and the merge live in
 // lib/liveStatusCore.js, so they can be exercised against a temporary folder
 // and an injected pid check; this file only names the real folders.
 export { STATUS_GROUPS };
 
-const claudeHome = path.join(os.homedir(), ".claude");
-const sessionsRegistryDirectory = path.join(claudeHome, "sessions");
-const jobsRegistryDirectory = path.join(claudeHome, "jobs");
+// %USERPROFILE%\.claude on Windows, ~/.claude everywhere else, with the same
+// two registries inside (see lib/platformPaths.js for that assumption).
+const registryPaths = claudeRegistryPaths({ homeDirectory: os.homedir() });
+const sessionsRegistryDirectory = registryPaths.sessionsRegistryDirectory;
+const jobsRegistryDirectory = registryPaths.jobsRegistryDirectory;
 
+// `process.kill(pid, 0)` asks whether the process exists without touching
+// it, and Windows answers the same way (ESRCH when it is gone, EPERM when it
+// belongs to somebody else).
 export function isProcessAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) {
     return false;

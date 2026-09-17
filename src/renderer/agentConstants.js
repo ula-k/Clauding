@@ -2,6 +2,8 @@
 // dots use (theme.css), repeated here so the renderer does not import from
 // the Electron side — electron/agents.js keeps the identical list and is the
 // one that decides what may be stored.
+import { lastSegmentOf, segmentsOf, separatorOf } from "./paths.js";
+
 export const AGENT_COLOR_TOKENS = [
   "--project-color-0",
   "--project-color-1",
@@ -17,18 +19,19 @@ export const DEFAULT_AGENT_EMOJI = "✦";
 export const DEFAULT_AGENT_COLOR = AGENT_COLOR_TOKENS[0];
 
 // "…/agenci/spec-writer" — the last two parts of the definition folder, the
-// dim second line of an agent row.
+// dim second line of an agent row. A Windows folder is split the same way
+// and keeps its own separator.
 export function definitionFolderLabel(definitionFolder) {
-  const parts = String(definitionFolder || "").split("/").filter(Boolean);
+  const parts = segmentsOf(String(definitionFolder || ""));
   if (parts.length === 0) {
     return "";
   }
-  return `…/${parts.slice(-2).join("/")}`;
+  const separator = separatorOf(String(definitionFolder || ""));
+  return `…${separator}${parts.slice(-2).join(separator)}`;
 }
 
 export function fileNameOf(filePath) {
-  const parts = String(filePath || "").split("/").filter(Boolean);
-  return parts.length > 0 ? parts[parts.length - 1] : "";
+  return lastSegmentOf(filePath);
 }
 
 // A session started as an agent is named "<emoji> <agent name>" by the CLI,

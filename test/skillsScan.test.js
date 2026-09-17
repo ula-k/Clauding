@@ -13,6 +13,7 @@ import {
   hashFolderContents,
   readSourceManifest,
   scanForSkillCandidates,
+  scanRootFolders,
   scanRootsFor
 } from "../electron/skillsScan.js";
 
@@ -297,4 +298,35 @@ test("the hash ignores the note left by a copy and does not care what was writte
   fs.writeFileSync(path.join(secondFolder, "references/checklist.md"), "one, two, three\n");
   assert.notEqual(hashFolderContents(firstFolder), hashFolderContents(secondFolder), "a changed file changes the hash");
   assert.equal(hashFolderContents(""), hashFolderContents(path.join(firstFolder, "no-such-folder")));
+});
+
+test("on Windows the scan looks where a Windows machine keeps skills", () => {
+  const onWindows = scanRootFolders({
+    homeDirectory: "C:\\Users\\ula",
+    platform: "win32",
+    environment: { APPDATA: "C:\\Users\\ula\\AppData\\Roaming" }
+  });
+  const folders = onWindows.map((root) => root.folder);
+  assert.ok(folders.includes("C:\\Users\\ula\\.claude\\plugins"), "plugins live in the same place");
+  assert.ok(folders.includes("C:\\Users\\ula\\AppData\\Roaming\\Claude"), "Claude Desktop keeps its copies here");
+  assert.ok(folders.includes("C:\\Users\\ula\\.hermes\\skills"));
+  assert.equal(
+    folders.some((folder) => folder.includes("Library")),
+    false,
+    "the macOS folder is not even offered"
+  );
+  assert.equal(
+    onWindows.find((root) => root.label === "hermes").kind,
+    "hermes",
+    "a Hermes folder is still allowed its bare markdown file"
+  );
+});
+
+test("the real scan still uses the running system's roots", () => {
+  const home = homeWith({ "Documents/a-skill/SKILL.md": skillFile("a-skill", "Does a thing.") });
+  const roots = scanRootsFor({ homeDirectory: home, skillsRoot: path.join(home, ".claude", "skills") });
+  assert.ok(
+    roots.some((root) => root.folder === path.join(home, "Documents")),
+    "no platform given means this machine's own"
+  );
 });

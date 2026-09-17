@@ -7,6 +7,12 @@
 // failed" until the bit is set. This script sets it and then loads the
 // module inside Electron (run as plain Node) to prove the binary matches.
 // If that load fails, it falls back to `electron-rebuild` for node-pty.
+//
+// On Windows there is no spawn-helper and no execute bit: node-pty drives
+// ConPTY through conpty.node / conpty_console_list.node in the same
+// prebuilds folder. So the chmod step is skipped there and only the load
+// check runs — which is the part that actually matters, and the part CI
+// repeats with a real `cmd.exe /c echo ok` through a pty.
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -22,7 +28,12 @@ const nodePtyRoot = path.join(projectRoot, "node_modules", "node-pty");
 const prebuildFolder = path.join(nodePtyRoot, "prebuilds", `${process.platform}-${process.arch}`);
 const releaseFolder = path.join(nodePtyRoot, "build", "Release");
 
+const onWindows = process.platform === "win32";
+
 function makeExecutable(filePath) {
+  if (onWindows) {
+    return;
+  }
   if (fs.existsSync(filePath)) {
     fs.chmodSync(filePath, 0o755);
     console.log(`node-pty: execute bit set on ${path.relative(projectRoot, filePath)}`);
@@ -56,14 +67,22 @@ if (!fs.existsSync(nodePtyRoot)) {
   process.exit(0);
 }
 
-makeExecutable(path.join(prebuildFolder, "spawn-helper"));
-makeExecutable(path.join(releaseFolder, "spawn-helper"));
+if (onWindows) {
+  console.log("node-pty: Windows uses ConPTY, there is no spawn-helper to make executable.");
+} else {
+  makeExecutable(path.join(prebuildFolder, "spawn-helper"));
+  makeExecutable(path.join(releaseFolder, "spawn-helper"));
+}
 
 if (!loadsInsideElectron()) {
   console.log("node-pty: rebuilding against Electron with electron-rebuild…");
-  execFileSync(path.join(projectRoot, "node_modules", ".bin", "electron-rebuild"), ["--force", "--only", "node-pty"], {
+  // The npm bin shim is `electron-rebuild.cmd` on Windows, a batch file that
+  // execFile cannot start on its own — hence the shell there.
+  const rebuildCommand = path.join(projectRoot, "node_modules", ".bin", onWindows ? "electron-rebuild.cmd" : "electron-rebuild");
+  execFileSync(rebuildCommand, ["--force", "--only", "node-pty"], {
     cwd: projectRoot,
-    stdio: "inherit"
+    stdio: "inherit",
+    shell: onWindows
   });
   makeExecutable(path.join(releaseFolder, "spawn-helper"));
   if (!loadsInsideElectron()) {

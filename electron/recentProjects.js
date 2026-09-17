@@ -2,13 +2,14 @@
 // in ~/.claude.json (the CLI keeps one entry per folder it was started in).
 import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
 import { projectFolderLabel, projectColorIndex, shortenHomePath } from "./projects.js";
+import { claudeRegistryPaths } from "./lib/platformPaths.js";
 
 export function listRecentProjects() {
   let configuration = null;
   try {
-    configuration = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude.json"), "utf8"));
+    const configurationFile = claudeRegistryPaths({ homeDirectory: os.homedir() }).configurationFile;
+    configuration = JSON.parse(fs.readFileSync(configurationFile, "utf8"));
   } catch (error) {
     return [];
   }
