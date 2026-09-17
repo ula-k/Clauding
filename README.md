@@ -1576,9 +1576,10 @@ folder that is already there is never replaced without a confirmation.
 
 ### Attaching a session to an agent
 
-A row's `…` menu and the terminal header's `…` both have **Assign to agent**
-(in the header it is a submenu, **Assign to agent ▸**, so the header's menu
-stays short): **No agent** at the top, then the agents themselves — **at most ten**, the
+A row's `…` menu, the bulk menu and the terminal header's `…` all have
+**Assign to agent ▸** — a side submenu everywhere, like **Tags ▸** and
+**Color ▸**, so ten agents never push the rest of a menu off the bottom of
+the screen. In it: **No agent** at the top, then the agents themselves — **at most ten**, the
 ones most likely to be wanted. The order is how much each agent is used (the
 sessions linked to it in `sessionAgents`, plus the terminals running as it
 right now), ties going to whichever was used last (`lastUsedAt` in

@@ -325,44 +325,48 @@ export default function SessionRow({
               {groupDisplayName(group, translate)}
             </MenuItem>
           ))}
+          {/* A side submenu, like Tags ▸ and Color ▸: ten agents listed in
+              the main menu pushed everything else off the bottom of it. */}
           {onAssignAgent && (
             <>
               <MenuSeparator />
-              <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
-              <MenuItem
-                marker="assign-none"
-                selected={!currentAgentId}
-                onClick={() => {
-                  setMenuAnchor(null);
-                  onAssignAgent(session.sessionId, null);
-                }}
-              >
-                {translate("row.noAgent")}
-              </MenuItem>
-              {agents.slice(0, MENU_AGENT_LIMIT).map((agent) => (
+              <MenuSubmenu label={translate("row.assignToAgent")} marker="assign-agent">
+                <MenuLabel>{translate("row.assignToAgent")}</MenuLabel>
                 <MenuItem
-                  key={agent.id}
-                  marker={`assign-${agent.id}`}
-                  selected={agent.id === currentAgentId}
+                  marker="assign-none"
+                  selected={!currentAgentId}
                   onClick={() => {
                     setMenuAnchor(null);
-                    onAssignAgent(session.sessionId, agent.id);
+                    onAssignAgent(session.sessionId, null);
                   }}
                 >
-                  {`${agent.emoji} ${agent.name}`}
+                  {translate("row.noAgent")}
                 </MenuItem>
-              ))}
-              {agents.length > MENU_AGENT_LIMIT && onOpenAgentPicker && (
-                <MenuItem
-                  marker="assign-more"
-                  onClick={() => {
-                    setMenuAnchor(null);
-                    onOpenAgentPicker(session.sessionId);
-                  }}
-                >
-                  {translate("agents.more")}
-                </MenuItem>
-              )}
+                {agents.slice(0, MENU_AGENT_LIMIT).map((agent) => (
+                  <MenuItem
+                    key={agent.id}
+                    marker={`assign-${agent.id}`}
+                    selected={agent.id === currentAgentId}
+                    onClick={() => {
+                      setMenuAnchor(null);
+                      onAssignAgent(session.sessionId, agent.id);
+                    }}
+                  >
+                    {`${agent.emoji} ${agent.name}`}
+                  </MenuItem>
+                ))}
+                {agents.length > MENU_AGENT_LIMIT && onOpenAgentPicker && (
+                  <MenuItem
+                    marker="assign-more"
+                    onClick={() => {
+                      setMenuAnchor(null);
+                      onOpenAgentPicker(session.sessionId);
+                    }}
+                  >
+                    {translate("agents.more")}
+                  </MenuItem>
+                )}
+              </MenuSubmenu>
             </>
           )}
           {onCreateAgent && (
