@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
-import { checkExtraArguments, mergeExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { EXTRA_FLAGS_PLACEHOLDER, checkExtraArguments, mergeExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { handlePlaceholderKey } from "../placeholderAccept.js";
 import { CANCEL, SAVE_AND_RESTART, SAVE_ONLY } from "../sessionFlagsPlan.js";
 
 // "Extra claude flags…" for a conversation that already exists. The flags of
@@ -77,7 +78,7 @@ export default function SessionFlagsDialog({ request, onChoose }) {
           type="text"
           className="settings-input"
           value={draft}
-          placeholder="--channels plugin:telegram@claude-plugins-official"
+          placeholder={EXTRA_FLAGS_PLACEHOLDER}
           spellCheck={false}
           ref={fieldRef}
           onChange={(event) => {
@@ -85,6 +86,13 @@ export default function SessionFlagsDialog({ request, onChoose }) {
             setProblem("");
           }}
           onKeyDown={(event) => {
+            const used = handlePlaceholderKey(event, EXTRA_FLAGS_PLACEHOLDER, (value) => {
+              setDraft(value);
+              setProblem("");
+            });
+            if (used) {
+              return;
+            }
             if (event.key === "Enter") {
               answer(request.hasOpenTerminal ? SAVE_AND_RESTART : SAVE_ONLY);
             }
@@ -99,6 +107,7 @@ export default function SessionFlagsDialog({ request, onChoose }) {
             {problem}
           </div>
         )}
+        <div className="sheet-hint">{translate("flags.tabHint")}</div>
         <p className="sheet-hint assign-dialog-text">
           {request.hasOpenTerminal ? translate("flags.sessionRestartText") : translate("flags.sessionResumeText")}
         </p>

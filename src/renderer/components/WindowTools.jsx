@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import PopupMenu from "./PopupMenu.jsx";
 import { GearIcon } from "./Icons.jsx";
-import { checkExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { EXTRA_FLAGS_PLACEHOLDER, checkExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { handlePlaceholderKey } from "../placeholderAccept.js";
 
 // The one window-wide button in the top-right of the middle column, next to
 // "Show panel": the settings gear. It does not belong to a session — it is
@@ -40,11 +41,14 @@ function ExtraFlagsField({ settings, onSave }) {
         type="text"
         className="settings-input"
         value={draft}
-        placeholder="--channels plugin:telegram"
+        placeholder={EXTRA_FLAGS_PLACEHOLDER}
         spellCheck={false}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
+          if (handlePlaceholderKey(event, EXTRA_FLAGS_PLACEHOLDER, setDraft)) {
+            return;
+          }
           if (event.key === "Enter") {
             commit();
           }
@@ -52,6 +56,7 @@ function ExtraFlagsField({ settings, onSave }) {
         data-settings-extra-flags
       />
       <div className="settings-hint">{translate("flags.globalHint")}</div>
+      <div className="settings-hint">{translate("flags.tabHint")}</div>
       {problem && (
         <div className="settings-hint is-problem" data-settings-extra-flags-problem>
           {problem}

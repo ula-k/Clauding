@@ -23,6 +23,7 @@ import {
 } from "./claudeCli.js";
 import { claudeRegistryPaths, isWindows } from "./lib/platformPaths.js";
 import { buildClaudeArguments, buildTerminalEnvironment, mergeExtraArguments } from "./lib/claudeArguments.js";
+import { exitNoticeText, exitPlan } from "./lib/exitPlan.js";
 import { buildAgentSystemPrompt } from "./agents.js";
 import { isProcessAlive } from "./liveStatus.js";
 import {
@@ -278,6 +279,11 @@ export function createTerminalRegistry({
         }
       }
       const status = typeof entry.status === "string" ? entry.status : null;
+      if (status === "idle") {
+        // The CLI is at its prompt: from here on an exit code 0 is a
+        // goodbye somebody asked for, not a start that failed.
+        record.sawPrompt = true;
+      }
       if (status !== record.registryStatus) {
         record.registryStatus = status;
         record.statusChangedAt = Date.now();
@@ -313,6 +319,11 @@ export function createTerminalRegistry({
     }
   }
 
+  // A terminal whose `claude` ended. Only a clean goodbye takes the terminal
+  // with it (see lib/exitPlan.js): a hang-up the app asked for, or `/exit`
+  // after the CLI had been sitting at its prompt. Everything else — above
+  // all a flag the CLI refused, which it answers with one line and exit 1 —
+  // keeps the pane, so what it said stays readable and Enter starts it again.
   function handleExit(record, exitCode) {
     if (record.exited) {
       return;
@@ -327,11 +338,122 @@ export function createTerminalRegistry({
       clearTimeout(record.flushTimer);
     }
     flushOutput(record);
+    const plan = record.closingOnPurpose
+      ? { keep: false, reason: "the app asked it to close" }
+      : exitPlan({ code: exitCode, uptimeMs: Date.now() - record.startedAt, hadPrompt: record.sawPrompt });
+    logLine(`${record.terminalId}: exited with ${exitCode}; the pane ${plan.keep ? "stays" : "goes"} because ${plan.reason}`);
+    if (plan.keep) {
+      // The prompt file stays too: "start again" runs the same command line,
+      // and that line names the file.
+      queueOutput(record, exitNoticeText(exitCode));
+      flushOutput(record);
+      sendToWindow(CHANNELS.terminalExit, {
+        terminalId: record.terminalId,
+        exitCode,
+        sessionId: record.sessionId,
+        paneKept: true
+      });
+      announceChange();
+      updatePoller();
+      return;
+    }
     removePromptFile(record);
-    logLine(`${record.terminalId}: exited with ${exitCode}`);
     terminals.delete(record.terminalId);
-    sendToWindow(CHANNELS.terminalExit, { terminalId: record.terminalId, exitCode, sessionId: record.sessionId });
+    sendToWindow(CHANNELS.terminalExit, {
+      terminalId: record.terminalId,
+      exitCode,
+      sessionId: record.sessionId,
+      paneKept: false
+    });
     announceChange();
+    updatePoller();
+  }
+
+  // Forgets a terminal whose pane was kept after its `claude` ended: the
+  // record goes, the prompt file with it, and the renderer drops the pane.
+  function forget(terminalId) {
+    const record = terminals.get(terminalId);
+    if (!record || !record.exited) {
+      return { forgotten: false };
+    }
+    removePromptFile(record);
+    terminals.delete(terminalId);
+    sendToWindow(CHANNELS.terminalExit, {
+      terminalId,
+      exitCode: record.exitCode,
+      sessionId: record.sessionId,
+      paneKept: false
+    });
+    announceChange();
+    return { forgotten: true };
+  }
+
+  // Starts the pty of a record that already knows its whole command line.
+  // Called once by `open()` and again by `restart()`, which is why nothing
+  // about *what* to run is decided here — only the spawn itself, the two
+  // listeners and the fields that describe this run rather than the terminal.
+  //
+  // On Windows a `claude.cmd` has to go through `cmd.exe /c`, and the pty
+  // needs ConPTY; spawnPlanFor / ptyOptionsFor answer both (claudeCli.js).
+  function startChildProcess(record) {
+    const spawnPlan = spawnPlanFor(claudeExecutablePath(), record.commandArguments);
+    const child = dryRunSpawn
+      ? dryRunChild(record.terminalId, record.commandArguments, record.workingDirectory, record.promptFilePath, logLine)
+      : nodePty.spawn(spawnPlan.file, spawnPlan.commandArguments, {
+          name: "xterm-256color",
+          cols: record.columns,
+          rows: record.rows,
+          cwd: record.workingDirectory,
+          env: record.environment,
+          ...ptyOptionsFor()
+        });
+    record.pid = child.pid;
+    record.process = child;
+    record.startedAt = Date.now();
+    record.registryStatus = null;
+    record.statusChangedAt = Date.now();
+    record.sawPrompt = false;
+    record.closingOnPurpose = false;
+    record.exited = false;
+    record.exitCode = null;
+    child.onData((data) => queueOutput(record, data));
+    child.onExit(({ exitCode }) => handleExit(record, exitCode));
+    // The appended prompt itself is thousands of characters; the log shows
+    // that it was passed, not what it said.
+    const shownArguments = record.commandArguments.map((argument, position) =>
+      record.commandArguments[position - 1] === "--append-system-prompt" ? "…" : argument
+    );
+    logLine(
+      `${record.terminalId}: spawned claude ${shownArguments.join(" ")} in ${record.workingDirectory} (pid ${child.pid})`
+    );
+    return child;
+  }
+
+  // "Press Enter to start again" on a pane that was kept: the same command
+  // line, the same terminal id, so the pane and the row stay where they are.
+  function restart(terminalId) {
+    const record = terminals.get(terminalId);
+    if (!record || !record.exited) {
+      return { restarted: false };
+    }
+    // If something was actually said before the CLI ended, starting again
+    // continues *that* conversation instead of opening an empty one next to
+    // it. A terminal that never got a message has nothing on disk to resume
+    // — `--resume` on an empty transcript is an error — so it starts fresh.
+    const hadAConversation = record.typedByHand || record.kickoffState === "sent";
+    if (record.sessionId && hadAConversation && !record.commandArguments.includes("--resume")) {
+      record.commandArguments = ["--resume", record.sessionId].concat(record.commandArguments);
+      record.resumeSessionId = record.sessionId;
+    }
+    record.replayBuffer = "";
+    record.pendingOutput = [];
+    // Full terminal reset, so the kept error does not sit above the CLI's
+    // fresh banner.
+    queueOutput(record, "c");
+    startChildProcess(record);
+    announceChange();
+    updatePoller();
+    return { restarted: true, terminalId, pid: record.pid };
   }
 
   // The combined system prompt of a terminal running as an agent lives in
@@ -475,7 +597,7 @@ export function createTerminalRegistry({
     // claude.ai Artifact instead). See lib/claudeArguments.js.
     // Global -> agent -> session, in that order. A resume, a restart and a
     // fork all take the session's own flags out of the store, so a
-    // conversation started with `--channels plugin:telegram` keeps its
+    // conversation started with `--channels plugin:telegram@…` keeps its
     // channel for the rest of its life.
     const inheritedSessionExtra = resumeSessionId && readSessionExtraArguments ? readSessionExtraArguments(resumeSessionId) : "";
     const typedSessionExtra = typeof extraArguments === "string" ? extraArguments.trim() : "";
@@ -502,24 +624,16 @@ export function createTerminalRegistry({
       terminalId,
       commandDirectory
     });
-    // On Windows a `claude.cmd` has to go through `cmd.exe /c`, and the pty
-    // needs ConPTY; spawnPlanFor / ptyOptionsFor answer both (claudeCli.js).
-    const spawnPlan = spawnPlanFor(claudeExecutablePath(), commandArguments);
-    const child = dryRunSpawn
-      ? dryRunChild(terminalId, commandArguments, workingDirectory, promptFilePath, logLine)
-      : nodePty.spawn(spawnPlan.file, spawnPlan.commandArguments, {
-          name: "xterm-256color",
-          cols: Math.max(20, Math.floor(columns)),
-          rows: Math.max(5, Math.floor(rows)),
-          cwd: workingDirectory,
-          env: environment,
-          ...ptyOptionsFor()
-        });
     const record = {
       terminalId,
-      pid: child.pid,
-      process: child,
+      pid: 0,
+      process: null,
       workingDirectory,
+      // Kept so `restart()` can spawn the very same command line into the
+      // very same terminal id.
+      environment,
+      columns: Math.max(20, Math.floor(columns)),
+      rows: Math.max(5, Math.floor(rows)),
       resumeSessionId,
       sessionId: forkSession ? null : resumeSessionId,
       forkedFromSessionId: forkSession ? resumeSessionId : null,
@@ -541,6 +655,11 @@ export function createTerminalRegistry({
       sessionExtraArguments,
       commandArguments,
       kickoffState: cleanKickoffMessage ? "waiting" : null,
+      // Set as soon as the CLI's registry entry says "idle": the prompt was
+      // reached, so a later exit code 0 really is somebody's `/exit`.
+      sawPrompt: false,
+      // A hang-up the app asked for, so the exit is not treated as a crash.
+      closingOnPurpose: false,
       exited: false,
       exitCode: null,
       pendingOutput: [],
@@ -549,14 +668,7 @@ export function createTerminalRegistry({
       closeTimer: null
     };
     terminals.set(record.terminalId, record);
-    child.onData((data) => queueOutput(record, data));
-    child.onExit(({ exitCode }) => handleExit(record, exitCode));
-    // The appended prompt itself is thousands of characters; the log shows
-    // that it was passed, not what it said.
-    const shownArguments = commandArguments.map((argument, position) =>
-      commandArguments[position - 1] === "--append-system-prompt" ? "…" : argument
-    );
-    logLine(`${record.terminalId}: spawned claude ${shownArguments.join(" ")} in ${workingDirectory} (pid ${child.pid})`);
+    startChildProcess(record);
     if (cleanKickoffMessage) {
       if (dryRunSpawn) {
         record.kickoffState = null;
@@ -570,19 +682,30 @@ export function createTerminalRegistry({
     return publicRecord(record);
   }
 
+  // Keystrokes from the pane. On a pane that was kept after its `claude`
+  // ended there is nothing to write to, and Enter means what the dim line
+  // under the CLI's last words says: start again.
   function write(terminalId, data) {
     const record = terminals.get(terminalId);
-    if (record && !record.exited) {
-      record.focusedAt = Date.now();
-      if (looksTypedByHand(data)) {
-        record.typedByHand = true;
-      }
-      if (!record.receivedInput) {
-        record.receivedInput = true;
-        announceChange();
-      }
-      record.process.write(data);
+    if (!record) {
+      return;
     }
+    if (record.exited) {
+      record.focusedAt = Date.now();
+      if (String(data || "").includes("\r") || String(data || "").includes("\n")) {
+        restart(terminalId);
+      }
+      return;
+    }
+    record.focusedAt = Date.now();
+    if (looksTypedByHand(data)) {
+      record.typedByHand = true;
+    }
+    if (!record.receivedInput) {
+      record.receivedInput = true;
+      announceChange();
+    }
+    record.process.write(data);
   }
 
   function resize(terminalId, columns, rows) {
@@ -603,9 +726,17 @@ export function createTerminalRegistry({
   // The transcript on disk is untouched, so the session can be resumed.
   function close(terminalId) {
     const record = terminals.get(terminalId);
-    if (!record || record.exited) {
+    if (!record) {
       return { closed: false };
     }
+    // A pane that was kept has no process left; closing it means "I have read
+    // the error, take it away".
+    if (record.exited) {
+      forget(terminalId);
+      return { closed: true };
+    }
+    // So the hang-up is not mistaken for a crash and the pane kept.
+    record.closingOnPurpose = true;
     try {
       record.process.kill(HANG_UP_SIGNAL);
     } catch (error) {
@@ -628,6 +759,7 @@ export function createTerminalRegistry({
       if (record.exited) {
         continue;
       }
+      record.closingOnPurpose = true;
       try {
         record.process.kill(HANG_UP_SIGNAL);
       } catch (error) {
@@ -724,6 +856,8 @@ export function createTerminalRegistry({
     write,
     resize,
     close,
+    restart,
+    forget,
     closeAll,
     list,
     get,

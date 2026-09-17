@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { checkExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { EXTRA_FLAGS_PLACEHOLDER, checkExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { handlePlaceholderKey } from "../placeholderAccept.js";
 import { useTranslation } from "../i18n.js";
 import { FolderIcon } from "./Icons.jsx";
 import EmojiPicker from "./EmojiPicker.jsx";
@@ -267,15 +268,22 @@ export default function AgentForm({ agent, initialFolder = null, onSave, onClose
         type="text"
         className="agent-form-input"
         value={extraFlags}
-        placeholder="--channels plugin:telegram"
+        placeholder={EXTRA_FLAGS_PLACEHOLDER}
         spellCheck={false}
         onChange={(event) => {
           setExtraFlags(event.target.value);
           setExtraFlagsProblem("");
         }}
+        onKeyDown={(event) => {
+          handlePlaceholderKey(event, EXTRA_FLAGS_PLACEHOLDER, (value) => {
+            setExtraFlags(value);
+            setExtraFlagsProblem("");
+          });
+        }}
         data-agent-flags-input
       />
       <div className="agent-form-hint">{translate("flags.agentHint")}</div>
+      <div className="agent-form-hint">{translate("flags.tabHint")}</div>
       {extraFlagsProblem && (
         <div className="agent-form-hint is-problem" data-agent-flags-problem>
           {extraFlagsProblem}

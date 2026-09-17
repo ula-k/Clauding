@@ -236,6 +236,17 @@ export function detachInstance(terminalId) {
   }
 }
 
+// Text dropped on the pane (or handed back by the main process) goes in as a
+// paste, not as keystrokes: xterm wraps it in the bracketed-paste markers the
+// CLI expects, so a multi-line drop lands as one block instead of submitting
+// itself line by line.
+export function pasteIntoInstance(terminalId, text) {
+  const instance = instances.get(terminalId);
+  if (instance && instance.opened && text) {
+    instance.terminal.paste(text);
+  }
+}
+
 export function focusInstance(terminalId) {
   const instance = instances.get(terminalId);
   if (instance && instance.opened) {

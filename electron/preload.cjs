@@ -3,7 +3,7 @@
 // CommonJS on purpose: Electron loads preload scripts through its own loader,
 // which only understands CommonJS (the window runs with sandbox: false so this
 // file can require the shared channel list).
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const { CHANNELS } = require("./channels.cjs");
 
@@ -238,6 +238,26 @@ contextBridge.exposeInMainWorld("clauding", {
   writeToTerminal(terminalId, data) {
     ipcRenderer.send(CHANNELS.terminalInput, { terminalId, data });
   },
+  // Paste into the terminal, Clauding's way: with `filePaths` (files dropped
+  // on the pane) those paths are typed; without it the main process reads the
+  // clipboard. Answers { kind, filePaths } — "files" or "image" when a path
+  // was typed, "text" when the caller should let xterm paste the text.
+  pasteSmartIntoTerminal(terminalId, filePaths) {
+    return ipcRenderer.invoke(CHANNELS.terminalPasteSmart, { terminalId, filePaths: filePaths || null });
+  },
+  // Where a file dropped on the window lives. Electron 32 took `File.path`
+  // away, and `webUtils` only exists on this side of the bridge, so the page
+  // hands the File over and gets the path back.
+  filePathForDroppedFile(file) {
+    try {
+      if (webUtils && typeof webUtils.getPathForFile === "function") {
+        return webUtils.getPathForFile(file) || "";
+      }
+      return file && file.path ? file.path : "";
+    } catch (error) {
+      return "";
+    }
+  },
   resizeTerminal(terminalId, columns, rows) {
     ipcRenderer.send(CHANNELS.terminalResize, { terminalId, columns, rows });
   },
@@ -252,6 +272,12 @@ contextBridge.exposeInMainWorld("clauding", {
   // terminal by hand.
   closeTerminal(terminalId) {
     return ipcRenderer.invoke(CHANNELS.terminalClose, { terminalId });
+  },
+  // Starts a kept-but-ended terminal again, with the command line it was
+  // given the first time. What the dim "Press Enter to start again" line in
+  // such a pane offers, and what a click on its row does.
+  restartTerminal(terminalId) {
+    return ipcRenderer.invoke(CHANNELS.terminalRestart, { terminalId });
   },
   onTerminalData(listener) {
     return subscribe(CHANNELS.terminalData, listener);

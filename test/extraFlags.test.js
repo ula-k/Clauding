@@ -10,7 +10,7 @@ import {
   mergeExtraArguments,
   splitArguments
 } from "../electron/lib/extraFlags.js";
-import { buildClaudeArguments } from "../electron/lib/claudeArguments.js";
+import { EXTRA_FLAGS_PLACEHOLDER, buildClaudeArguments } from "../electron/lib/claudeArguments.js";
 import { cleanExtraClaudeArguments } from "../electron/settings.js";
 
 test("the field is split the way a shell would split it", () => {
@@ -90,4 +90,71 @@ test("the flags go last, after everything the app needs for itself", () => {
   assert.deepEqual(guarded.commandArguments, ["--model", "sonnet"], "a reserved flag is refused here too");
   const none = buildClaudeArguments({ sessionName: "plain" });
   assert.deepEqual(none.commandArguments, ["--name", "plain"], "no flags, no change");
+});
+
+// The bug this pins down: "I add any extra flags and the new session does not
+// open." The command line was never the problem — these two strings, the ones
+// Ula actually types, come out of the builder exactly as `claude` wants them,
+// one token per word, the `@` and the `:` untouched, and after everything the
+// app sets itself. What did go wrong was the value the field suggested
+// (untagged, so the CLI refused it) and the pane disappearing with the CLI.
+//
+// Composed the way electron/terminals.js does it: the three levels merged,
+// then the whole command line built.
+function commandLineFor({ globalFlags = "", agentFlags = "", sessionFlags = "", appendedPrompt = "a preamble" } = {}) {
+  return buildClaudeArguments({
+    appendedPrompt,
+    extraArguments: mergeExtraArguments([globalFlags, agentFlags, sessionFlags])
+  }).commandArguments;
+}
+
+test("a new session with --model sonnet gets exactly that on its command line", () => {
+  assert.deepEqual(commandLineFor({ sessionFlags: "--model sonnet" }), [
+    "--append-system-prompt",
+    "a preamble",
+    "--system-prompt-snapshot",
+    "off",
+    "--model",
+    "sonnet"
+  ]);
+});
+
+test("the Telegram channel flag survives the builder token for token", () => {
+  assert.deepEqual(commandLineFor({ sessionFlags: EXTRA_FLAGS_PLACEHOLDER }), [
+    "--append-system-prompt",
+    "a preamble",
+    "--system-prompt-snapshot",
+    "off",
+    "--channels",
+    "plugin:telegram@claude-plugins-official"
+  ]);
+});
+
+test("the flags are never pasted together into one argument", () => {
+  const commandArguments = commandLineFor({ sessionFlags: EXTRA_FLAGS_PLACEHOLDER });
+  assert.ok(
+    commandArguments.every((argument) => !/\s/.test(argument) || argument === "a preamble"),
+    "one flag or value per argument, so no shell is needed to take them apart"
+  );
+});
+
+test("all three levels land in order, with nothing merged or dropped", () => {
+  assert.deepEqual(
+    commandLineFor({
+      globalFlags: "--model sonnet",
+      agentFlags: "--dangerously-skip-permissions",
+      sessionFlags: EXTRA_FLAGS_PLACEHOLDER
+    }),
+    [
+      "--append-system-prompt",
+      "a preamble",
+      "--system-prompt-snapshot",
+      "off",
+      "--model",
+      "sonnet",
+      "--dangerously-skip-permissions",
+      "--channels",
+      "plugin:telegram@claude-plugins-official"
+    ]
+  );
 });

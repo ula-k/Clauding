@@ -17,8 +17,12 @@ export function localPagePattern() {
 }
 
 // Cmd+K clears like in Terminal.app. Cmd+C / Cmd+V are left to the
-// application menu: Electron turns them into copy / paste events on xterm's
-// hidden textarea, which xterm handles (selection out, clipboard text in).
+// application menu, whose accelerators beat anything handled here anyway:
+// Cmd+C becomes a copy event on xterm's hidden textarea (selection out), and
+// Cmd+V is Clauding's own paste in the main process — a file on the clipboard
+// types its path, anything else comes back as the ordinary paste event xterm
+// has always handled (electron/pasteSmart.js). Ctrl+V is untouched and goes
+// through to the CLI, which pastes a raw clipboard image itself.
 //
 // On Windows the modifier is Ctrl — but Ctrl+C there has to stay the
 // interrupt, the way it is in every Windows console, so only Ctrl+K and

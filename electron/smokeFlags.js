@@ -22,7 +22,7 @@ const SMOKE_DIRECTORY = smokeFolderPath();
 const SMOKE_WORKING_DIRECTORY = smokeWorkingDirectory();
 const GLOBAL_FLAGS = "--model sonnet";
 const AGENT_FLAGS = "--dangerously-skip-permissions";
-const SESSION_FLAGS = "--channels plugin:telegram";
+const SESSION_FLAGS = "--channels plugin:telegram@claude-plugins-official";
 const RESUMED_SESSION_ID = "dry-session-for-flags";
 
 function wait(milliseconds) {

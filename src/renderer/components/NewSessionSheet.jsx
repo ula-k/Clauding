@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { FolderIcon } from "./Icons.jsx";
 import { folderLabel } from "../paths.js";
-import { checkExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { EXTRA_FLAGS_PLACEHOLDER, checkExtraArguments } from "../../../electron/lib/extraFlags.js";
+import { handlePlaceholderKey } from "../placeholderAccept.js";
 
 const ADD_AGENT_OPTION = "add-agent";
 const NO_AGENT_OPTION = "";
@@ -179,14 +180,21 @@ export default function NewSessionSheet({
         type="text"
         className="agent-form-input"
         value={extraFlags}
-        placeholder="--channels plugin:telegram"
+        placeholder={EXTRA_FLAGS_PLACEHOLDER}
         spellCheck={false}
         onChange={(event) => {
           setExtraFlags(event.target.value);
           setExtraFlagsProblem("");
         }}
+        onKeyDown={(event) => {
+          handlePlaceholderKey(event, EXTRA_FLAGS_PLACEHOLDER, (value) => {
+            setExtraFlags(value);
+            setExtraFlagsProblem("");
+          });
+        }}
         data-new-session-flags
       />
+      <div className="sheet-hint">{translate("flags.tabHint")}</div>
       {extraFlagsProblem && (
         <div className="sheet-hint is-problem" data-new-session-flags-problem>
           {extraFlagsProblem}

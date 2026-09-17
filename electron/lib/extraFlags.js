@@ -8,9 +8,20 @@
 // order, each one appended after the last: settings.json (every terminal),
 // the agent (every session that agent runs) and the session itself. So a
 // global `--model sonnet` can be overridden per session, and a per-session
-// `--channels plugin:telegram` follows that conversation through every resume,
-// restart and fork.
+// `--channels plugin:telegram@claude-plugins-official` follows that
+// conversation through every resume, restart and fork.
 //
+// What every "Extra claude flags" field offers as its placeholder — and a
+// real suggestion, not a shape: Tab in an empty field types it in
+// (src/renderer/placeholderAccept.js).
+//
+// The marketplace tag is not decoration. `--channels plugin:telegram` on its
+// own is refused by the CLI ("--channels entries must be tagged:
+// plugin:telegram"), which then exits inside a second — and that is exactly
+// what made a new session with flags look as if it never opened. The
+// placeholder now says the form the CLI accepts.
+export const EXTRA_FLAGS_PLACEHOLDER = "--channels plugin:telegram@claude-plugins-official";
+
 // The field is written the way it would be typed in a terminal, so it is
 // split the way a shell would: quotes hold a value together, a backslash
 // escapes the next character outside quotes.

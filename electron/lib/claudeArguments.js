@@ -7,6 +7,7 @@ import path from "node:path";
 import { isReservedFlag } from "./extraFlags.js";
 
 export {
+  EXTRA_FLAGS_PLACEHOLDER,
   RESERVED_FLAGS,
   checkExtraArguments,
   isReservedFlag,

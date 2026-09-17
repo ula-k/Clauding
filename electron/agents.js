@@ -16,7 +16,7 @@
 //         "definitionFile": "/Users/<you>/Documents/agents/spec-writer/spec-writer.md",
 //         "lastWorkingDirectory": "/Users/<you>/Documents/projects/website",
 //         "lastUsedAt": 1730000000000,
-//         "extraClaudeArguments": "--channels plugin:telegram"
+//         "extraClaudeArguments": "--channels plugin:telegram@claude-plugins-official"
 //       }
 //     ],
 //     "sessionAgents": { "<sessionId>": "<agentId>" }
@@ -143,7 +143,7 @@ function sanitizeAgent(entry) {
     // the app puts a missing one back at the next start.
     builtin: cleanBuiltin(entry.builtin),
     // Extra `claude` flags every session this agent runs gets, on top of
-    // the ones in settings.json — "--channels plugin:telegram" for an agent
+    // the ones in settings.json — "--channels plugin:telegram@…" for an agent
     // that talks to Ula on Telegram, say. Flags the app sets itself are
     // dropped here (see mergeExtraArguments).
     extraClaudeArguments: cleanExtraArguments(entry.extraClaudeArguments)

@@ -36,6 +36,14 @@ else in this file describes the Mac.
   on a click, `claude` in a folder you pick from "+ New". Nothing to close:
   quitting the app hangs every terminal up, and a terminal nobody typed into
   closes itself after 20 idle minutes.
+* **Paste or drop a file into the terminal.** ⌘V with a file on the
+  clipboard — a screenshot copied in Finder, say — types that file's
+  **path** into the terminal, and so does dropping the file on the pane;
+  Claude Code then reads the file itself. (Copying a file puts the file
+  type's *icon* on the clipboard as the image, which is why pasting one used
+  to hand the CLI a 39 kB "PNG document" icon instead of the picture.) A raw
+  image on the clipboard is saved under `<userData>/pasted/` and its path
+  typed. Ctrl+V is untouched: it still goes to the CLI's own image paste.
 * **A side panel with tabs.** Show a local `.html` or `.md` file or any
   http(s) address next to the terminal. Local files reload themselves when
   they change on disk, so a page Claude is editing updates while you watch.
@@ -208,6 +216,7 @@ one this script wrote (it leaves a `clauding-install.json` behind to know).
 | the title bar | inset traffic lights, the app draws its own header | the standard Windows frame, the menu bar inside the window |
 | the menu bar | Clauding / Edit / Skills / View / Window, with Services, Hide, Hide Others, Show All | the same five menus; Windows has no Services or Hide roles, so the Clauding menu is About, the version check, Settings… and Quit |
 | shortcuts | ⌘⌫ hides a session, ⌘, Settings, ⌘K clears, ⌘+click opens in the system browser | Ctrl+Backspace (or Ctrl+Delete), Ctrl+`,`, Ctrl+K, Ctrl+click. **Ctrl+C stays the interrupt** in the terminal, as in every Windows console — copy with a selection and the Edit menu |
+| pasting a file | ⌘V with a file on the clipboard types its path into the terminal (Edit → Paste is Clauding's own item); Ctrl+V still goes to the CLI's own image paste | Ctrl+V stays Electron's `paste` role — it is what Claude Code's image paste is bound to there — so the file flavors are not read; dropping a file on the pane works the same as on a Mac |
 | the emoji field | a 🙂 button opens the macOS character palette (⌃⌘Space) | Electron has no call for the Windows picker, so that button is not drawn; the built-in emoji grid next to it is unchanged, and Win+. types into the field |
 | PATH fix-up | `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` | `%USERPROFILE%\.local\bin` only |
 | "Scan for skills…" | `~/Library/Application Support/Claude` among the roots | `%APPDATA%\Claude` instead; `%USERPROFILE%\.claude\plugins` and `%USERPROFILE%\.hermes\skills` the same as ever |
@@ -334,6 +343,7 @@ bin/clauding               the `clauding` command put on every terminal's PATH
 bin/clauding.cmd           the same command on Windows (runs `node bin\clauding`)
 electron/smokeFolder.js    where the dev smoke runs work (and what the list hides)
 electron/smokeTerminal.js  CLAUDING_SMOKE_TERMINAL automation (dev only)
+electron/smokePaste.js     CLAUDING_SMOKE_PASTE: pasting a file and a clipboard image into a terminal (dev only)
 electron/smokeFork.js      CLAUDING_SMOKE_FORK automation for the Fork button (dev only)
 electron/smokeKickoff.js   CLAUDING_SMOKE_KICKOFF: the two meta actions start on their own (dev only)
 electron/smokePreamble.js  CLAUDING_SMOKE_PREAMBLE: the preamble on a resumed session (dev only)
@@ -350,6 +360,8 @@ electron/settings.js       settings.json: the agents root and the skills folder
 electron/skills.js         reads <skillsRoot>/*/SKILL.md (name + description)
 electron/builtins.js       seeding the built-in Agent Maker and the built-in skills
 electron/lib/terminalKickoff.js  when a fork may be typed into, and what counts as typing
+electron/pasteSmart.js     the clipboard side of pasting into a terminal (and files dropped on the pane)
+electron/lib/pasteSmart.js  what a paste means: the decision order, the quoting, the pasted/ folder (no Electron)
 electron/lib/extraFlags.js  the extra `claude` flags: splitting the field, the reserved ones, the merge
 electron/sessionFlags.js   session-flags.json: the flags one conversation keeps for good
 electron/updater.js        "Check for new version…": the git check, the plan and the four update commands
@@ -513,8 +525,8 @@ resizes (`terminal:resize`) are fire-and-forget messages. The internal
 on disk.
 
 IPC: `terminal:open`, `terminal:input`, `terminal:resize`, `terminal:list`,
-`terminal:replay` (renderer → main) and `terminal:data`, `terminal:exit`,
-`terminal:changed` (main → renderer).
+`terminal:replay`, `terminal:paste-smart` (renderer → main) and
+`terminal:data`, `terminal:exit`, `terminal:changed` (main → renderer).
 
 ### Session linking
 
@@ -548,11 +560,42 @@ element measures nothing); output that arrives before that is buffered.
 Look: colors are read from `theme.css` tokens (`--terminal-*` for the ANSI
 palette, `--text`, `--accent` for the lavender block cursor), font
 `"SF Mono", Menlo, monospace` 13 px, 12 px padding, 10 000 lines of
-scrollback, translucent surface over the window gradient. Cmd+C / Cmd+V go
-through Electron's default Edit menu, which turns them into copy / paste
-events on xterm's hidden textarea (selection out, clipboard text in); Cmd+K
-clears. Ctrl+C is the interrupt, as in any terminal. Option is left alone so
-Polish letters type normally.
+scrollback, translucent surface over the window gradient. Cmd+C goes through
+Electron's default Edit menu, which turns it into a copy event on xterm's
+hidden textarea; Cmd+K clears. Ctrl+C is the interrupt, as in any terminal.
+Option is left alone so Polish letters type normally.
+
+**Pasting and dropping a file.** Edit → Paste (⌘V) is Clauding's own item on
+macOS — a menu accelerator beats anything the page would do with the key, so
+that is the only place ⌘V can be intercepted. Inside a terminal it asks the
+main process (`terminal:paste-smart`) what is on the clipboard, in this order:
+
+| on the clipboard | what the terminal gets |
+| --- | --- |
+| **files** (`NSFilenamesPboardType`, or `text/uri-list`) | their POSIX paths, each shell-quoted, space-separated, one space after — no newline, so nothing is submitted for you |
+| **a raw image** and no file | the image saved as `<userData>/pasted/<yyyy-mm-dd-hhmmss>.png` (the folder keeps the last 50) and *that* path typed |
+| anything else | the ordinary paste, which xterm still does itself (bracketed paste) |
+
+Electron 44 replaced the old synchronous clipboard module with the web Async
+Clipboard API, so the reading is `await clipboard.read()`: standard web types
+come through as they are (`text/uri-list`, `image/png`) and any other macOS
+pasteboard flavor through Electron's escape hatch,
+`electron application/osclipboard;format="NSFilenamesPboardType"`. That view
+of the board turned out **unreliable for the file flavors** while the app
+stays active — pasting right after another process copied a file, it kept
+describing what had been on the board a moment earlier — so the files are
+asked of `NSPasteboard` itself, through one JavaScript-for-Automation script
+(`osascript -l JavaScript`, about 70 ms per ⌘V), and Electron's clipboard is
+left to the image and the text, where it never misbehaved.
+
+Files **dropped** on the terminal pane take the same route with the paths the
+drop carried (`webUtils.getPathForFile` in the preload script), and the pane
+shows a lavender outline while a drag is over it; dropped text is pasted as
+text. Everywhere outside a terminal — a text field, a page in the right panel
+— ⌘V is the ordinary paste it always was, and on Windows the item stays
+Electron's `paste` role, because Ctrl+V there is Claude Code's own image
+paste. **Ctrl+V is untouched on macOS too**: it goes straight through to the
+CLI, for the times when the raw image on the clipboard is what you want.
 
 What the middle column shows for the selected session:
 
@@ -624,6 +667,45 @@ The "…" holds, in this order:
 
 Because that second group is always there, the "…" is always on the header —
 it is the only way to those four.
+
+## A terminal that ended keeps its pane
+
+A `claude` that ends is not always a goodbye. A flag it does not accept —
+`--nonsense`, or `--channels plugin:telegram` without its marketplace tag —
+makes it print one line and exit with code 1 about a second after the spawn.
+The terminal record used to be deleted the moment that happened, which took
+the pane and the row with it, so the CLI's own explanation was on screen for
+a few frames and the whole thing looked like "the new session does not
+open".
+
+Now the pane stays. Everything the CLI printed is left exactly where it is,
+and two dim lines are appended under it:
+
+```
+claude exited with code 1
+Press Enter to start again
+```
+
+**Enter in that pane** — or a click on its row in the list — starts the same
+command line again in the **same terminal id**, so the pane and the row keep
+their place (`terminal:restart`, `restart()` in `electron/terminals.js`; the
+screen is reset first so the old error does not sit above the new banner). If
+something had already been said in that conversation, `--resume <its id>` is
+added so the conversation comes back; a terminal that never got a message has
+no transcript to resume and starts fresh.
+The header's status pill says **Ended** while the terminal is in that state,
+and closing the terminal is what finally forgets it.
+
+**What still disappears** is a clean goodbye: exit code 0, after the CLI had
+been at its prompt (its registry entry said `idle` at least once), and not in
+the opening seconds — that is `/exit` and nothing else. A hang-up the app
+itself asked for (the restart behind "Assign to agent" and "Extra claude
+flags…", the 20-minute idle close, quitting) is not treated as a crash
+either.
+
+The decision is one pure function, `exitPlan({ code, uptimeMs, hadPrompt })`
+in `electron/lib/exitPlan.js`, covered by `test/exitPlan.test.js` — no pty
+is needed to check it.
 
 ## Fork
 
@@ -1333,23 +1415,39 @@ badge on its row.
 
 Anything the CLI takes that the app does not set itself can be added to the
 command line — `--model sonnet`, `--dangerously-skip-permissions`, or the one
-this was built for: `--channels plugin:telegram`, which lets Ula talk to that
-session from Telegram. There are three levels and they are appended in this
-order, so the narrower one always comes last:
+this was built for: `--channels plugin:telegram@claude-plugins-official`,
+which lets Ula talk to that session from Telegram. There are three levels and
+they are appended in this order, so the narrower one always comes last:
 
 1. **Global** — `extraClaudeArguments` in `settings.json`, edited in
    **Clauding → Settings…** (or the gear, which opens the same popover).
    Every terminal the app starts gets them.
 2. **Per agent** — "Extra claude flags" in the agent form, stored in
    `agents.json`. Every session that agent runs gets them. An agent that
-   reports on Telegram carries `--channels plugin:telegram` here and needs
-   nothing else.
+   reports on Telegram carries `--channels plugin:telegram@claude-plugins-official`
+   here and needs nothing else.
 3. **Per session** — "Extra claude flags" in the "+ New" sheet, for this one
    conversation.
 
 The field is written the way it would be typed in a terminal and split the
 same way: quotes hold a value together (`--name "two words"`), a backslash
 escapes the next character.
+
+**The placeholder is a suggestion you can accept.** All four fields show
+`--channels plugin:telegram@claude-plugins-official` in grey, and in an
+**empty** field **Tab** (or **→**) types it in and leaves the cursor there,
+so the marketplace tag never has to be spelled out by hand. **Escape** in a
+field that has something in it clears the field instead of closing the sheet;
+Escape on an empty field closes it as before. The decision is one pure
+function, `placeholderKeyDecision` in `src/renderer/placeholderAccept.js`
+(`test/placeholderAccept.test.js`).
+
+The tag matters: `--channels plugin:telegram` on its own is **refused** by
+the CLI ("--channels entries must be tagged"), which then exits inside a
+second. That is what used to look like "a new session with flags does not
+open" — the flags reached the CLI exactly as typed, the CLI said no, and the
+pane disappeared with it before anything could be read. See **A terminal
+that ended keeps its pane** below.
 
 **The session's own flags are remembered.** They are written to
 `session-flags.json` under the session id the moment the CLI registers it,
@@ -1845,6 +1943,21 @@ CLAUDING_SMOKE_TERMINAL=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     session id (stage4-click.png); /exit, quits. On failure: stage4-failed.png.
     Overrides: CLAUDING_SMOKE_PAGE, CLAUDING_SMOKE_MARKDOWN, CLAUDING_SMOKE_URL.
 
+CLAUDING_SMOKE_PASTE=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
+    pasting a file into a terminal, in the scratch folder only: opens a
+    terminal, photographs the window and saves it as "pasted shot.png" (a
+    name with a space, so wrong quoting would show), puts that FILE on the
+    clipboard with `osascript -e 'set the clipboard to (POSIX file …)'` and
+    asks for the same paste ⌘V asks for — the pty must receive the quoted
+    path; appends "What is in the image at that path? One line." and prints
+    the CLI's answer -> paste-file.png; repeats the write with the paths a
+    drop hands over; then puts the RAW image on the clipboard
+    (`as «class PNGf»`), pastes, and checks a file appeared under
+    <userData>/pasted/ and its path was typed, asking the same question again
+    -> paste-image.png. Run it with its own profile (`--user-data-dir`) so
+    the pasted/ folder is not the installed app's. On failure:
+    paste-failed.png.
+
 CLAUDING_SMOKE_COLLAPSE=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     folding a group shut, without spawning a single `claude`: makes (or
     reuses) a group named PRIV (CLAUDING_SMOKE_GROUP_NAME), moves a session
@@ -1986,7 +2099,8 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: **370 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the transcript search, the terminal header's one-line fit, what a click on
+`npm test` runs `node --test test/*.test.js`: **412 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder (including the whole command line of a session started with extra flags, argument by argument), what happens to a terminal whose `claude` ended, what Tab means in a field that shows a placeholder, the transcript search, what a paste into a terminal means (the quoting, the
+clipboard's file / image / text order, the pasted/ folder), the terminal header's one-line fit, what a click on
 a row selects and what a bulk action would do, the session colors, the
 user's own tags, the skills catalogue, when a session needs an answer, i18n key
 sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behavior they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-25`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.

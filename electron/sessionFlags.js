@@ -1,11 +1,11 @@
 // The extra `claude` flags a single conversation was started with, saved to
 // <userData>/session-flags.json so they can be put back on every later
 // `--resume`. Without this a session started with `--channels
-// plugin:telegram` would quietly lose its channel the first time the app
+// plugin:telegram@claude-plugins-official` would quietly lose its channel the first time the app
 // resumed it, and a Telegram conversation would simply stop arriving.
 //
 // File shape (version 1):
-//   { "version": 1, "sessionFlags": { "<sessionId>": "--channels plugin:telegram" } }
+//   { "version": 1, "sessionFlags": { "<sessionId>": "--channels plugin:telegram@claude-plugins-official" } }
 //
 // Only the *session* level is kept here. The global flags live in
 // settings.json and the agent's in agents.json, and both are read fresh

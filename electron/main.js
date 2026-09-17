@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, screen, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, screen, shell, systemPreferences, webContents } from "electron";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -20,8 +20,10 @@ import { ensureShellPath } from "./claudeCli.js";
 import { claudeRegistryPaths, commandChannelPath, isMacOS } from "./lib/platformPaths.js";
 import { applicationMenuTemplate } from "./lib/applicationMenu.js";
 import { createTerminalRegistry } from "./terminals.js";
+import { smartPaste } from "./pasteSmart.js";
 import { listRecentProjects } from "./recentProjects.js";
 import { runTerminalSmoke } from "./smokeTerminal.js";
+import { runPasteSmoke } from "./smokePaste.js";
 import { runPreambleSmoke } from "./smokePreamble.js";
 import { runResizeSmoke } from "./smokeResize.js";
 import { runGroupsSmoke } from "./smokeGroups.js";
@@ -143,6 +145,7 @@ const smokeFlagsMode = process.env.CLAUDING_SMOKE_FLAGS === "1";
 const smokeSessionFlagsMode = process.env.CLAUDING_SMOKE_SESSION_FLAGS === "1";
 const smokeEmojiMode = process.env.CLAUDING_SMOKE_EMOJI === "1";
 const smokeKickoffMode = process.env.CLAUDING_SMOKE_KICKOFF === "1";
+const smokePasteMode = process.env.CLAUDING_SMOKE_PASTE === "1";
 // Any automation at all: the first-run questions stay out of its way.
 const anySmokeMode =
   smokeTerminalMode ||
@@ -157,7 +160,8 @@ const anySmokeMode =
   smokeFlagsMode ||
   smokeSessionFlagsMode ||
   smokeEmojiMode ||
-  smokeKickoffMode;
+  smokeKickoffMode ||
+  smokePasteMode;
 
 // The screenshot hook and the smoke runs drive the real window with things
 // only macOS has — `capturePage` against an inset title bar, the standard
@@ -195,6 +199,9 @@ process.env.CLAUDING_SOCKET = commandSocketPath;
 // One file per terminal running as an agent, holding the preamble plus that
 // agent's whole definition; written at spawn, deleted when the pty exits.
 const promptDirectory = path.join(userDataDirectory, "prompts");
+// Images pasted into a terminal as raw clipboard data are written here, so
+// the CLI has a file to read; the folder keeps the last 50 (pasteSmart.js).
+const pastedDirectory = path.join(userDataDirectory, "pasted");
 
 // A pty killed on quit never runs its exit handler, so a prompt file can
 // outlive the app. They are all thrown away at the next start — no terminal
@@ -616,6 +623,22 @@ function createWindow() {
         }
       });
     });
+  } else if (smokePasteMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runPasteSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        pastedDirectory,
+        pasteThroughMenu: pasteIntoFocus,
+        pasteIntoTerminal,
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
+        quit() {
+          app.quit();
+        }
+      });
+    });
   } else if (smokeTerminalMode) {
     mainWindow.webContents.once("did-finish-load", () => {
       runTerminalSmoke({
@@ -1022,10 +1045,65 @@ function checkForNewVersionQuietlyIfDue() {
   checkForNewVersion({ quiet: true });
 }
 
-// The Edit roles are what make Cmd+C / Cmd+V (Ctrl+C / Ctrl+V on Windows)
-// work inside the terminal: Electron turns them into copy / paste events on
-// xterm's hidden textarea. The template itself, and what differs between the
-// two systems, lives in lib/applicationMenu.js.
+// One paste into one terminal: the clipboard (or the paths dropped on the
+// pane) turned into what the pty receives. See electron/pasteSmart.js.
+function pasteIntoTerminal(terminalId, filePaths) {
+  return smartPaste({
+    filePaths,
+    pastedDirectory,
+    writeToTerminal(text) {
+      if (text) {
+        terminalRegistry.write(terminalId, text);
+      }
+    }
+  });
+}
+
+// Which terminal has the keyboard, if any: xterm's hidden textarea sits
+// inside the pane, and TerminalPane puts the terminal's id on it.
+async function focusedTerminalId() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+  try {
+    return await mainWindow.webContents.executeJavaScript(
+      '(() => { const active = document.activeElement; const host = active && active.closest ? active.closest("[data-terminal-id]") : null; return host ? host.getAttribute("data-terminal-id") : null; })()'
+    );
+  } catch (error) {
+    return null;
+  }
+}
+
+// Edit -> Paste (Cmd+V). Inside a terminal it is Clauding's own paste: a file
+// on the clipboard types its path, a raw image is saved and its path typed,
+// and anything else falls through to the ordinary paste — which is also what
+// happens everywhere outside the terminal (a text field, a page in the right
+// panel).
+async function pasteIntoFocus() {
+  const terminalId = await focusedTerminalId();
+  if (terminalId) {
+    try {
+      const result = await pasteIntoTerminal(terminalId, null);
+      if (result.kind !== "text") {
+        console.log(`[paste] ${terminalId}: typed ${result.kind} ${result.filePaths.join(" ")}`);
+        return;
+      }
+      console.log(`[paste] ${terminalId}: no file on the clipboard, pasting as text`);
+    } catch (error) {
+      console.log(`[paste] ${terminalId}: ${error.message}; pasting as text instead`);
+    }
+  }
+  const focused = typeof webContents.getFocusedWebContents === "function" ? webContents.getFocusedWebContents() : null;
+  const target = focused || (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null);
+  if (target) {
+    target.paste();
+  }
+}
+
+// The Edit roles are what make Cmd+C work inside the terminal (Electron turns
+// it into a copy event on xterm's hidden textarea), and Cmd+V is the item
+// above — on Windows Ctrl+V stays the plain role. The template itself, and
+// what differs between the two systems, lives in lib/applicationMenu.js.
 function installApplicationMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
@@ -1042,7 +1120,8 @@ function installApplicationMenu() {
         findLabel: "Find in conversation…",
         onFindInConversation() {
           sendToWindow(CHANNELS.transcriptFindShow, {});
-        }
+        },
+        onPaste: pasteIntoFocus
       })
     )
   );
@@ -1296,6 +1375,12 @@ function registerIpc() {
     terminalRegistry.write(terminalId, data);
   });
 
+  // Files dropped on the terminal pane (the renderer already has their
+  // paths), and the dev hook's Cmd+V: the same one paste as the menu item.
+  ipcMain.handle(CHANNELS.terminalPasteSmart, async (event, { terminalId, filePaths }) => {
+    return pasteIntoTerminal(terminalId, filePaths || null);
+  });
+
   ipcMain.on(CHANNELS.terminalResize, (event, { terminalId, columns, rows }) => {
     terminalRegistry.resize(terminalId, columns, rows);
   });
@@ -1312,6 +1397,12 @@ function registerIpc() {
   // this: SIGHUP, and the renderer opens a new one with --resume.
   ipcMain.handle(CHANNELS.terminalClose, async (event, { terminalId }) => {
     return terminalRegistry.close(terminalId);
+  });
+
+  // A pane kept after its `claude` ended, started again on the same command
+  // line: Enter in the pane, or a click on its row.
+  ipcMain.handle(CHANNELS.terminalRestart, async (event, { terminalId }) => {
+    return terminalRegistry.restart(terminalId);
   });
 
   ipcMain.handle(CHANNELS.groupsGet, async () => {

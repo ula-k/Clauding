@@ -460,6 +460,26 @@ test("the version check and Settings are in the first menu on both, with one acc
   }
 });
 
+test("Edit -> Paste is Clauding's own on a Mac and the plain role on Windows", () => {
+  const pasted = [];
+  const macPaste = applicationMenuTemplate({ platform: "darwin", onPaste: () => pasted.push("mac") })[1].submenu.find(
+    (item) => item.label === "Paste" || item.role === "paste"
+  );
+  assert.equal(macPaste.role, undefined, "on a Mac the item has a handler, not the role");
+  assert.equal(macPaste.accelerator, "CommandOrControl+V", "the accelerator is what intercepts Cmd+V");
+  macPaste.click();
+  assert.deepEqual(pasted, ["mac"]);
+
+  const windowsPaste = applicationMenuTemplate({ platform: "win32", onPaste: () => pasted.push("windows") })[1].submenu.find(
+    (item) => item.label === "Paste" || item.role === "paste"
+  );
+  assert.equal(windowsPaste.role, "paste", "Ctrl+V on Windows stays Electron's paste, and Claude Code's image paste with it");
+  assert.equal(windowsPaste.click, undefined);
+
+  const withoutHandler = applicationMenuTemplate({ platform: "darwin" })[1].submenu.find((item) => item.role === "paste");
+  assert.ok(withoutHandler, "no handler handed in means the plain role");
+});
+
 test("the Skills menu the app builds is passed through untouched", () => {
   const skillsMenu = { label: "Skills", submenu: [{ label: "skill-maker" }] };
   const template = applicationMenuTemplate({ platform: "win32", skillsMenu });

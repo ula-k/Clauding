@@ -32,10 +32,14 @@ export function applicationMenuTemplate({
   updateItemLabel = "Check for new version…",
   settingsLabel = "Settings…",
   findLabel = "Find in conversation…",
+  pasteLabel = "Paste",
   skillsMenu = { label: "Skills", submenu: [] },
   onCheckForUpdate = () => {},
   onShowSettings = () => {},
-  onFindInConversation = () => {}
+  onFindInConversation = () => {},
+  // macOS only, and only when main.js hands one in: Clauding's own paste
+  // (see electron/pasteSmart.js). Without it the item stays the plain role.
+  onPaste = null
 } = {}) {
   const onMac = isMacOS(platform);
   const applicationSubmenu = [
@@ -58,6 +62,14 @@ export function applicationMenuTemplate({
   }
   applicationSubmenu.push({ role: "quit" });
 
+  // Edit → Paste. A menu accelerator beats anything the page would do with
+  // the key, so ⌘V can only be intercepted here: on macOS the item is
+  // Clauding's own paste, which types the path of a file on the clipboard
+  // into the terminal and falls back to the ordinary paste everywhere else.
+  // On Windows it stays the plain role — Ctrl+V there is what Claude Code's
+  // own image paste is bound to, and nothing about it changes.
+  const pasteItem = onMac && onPaste ? { label: pasteLabel, accelerator: "CommandOrControl+V", click: onPaste } : { role: "paste" };
+
   return [
     // macOS draws this title from the bundle, but the label keeps the name
     // right when the app runs without one (`npm start`), and on Windows it is
@@ -71,7 +83,7 @@ export function applicationMenuTemplate({
         { type: "separator" },
         { role: "cut" },
         { role: "copy" },
-        { role: "paste" },
+        pasteItem,
         { role: "selectAll" }
       ]
     },

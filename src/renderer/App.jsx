@@ -349,7 +349,15 @@ export default function App() {
     const stopChanged = window.clauding.onTerminalsChanged(({ terminals: list }) => {
       setTerminals(list);
     });
-    const stopExit = window.clauding.onTerminalExit(({ terminalId, sessionId }) => {
+    // A terminal whose `claude` ended. The main process says whether the
+    // pane was kept (electron/lib/exitPlan.js): a rejected flag or any other
+    // failed start leaves the CLI's own error on screen with a dim line under
+    // it, so nothing is disposed and nothing is deselected — the pane is
+    // still what the user is looking at, and Enter in it starts it again.
+    const stopExit = window.clauding.onTerminalExit(({ terminalId, sessionId, paneKept }) => {
+      if (paneKept) {
+        return;
+      }
       disposeInstance(terminalId);
       if (selectedTerminalIdRef.current === terminalId) {
         setSelectedTerminalId(null);
@@ -635,6 +643,13 @@ export default function App() {
     const owner = terminalsRef.current.find((record) => record.sessionId === sessionId);
     if (owner) {
       setSelectedTerminalId(owner.terminalId);
+      // A row whose pane was kept after its `claude` ended: the click is the
+      // second half of "Press Enter to start again".
+      if (owner.exited) {
+        window.clauding.restartTerminal(owner.terminalId).catch((error) => {
+          console.error("Could not start the terminal again", error);
+        });
+      }
       return;
     }
     setSelectedTerminalId(null);
@@ -1378,7 +1393,8 @@ export default function App() {
       }
     }
     const placeholders = terminals
-      .filter((terminal) => terminal.sessionId && !terminal.exited && !listedIds.has(terminal.sessionId))
+      // A terminal whose pane was kept keeps its row too, in the same place.
+      .filter((terminal) => terminal.sessionId && !listedIds.has(terminal.sessionId))
       .map((terminal) => placeholderSession(terminal, language));
     return placeholders.concat(sessions).map((session) => ({
       ...session,

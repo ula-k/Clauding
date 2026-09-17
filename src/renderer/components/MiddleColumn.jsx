@@ -189,6 +189,9 @@ function statusText(statusGroup, translate) {
   if (statusGroup === "waiting") {
     return translate("status.waiting");
   }
+  if (statusGroup === "exited") {
+    return translate("status.exited");
+  }
   return translate("status.idle");
 }
 
@@ -371,6 +374,11 @@ function columnMode({ session, terminal }) {
 }
 
 function terminalStatusGroup(terminal, session) {
+  // The pane of a terminal whose `claude` ended is kept on screen
+  // (electron/lib/exitPlan.js), so the pill has to be able to say so.
+  if (terminal.exited) {
+    return "exited";
+  }
   if (session && session.ownedByApp) {
     return session.statusGroup;
   }
@@ -465,6 +473,13 @@ export default function MiddleColumn({
   // agent and session levels already merged in the main process). They get
   // no control of their own: the folder's tooltip says them.
   const extraArgumentsText = terminal && terminal.extraArguments ? terminal.extraArguments.join(" ") : "";
+  // The folder, the flags it was started with, and — because pasting a file
+  // has no control of its own either — what ⌘V and a drop do here.
+  const folderTooltipLines = [workingDirectoryShort];
+  if (extraArgumentsText) {
+    folderTooltipLines.push(`${translate("flags.effective")}: ${extraArgumentsText}`);
+  }
+  folderTooltipLines.push(translate("header.pasteFileHint"));
 
   const statusGroup = terminalStatusGroup(terminal, session);
   const agentStarting = Boolean(terminal && terminal.agentId && terminal.kickoffState === "waiting");
@@ -593,11 +608,7 @@ export default function MiddleColumn({
           <div className="header-meta">
             <span
               className="meta-item"
-              title={
-                extraArgumentsText
-                  ? `${workingDirectoryShort}\n${translate("flags.effective")}: ${extraArgumentsText}`
-                  : workingDirectoryShort
-              }
+              title={folderTooltipLines.join("\n")}
               data-extra-flags={extraArgumentsText || null}
             >
               <span className="project-dot" style={{ background: `var(--project-color-${projectColorIndex})` }} />

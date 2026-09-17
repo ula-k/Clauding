@@ -78,10 +78,19 @@ const CHANNELS = {
   projectsPick: "projects:pick",
   terminalOpen: "terminal:open",
   terminalInput: "terminal:input",
+  // ⌘V inside a terminal, and files dropped on its pane: the main
+  // process reads the clipboard (only it can) or takes the dropped paths,
+  // and answers with what it did — a file's path typed into the pty, a
+  // clipboard image saved and its path typed, or "text" for the plain paste
+  // xterm still does itself.
+  terminalPasteSmart: "terminal:paste-smart",
   terminalResize: "terminal:resize",
   terminalList: "terminal:list",
   terminalReplay: "terminal:replay",
   terminalClose: "terminal:close",
+  // "Press Enter to start again" on a pane that was kept after its `claude`
+  // ended: the same command line into the same terminal id.
+  terminalRestart: "terminal:restart",
   terminalData: "terminal:data",
   terminalExit: "terminal:exit",
   terminalChanged: "terminal:changed",
