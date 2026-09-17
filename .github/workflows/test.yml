@@ -1,10 +1,11 @@
 name: Tests
 
-# macOS is where the app is written and used; Windows is in here because the
-# Windows port was written without a Windows machine to try it on, so this
-# workflow is the only thing that actually runs those code paths. Both
-# operating systems run the same four steps, and Windows runs one more: a
-# real pty through ConPTY, with no Electron and no window.
+# The dry tests are platform-independent logic, so Ubuntu runs them at the
+# cheapest rate; Windows is in here because the Windows port was written
+# without a Windows machine to try it on, so this workflow is the only thing
+# that actually runs those code paths. macOS is deliberately absent: it is
+# where the app is written and used (tests run locally), and a macOS runner
+# burns the free minutes of a private repository ten times faster.
 on:
   push:
   pull_request:
@@ -17,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Check out the repository
@@ -29,8 +30,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      # `npm ci` runs the postinstall (scripts/prepareNodePty.js): the
-      # execute bit on macOS, the load check inside Electron on both.
+      # `npm ci` runs the postinstall (scripts/prepareNodePty.js).
       - name: Install
         run: npm ci
 
