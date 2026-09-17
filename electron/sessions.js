@@ -3,7 +3,12 @@
 import { listSessions, getSessionInfo, renameSession, deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { projectShortName, projectFolderLabel, projectColorIndex, shortenHomePath } from "./projects.js";
 import { collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { isInsideSmokeFolder } from "./smokeFolder.js";
+import { claudeRegistryPaths } from "./lib/platformPaths.js";
+import { searchTranscriptFiles } from "./lib/transcriptSearch.js";
 
 export const DEFAULT_PAGE_SIZE = 60;
 
@@ -125,4 +130,104 @@ export async function renameSessionTitle(sessionId, title) {
 export async function deleteSessionTranscript(sessionId) {
   await deleteSession(sessionId);
   return { sessionId, deleted: true };
+}
+
+// ---------------------------------------------------------------- search ---
+//
+// "The terminal shows what it shows, but there is always the JSON file with
+// everything 1:1." That file is the transcript the CLI writes at
+// ~/.claude/projects/<project folder>/<sessionId>.jsonl — and, for a session
+// that sent work to subagents, one file per subagent beside it at
+// <sessionId>/subagents/agent-*.jsonl, each with an agent-*.meta.json saying
+// what kind of agent it was.
+//
+// The project folder's name is the working directory with its separators
+// mangled, so rather than trying to reproduce that spelling the folders are
+// simply looked through for the file named after the session. It is a flat
+// listing of a few dozen folders and it is right whatever the CLI does to
+// the name.
+//
+// Reading only: nothing here writes, renames or deletes a thing.
+
+// The transcript and every subagent transcript of one session, as
+// [{ filePath, roleLabel }] — the main file first, so the hits come back in
+// the order the conversation happened.
+export function transcriptFilesFor(sessionId, { homeDirectory = os.homedir() } = {}) {
+  if (!sessionId || !/^[A-Za-z0-9._-]+$/.test(String(sessionId))) {
+    return [];
+  }
+  const projectsDirectory = claudeRegistryPaths({ homeDirectory }).projectsDirectory;
+  let projectFolders = [];
+  try {
+    projectFolders = fs.readdirSync(projectsDirectory, { withFileTypes: true });
+  } catch (error) {
+    return [];
+  }
+  for (const folder of projectFolders) {
+    if (!folder.isDirectory()) {
+      continue;
+    }
+    const transcriptPath = path.join(projectsDirectory, folder.name, `${sessionId}.jsonl`);
+    if (!fs.existsSync(transcriptPath)) {
+      continue;
+    }
+    const files = [{ filePath: transcriptPath, roleLabel: null }];
+    files.push(...subagentTranscriptsIn(path.join(projectsDirectory, folder.name, sessionId, "subagents")));
+    return files;
+  }
+  return [];
+}
+
+// <sessionId>/subagents/agent-<id>.jsonl, labelled from the agent-<id>.meta.json
+// next to it ("subagent (Explore)"). A subagent with no meta file is still
+// searched, it is just labelled plainly.
+function subagentTranscriptsIn(subagentsFolder) {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(subagentsFolder, { withFileTypes: true });
+  } catch (error) {
+    return [];
+  }
+  const files = [];
+  for (const entry of entries.sort((first, second) => first.name.localeCompare(second.name))) {
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
+      continue;
+    }
+    const filePath = path.join(subagentsFolder, entry.name);
+    files.push({ filePath, roleLabel: `subagent (${subagentTypeOf(filePath)})` });
+  }
+  return files;
+}
+
+function subagentTypeOf(transcriptPath) {
+  try {
+    const meta = JSON.parse(fs.readFileSync(transcriptPath.replace(/\.jsonl$/, ".meta.json"), "utf8"));
+    if (meta && typeof meta.agentType === "string" && meta.agentType.trim()) {
+      return meta.agentType.trim();
+    }
+  } catch (error) {
+    // No meta file, or an unreadable one: the plain label below will do.
+  }
+  return "agent";
+}
+
+// What the window asks for: every place `query` appears in this session's
+// transcript, subagents included. The parsing and the matching are
+// electron/lib/transcriptSearch.js; this only finds and reads the files.
+export function searchSessionTranscript(sessionId, query, { homeDirectory = os.homedir() } = {}) {
+  const trimmedQuery = String(query || "").trim();
+  const files = transcriptFilesFor(sessionId, { homeDirectory });
+  if (files.length === 0) {
+    return { query: trimmedQuery, hits: [], totalMatches: 0, transcriptFound: false, searchedAt: Date.now() };
+  }
+  const contents = [];
+  for (const file of files) {
+    try {
+      contents.push({ text: fs.readFileSync(file.filePath, "utf8"), roleLabel: file.roleLabel });
+    } catch (error) {
+      // A subagent file that vanished between the listing and the read.
+    }
+  }
+  const found = searchTranscriptFiles(contents, trimmedQuery);
+  return { ...found, transcriptFound: true, fileCount: contents.length, searchedAt: Date.now() };
 }

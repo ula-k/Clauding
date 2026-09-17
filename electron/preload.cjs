@@ -37,6 +37,15 @@ contextBridge.exposeInMainWorld("clauding", {
   deleteSession(sessionId) {
     return ipcRenderer.invoke(CHANNELS.sessionsDelete, { sessionId });
   },
+  // Every place a word appears in this session's transcript file, subagents
+  // included. The main process reads the JSONL; nothing is written.
+  searchTranscript(sessionId, query) {
+    return ipcRenderer.invoke(CHANNELS.transcriptSearch, { sessionId, query });
+  },
+  // "View → Find in conversation…" (⌘F) asking for the find bar.
+  onShowFind(listener) {
+    return subscribe(CHANNELS.transcriptFindShow, listener);
+  },
   onSessionsChanged(listener) {
     return subscribe(CHANNELS.sessionsChanged, listener);
   },
@@ -238,6 +247,11 @@ contextBridge.exposeInMainWorld("clauding", {
   // sessionKey / terminalId says whose tab set it goes to.
   openPanelTab(request) {
     return ipcRenderer.invoke(CHANNELS.panelOpen, request);
+  },
+  // The search-results tab of "Find in conversation…": one per session,
+  // replaced by the next query.
+  openPanelSearchTab(sessionKey, query) {
+    return ipcRenderer.invoke(CHANNELS.panelOpenSearch, { sessionKey, query });
   },
   closePanelTab(sessionKey, tabId) {
     return ipcRenderer.invoke(CHANNELS.panelClose, { sessionKey, tabId });

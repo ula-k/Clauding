@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { renderMarkdown, withoutFrontmatter } from "../markdown.js";
-import { CloseIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon } from "./Icons.jsx";
+import { CloseIcon, FindTabIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon } from "./Icons.jsx";
+import SearchResults from "./SearchResults.jsx";
 import { fileUrlFor, splitAddress } from "../paths.js";
 
 // The right panel: Hermes-style tabs next to the terminal. Each tab is a
@@ -33,6 +34,9 @@ function TabIcon({ kind }) {
   }
   if (kind === "markdown") {
     return <MarkdownIcon />;
+  }
+  if (kind === "search") {
+    return <FindTabIcon />;
   }
   return <PageIcon />;
 }
@@ -177,7 +181,7 @@ function AddressForm({ onOpen, autoFocus }) {
   );
 }
 
-export default function SidePanel({ open, sessionKey, panelState, actions }) {
+export default function SidePanel({ open, sessionKey, panelState, actions, search }) {
   const { translate } = useTranslation();
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -190,6 +194,10 @@ export default function SidePanel({ open, sessionKey, panelState, actions }) {
     .map((tab) => tab.target)
     .join("\n");
   const activeTab = tabs.find((tab) => tab.tabId === panelState.activeTabId) || null;
+  // Reload, the address and "Open in Chrome" are about a page on disk or on
+  // the web; a search has none of those, and its own Refresh link sits in
+  // the results header instead.
+  const activePage = activeTab && activeTab.kind !== "search" ? activeTab : null;
   const showAddressForm = adding || tabs.length === 0;
 
   // A new active tab (opened by the CLI, a click, or the address field) closes the "+" view.
@@ -227,25 +235,25 @@ export default function SidePanel({ open, sessionKey, panelState, actions }) {
   }, [localTargetsKey]);
 
   function reloadActive() {
-    if (!activeTab) {
+    if (!activePage) {
       return;
     }
-    setReloadCounters((previous) => ({ ...previous, [activeTab.tabId]: (previous[activeTab.tabId] || 0) + 1 }));
+    setReloadCounters((previous) => ({ ...previous, [activePage.tabId]: (previous[activePage.tabId] || 0) + 1 }));
   }
 
   function copyAddress() {
-    if (!activeTab) {
+    if (!activePage) {
       return;
     }
-    navigator.clipboard.writeText(activeTab.target).then(() => {
+    navigator.clipboard.writeText(activePage.target).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), COPIED_FEEDBACK_MILLISECONDS);
     });
   }
 
   function openExternally() {
-    if (activeTab) {
-      window.clauding.openExternally(activeTab.target).catch((error) => console.error("Could not open externally", error));
+    if (activePage) {
+      window.clauding.openExternally(activePage.target).catch((error) => console.error("Could not open externally", error));
     }
   }
 
@@ -275,7 +283,9 @@ export default function SidePanel({ open, sessionKey, panelState, actions }) {
                   data-panel-tab={tab.kind}
                 >
                   <TabIcon kind={tab.kind} />
-                  <span className="panel-tab-title">{tab.title}</span>
+                  <span className="panel-tab-title">
+                    {tab.kind === "search" ? translate("find.tabTitle", { query: tab.target }) : tab.title}
+                  </span>
                   <button
                     type="button"
                     className="panel-tab-close"
@@ -304,18 +314,24 @@ export default function SidePanel({ open, sessionKey, panelState, actions }) {
           <div className="panel-toolbar">
             <button
               type="button"
-              className={!activeTab ? "panel-address is-empty" : copied ? "panel-address is-copied" : "panel-address"}
+              className={!activePage ? "panel-address is-empty" : copied ? "panel-address is-copied" : "panel-address"}
               onClick={copyAddress}
-              disabled={!activeTab}
-              title={activeTab ? translate("panel.copyHint") : undefined}
+              disabled={!activePage}
+              title={activePage ? translate("panel.copyHint") : undefined}
             >
-              {!activeTab ? translate("panel.noTab") : copied ? translate("panel.copied") : <AddressText target={activeTab.target} />}
+              {activeTab && !activePage
+                ? translate("find.tabTitle", { query: activeTab.target })
+                : !activePage
+                  ? translate("panel.noTab")
+                  : copied
+                    ? translate("panel.copied")
+                    : <AddressText target={activePage.target} />}
             </button>
-            <button type="button" className="panel-tool" onClick={reloadActive} disabled={!activeTab} title={translate("panel.reload")}>
+            <button type="button" className="panel-tool" onClick={reloadActive} disabled={!activePage} title={translate("panel.reload")}>
               <ReloadIcon />
               <span>{translate("panel.reload")}</span>
             </button>
-            <button type="button" className="panel-tool" onClick={openExternally} disabled={!activeTab} title={translate("panel.openInBrowser")}>
+            <button type="button" className="panel-tool" onClick={openExternally} disabled={!activePage} title={translate("panel.openInBrowser")}>
               <span>{translate("panel.openInBrowser")}</span>
             </button>
             <button type="button" className="panel-tool" onClick={actions.hide} title={translate("panel.hide")}>
@@ -325,7 +341,22 @@ export default function SidePanel({ open, sessionKey, panelState, actions }) {
           <div className="panel-body">
             {showAddressForm && <AddressForm onOpen={actions.open} autoFocus={adding} />}
             {tabs.map((tab) =>
-              tab.kind === "markdown" ? (
+              tab.kind === "search" ? (
+                <div
+                  key={tab.tabId}
+                  className={!showAddressForm && tab.tabId === panelState.activeTabId ? "" : "is-hidden"}
+                  data-panel-search
+                >
+                  <SearchResults
+                    query={tab.target}
+                    result={search ? search.result : null}
+                    currentIndex={search ? search.currentIndex : 0}
+                    searching={Boolean(search && search.searching)}
+                    onSelectHit={search ? search.onSelectHit : () => {}}
+                    onRefresh={search ? search.onRefresh : () => {}}
+                  />
+                </div>
+              ) : tab.kind === "markdown" ? (
                 <MarkdownTab
                   key={tab.tabId}
                   tab={tab}

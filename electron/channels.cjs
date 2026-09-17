@@ -7,6 +7,13 @@ const CHANNELS = {
   sessionsChanged: "sessions:changed",
   sessionsRename: "sessions:rename",
   sessionsDelete: "sessions:delete",
+  // "Find in conversation…": the window asks the main process to read this
+  // session's JSONL transcript (and its subagents') and answer with every
+  // place the query appears. Read-only, run again on every Enter.
+  transcriptSearch: "transcript:search",
+  // View → Find in conversation… (and ⌘F) asking the window to put the find
+  // bar up over the terminal.
+  transcriptFindShow: "transcript:find-show",
   groupsGet: "groups:get",
   groupsCreate: "groups:create",
   groupsRename: "groups:rename",
@@ -74,6 +81,8 @@ const CHANNELS = {
   smokeCommand: "smoke:command",
   panelGet: "panel:get",
   panelOpen: "panel:open",
+  // The one search-results tab of a session ("Find in conversation…").
+  panelOpenSearch: "panel:open-search",
   panelClose: "panel:close",
   panelActivate: "panel:activate",
   panelSetTitle: "panel:set-title",

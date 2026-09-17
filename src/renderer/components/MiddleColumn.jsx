@@ -3,6 +3,7 @@ import { useTranslation } from "../i18n.js";
 import { folderLabel } from "../paths.js";
 import TerminalPane from "./TerminalPane.jsx";
 import DocumentReader from "./DocumentReader.jsx";
+import FindBar from "./FindBar.jsx";
 import { DotsIcon, FolderIcon, ForkIcon, PencilIcon, SparkIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuLabel, MenuNote, MenuSeparator, MenuSubmenu } from "./PopupMenu.jsx";
 import { AgentChip } from "./AgentBadge.jsx";
@@ -402,6 +403,7 @@ export default function MiddleColumn({
   reader,
   onCloseReader,
   onOpenReaderInPanel,
+  find,
   windowTools
 }) {
   const { translate, language } = useTranslation();
@@ -618,7 +620,23 @@ export default function MiddleColumn({
             )}
           </div>
         </header>
-        <TerminalPane terminalId={terminal.terminalId} />
+        <div className="terminal-area">
+          {/* "Find in conversation…": over the terminal, never a second
+              header line. The terminal keeps running underneath. */}
+          {find && find.open && (
+            <FindBar
+              query={find.query}
+              onQueryChange={find.onQueryChange}
+              onSubmit={find.onSubmit}
+              onStep={find.onStep}
+              onClose={find.onClose}
+              result={find.result}
+              currentIndex={find.currentIndex}
+              searching={find.searching}
+            />
+          )}
+          <TerminalPane terminalId={terminal.terminalId} />
+        </div>
       </div>
     </div>
   );

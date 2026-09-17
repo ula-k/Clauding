@@ -35,6 +35,9 @@ else in this file describes the Mac.
 * **Agents.** An agent is a name, an emoji, a colour and the folder its
   definition is read from. Start a session as one and its definition goes
   into the system prompt; its emoji then marks every row it ever ran.
+* **Find in conversation.** ⌘F searches the session's whole JSONL
+  transcript — everything the terminal ever printed, tool results and
+  thinking included — and puts the hits in the side panel.
 * **Fork.** Any conversation can be copied into a *new* terminal, with the
   original left exactly as it was — including a session that is busy
   somewhere else.
@@ -328,7 +331,8 @@ electron/smokeResize.js    CLAUDING_SMOKE_RESIZE: the two drag handles (dev only
 electron/recentProjects.js recent project folders from ~/.claude.json for "+ New"
 electron/preload.cjs       contextBridge -> window.clauding
 electron/channels.cjs      IPC channel names (shared by main + preload)
-electron/sessions.js       listSessions() + enrichment (title, folder label, colour, status, ownership)
+electron/sessions.js       listSessions() + enrichment (title, folder label, colour, status, ownership), and finding + reading a session's transcript files for the search
+electron/lib/transcriptSearch.js  parsing and searching a transcript JSONL (pure: no Electron, no fs)
 electron/sessionGroups.js  the user's own groups + hidden sessions (groups.json)
 electron/agents.js         the user's agents + session -> agent links (agents.json)
 electron/settings.js       settings.json: the agents root and the skills folder
@@ -383,6 +387,8 @@ src/renderer/components/DeleteSessionDialog.jsx  the one destructive confirmatio
 src/renderer/components/AgentPickerSheet.jsx     "More…": every agent, with a search box
 src/renderer/components/WindowTools.jsx    the settings gear (top-right) and the Skills + settings popovers
 src/renderer/components/DocumentReader.jsx a skill / an agent definition read over the terminal
+src/renderer/components/FindBar.jsx        "Find in conversation…": the bar over the terminal
+src/renderer/components/SearchResults.jsx  its hits, in the side panel's Search tab
 src/renderer/components/SkillsScanSheet.jsx  "Scan for skills…": candidates found on the Mac
 src/renderer/components/BuiltinSkillSheet.jsx  the first-run question about the built-in skill
 electron/skillsScan.js     where skills hide on a Mac, and copying one into the skills folder
@@ -397,8 +403,9 @@ src/renderer/locales/      en.json, pl.json, es.json, zh-CN.json — every UI st
 
 The SDK (`@anthropic-ai/claude-agent-sdk`) is only used for reading:
 `listSessions` and `getSessionInfo` — and `renameSession` for the editable
-title. (`getSessionMessages` went with the read-only preview: the app does
-not read a transcript any more.) The only thing the app itself writes under
+title. (`getSessionMessages` went with the read-only preview; the one thing
+that reads a transcript now is **Find in conversation**, which reads the
+`.jsonl` file itself.) The only thing the app itself writes under
 `~/.claude` is the built-in skill, once you have agreed to it (see
 **Seeding**); the `claude` processes in the terminals write their own
 transcripts and registry entries, like they do from Terminal.app.
@@ -687,7 +694,8 @@ window resize**, because a width stored while the window was bigger used to
 push the handle off screen, and then the panel could not be moved at all.
 
 A **tab strip** at the top, one tab per page: a local **HTML** file
-(`file://`), a local **Markdown** file, or an **http(s) URL**; the "+" tab is
+(`file://`), a local **Markdown** file, an **http(s) URL**, or the one
+**Search** tab of "Find in conversation…" (see below); the "+" tab is
 an address field (paste a path or URL, Enter opens it; relative paths resolve
 against the session's folder there, against the caller's cwd from `clauding open`).
 Tab header: icon by type, short title (file name for files, the document
@@ -723,6 +731,75 @@ Electron 44 quirk: removing a `<webview>` from the DOM (closing a tab,
 switching sessions) throws a harmless "Invalid guestInstanceId" from the
 element's own `disconnectedCallback` (the guest is already gone by then);
 `main.jsx` swallows that one message.
+
+## Find in conversation
+
+> "The terminal shows what it shows, but there is always the JSON file with
+> everything 1:1."
+
+That file is the transcript the Claude Code CLI writes at
+`~/.claude/projects/<project folder>/<sessionId>.jsonl` — every message, every
+thinking block, every tool call and every tool result, whatever has since
+scrolled out of the terminal. **⌘F** (Ctrl+F on Windows), or **View → Find in
+conversation…**, searches it.
+
+There is **no button**: the entry points are the shortcut and the menu bar,
+and ⌘F *is* that menu item's accelerator, so there is no key handler of the
+app's own for xterm to fight over.
+
+**The bar.** A slim bar slides over the top of the terminal — not a second
+header line; the header is one line and stays one line. The terminal keeps
+running underneath. In it: the field, **"3 of 9"**, **↑** and **↓**, and a
+close ×. Matching is plain text and case-insensitive (no whole-word toggle,
+no patterns: a stray `(` is a bracket, not a syntax error). **Enter** searches
+when the word has changed and steps to the next hit when it has not,
+**Shift+Enter** steps back, **Escape** closes the bar. Selecting another
+session closes it too — a different session is a different transcript.
+
+**What is searched** (`electron/lib/transcriptSearch.js`, pure, no Electron):
+the file is read line by line and only the conversation is kept —
+
+| line | what is taken |
+| --- | --- |
+| `type: "user"` | what was typed (string content), and each `tool_result` block (a plain string or a list of text blocks) |
+| `type: "assistant"` | each `text` block, each `thinking` block, and each `tool_use` as its name plus its input as JSON |
+| everything else | skipped: `system`, `file-history-snapshot`, `file-history-delta`, `attachment`, `queue-operation`, `agent-name`, `ai-title`, `mode`, `permission-mode`, `last-prompt`, `cost-state` — bookkeeping the CLI keeps for itself, not conversation |
+
+An `isMeta` line is skipped as well, and so is a half-written last line: the
+session may be writing to the file at that very moment.
+
+**Subagents too.** A session that sent work out has one transcript per
+subagent at `<sessionId>/subagents/agent-*.jsonl`, with an
+`agent-*.meta.json` beside it. Those are searched after the main file and
+their hits are labelled **`subagent (Explore)`** — the `agentType` out of the
+meta file — so it is clear the words were not said in the conversation
+itself.
+
+**The results** go in the side panel as that session's one **Search: <query>**
+tab (`SearchResults.jsx`) — one per session, replaced by the next query, and
+the panel is put up for that session, because a result nobody can see is no
+result. It is drawn in the app's reading style: a header with the query and
+**"9 messages, 12 matches"**, then the hits in transcript order, each one a
+role badge (*you* / *Claude* / *tool result* / *subagent (…)*), what kind of
+block it was, the time, and a three-line snippet — ±120 characters around the
+first match, with **every** match in the window on a lavender ground
+(`--accent-soft`). Clicking a hit opens the whole message under it: an
+assistant's own words as markdown, everything else exactly as it is with the
+matches marked. A message longer than 20 kB is cut there and says so.
+
+**Live.** The transcript grows while the session runs, so nothing is cached
+and nothing is watched: pressing Enter reads the file again, and so does the
+**Refresh** link in the results header. That link is inside the panel — the
+toolbar gets no new button.
+
+**Search tabs are not saved.** `panel-tabs.json` keeps pages, not searches: a
+search is a view of the transcript right now, so it is filtered out on the
+way to disk and a restart comes back to the pages, not to somebody's old
+query.
+
+IPC: `transcript:search` (renderer → main, read-only) and
+`transcript:find-show` (main → renderer, the menu item asking for the bar);
+`panel:open-search` puts the results tab in place.
 
 ## The `clauding` command and the preamble
 
@@ -1508,6 +1585,10 @@ CLAUDING_SCREENSHOT_WIDTH=1000 CLAUDING_SCREENSHOT_HEIGHT=900 ...
                                                          # 1440x900 (1000 is its minimum width),
                                                          # for photographing a header at the widths
                                                          # it has to survive
+CLAUDING_SCREENSHOT_FIND=lavender ...                     # open "Find in conversation…" and search
+                                                         # for that word before the shutter — the one
+                                                         # view with no button to click, because its
+                                                         # entry points are ⌘F and the View menu
 CLAUDING_SCREENSHOT_CLICK='[data-agents-tab]>>[data-add-agent]' ...
                                                          # click these selectors in order first
                                                          # (a tab, a sheet, a menu item), so any
@@ -1694,8 +1775,8 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: **269 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the terminal header's one-line fit, i18n key
-sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-19`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
+`npm test` runs `node --test test/*.test.js`: **286 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the transcript search, the terminal header's one-line fit, i18n key
+sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-20`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
 
 `test/platform.test.js` is the odd one out: it runs on macOS and exercises the **Windows** branches by handing in `platform: "win32"` and made-up Windows paths — the CLI lookup order, the `cmd.exe /c` wrapper, the named pipe, the Ctrl shortcuts, the menu without the macOS-only roles, the whole installer plan, the .ico encoder. It proves the decisions, not that Windows obeys them.
 

@@ -18,14 +18,24 @@ import { isMacOS } from "./platformPaths.js";
 
 export const SETTINGS_ACCELERATOR = "CommandOrControl+,";
 
+export const FIND_ACCELERATOR = "CommandOrControl+F";
+
+// The View menu is written out rather than taken as `role: "viewMenu"`,
+// because "Find in conversation…" has to sit at the top of it — above the
+// reload / zoom / full-screen roles, which are kept exactly as the role
+// would have given them. Its accelerator is what ⌘F in the window is: a
+// menu accelerator beats anything the page (and xterm) would do with the
+// key, so there is no second keyboard handler anywhere.
 export function applicationMenuTemplate({
   platform = process.platform,
   applicationName = "Clauding",
   updateItemLabel = "Check for new version…",
   settingsLabel = "Settings…",
+  findLabel = "Find in conversation…",
   skillsMenu = { label: "Skills", submenu: [] },
   onCheckForUpdate = () => {},
-  onShowSettings = () => {}
+  onShowSettings = () => {},
+  onFindInConversation = () => {}
 } = {}) {
   const onMac = isMacOS(platform);
   const applicationSubmenu = [
@@ -66,7 +76,22 @@ export function applicationMenuTemplate({
       ]
     },
     skillsMenu,
-    { role: "viewMenu" },
+    {
+      label: "View",
+      submenu: [
+        { label: findLabel, accelerator: FIND_ACCELERATOR, click: onFindInConversation },
+        { type: "separator" },
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" }
+      ]
+    },
     { role: "windowMenu" }
   ];
 }

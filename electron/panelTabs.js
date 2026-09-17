@@ -5,6 +5,12 @@
 //   kind "html"      a local .html / .htm file, rendered in a <webview> (file://)
 //   kind "markdown"  a local .md file, rendered by the app's markdown pipeline
 //   kind "url"       an http(s) address, rendered in a <webview>
+//   kind "search"     the results of "Find in conversation…", `target` being
+//                     the query itself. There is at most one per session
+//                     (a new search replaces it), and it is deliberately
+//                     **not** saved to disk: a search is a view of the
+//                     transcript right now, not a page to come back to
+//                     after a restart.
 //
 // Keys are session ids; a terminal that has not registered its session yet
 // uses "terminal:<terminalId>" and its tabs move to the session id once known.
@@ -94,7 +100,7 @@ export function createPanelTabStore({ storagePath, onChange }) {
       saveTimer = null;
       try {
         fs.mkdirSync(path.dirname(storagePath), { recursive: true });
-        fs.writeFileSync(storagePath, JSON.stringify({ version: 1, sessions: tabsBySession }, null, 2));
+        fs.writeFileSync(storagePath, JSON.stringify({ version: 1, sessions: withoutSearchTabs() }, null, 2));
       } catch (error) {
         console.log(`[panel] could not save ${storagePath}: ${error.message}`);
       }
@@ -103,6 +109,25 @@ export function createPanelTabStore({ storagePath, onChange }) {
 
   function emptyState() {
     return { tabs: [], activeTabId: null };
+  }
+
+  // What goes on disk: everything but the search results. A session left
+  // with nothing but a search tab keeps only its panelVisible flag.
+  function withoutSearchTabs() {
+    const saved = {};
+    for (const [sessionKey, state] of Object.entries(tabsBySession)) {
+      const tabs = state.tabs.filter((tab) => tab.kind !== "search");
+      if (tabs.length === 0 && typeof state.panelVisible !== "boolean") {
+        continue;
+      }
+      const activeTabId = tabs.some((tab) => tab.tabId === state.activeTabId)
+        ? state.activeTabId
+        : tabs.length > 0
+          ? tabs[0].tabId
+          : null;
+      saved[sessionKey] = { ...state, tabs, activeTabId };
+    }
+    return saved;
   }
 
   // A session that was never shown or hidden by hand follows its tabs.
@@ -152,6 +177,29 @@ export function createPanelTabStore({ storagePath, onChange }) {
     }
     tabsBySession[sessionKey] = state;
     announce(sessionKey, reveal);
+    return { ...tab };
+  }
+
+  // "Find in conversation…": one search tab per session, replaced by the
+  // next query rather than piling up, and the panel goes up for that
+  // session because a result nobody can see is no result at all.
+  function openSearch(sessionKey, query) {
+    if (!sessionKey) {
+      throw new Error("No session to search in.");
+    }
+    const state = tabsBySession[sessionKey] || emptyState();
+    let tab = state.tabs.find((existing) => existing.kind === "search");
+    if (tab) {
+      tab.target = query;
+      tab.title = query;
+    } else {
+      tab = { tabId: randomUUID(), kind: "search", target: query, title: query };
+      state.tabs.push(tab);
+    }
+    state.activeTabId = tab.tabId;
+    state.panelVisible = true;
+    tabsBySession[sessionKey] = state;
+    announce(sessionKey, true);
     return { ...tab };
   }
 
@@ -244,5 +292,5 @@ export function createPanelTabStore({ storagePath, onChange }) {
     return true;
   }
 
-  return { get, open, close, activate, setTitle, setVisible, migrate, forgetSession };
+  return { get, open, openSearch, close, activate, setTitle, setVisible, migrate, forgetSession };
 }

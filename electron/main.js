@@ -11,6 +11,7 @@ import {
   isScratchWorkingDirectory,
   renameSessionTitle,
   deleteSessionTranscript,
+  searchSessionTranscript,
   DEFAULT_PAGE_SIZE
 } from "./sessions.js";
 import { watchLiveStatus, collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
@@ -651,6 +652,9 @@ function createWindow() {
 //       much longer before quitting, so it can be read from outside
 //   CLAUDING_SCREENSHOT_CLICK=a>>b         click these selectors, in order,
 //       before the capture (a sheet, a tab, a menu item)
+//   CLAUDING_SCREENSHOT_FIND=<word>        open "Find in conversation…" and
+//       search for that word — the one view with no button to click, since
+//       its entry points are the menu bar and ⌘F
 async function captureScreenshotAndQuit() {
   // CLAUDING_SCREENSHOT_TERMINAL=<folder>: open a terminal in that folder
   // first, so a picture can be taken of something that needs a live session
@@ -678,6 +682,27 @@ async function captureScreenshotAndQuit() {
       '(() => { const row = document.querySelector(\'[data-session-row][data-running-elsewhere="1"]\'); if (row) { row.click(); } return Boolean(row); })()'
     );
     await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  // CLAUDING_SCREENSHOT_FIND=<word>: the find bar has no button on purpose
+  // (the entry points are ⌘F and the View menu), so the hook asks for it the
+  // same way the menu item does and then types the word in and presses Enter.
+  const findQuery = process.env.CLAUDING_SCREENSHOT_FIND || "";
+  if (findQuery && mainWindow) {
+    sendToWindow(CHANNELS.transcriptFindShow, {});
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const typed = await mainWindow.webContents.executeJavaScript(
+      `(() => {
+        const field = document.querySelector("[data-find-input]");
+        if (!field) { return false; }
+        const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        valueSetter.call(field, ${JSON.stringify(findQuery)});
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        return true;
+      })()`
+    );
+    console.log(`[screenshot] searched for ${findQuery}: ${typed}`);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   // CLAUDING_SCREENSHOT_CLICK: CSS selectors to click before the capture,
   // separated by ">>" and clicked in order, so any sheet or menu can be put
@@ -955,6 +980,10 @@ function installApplicationMenu() {
         },
         onShowSettings() {
           sendToWindow(CHANNELS.settingsShow, {});
+        },
+        findLabel: "Find in conversation…",
+        onFindInConversation() {
+          sendToWindow(CHANNELS.transcriptFindShow, {});
         }
       })
     )
@@ -1137,6 +1166,14 @@ function registerIpc() {
 
   ipcMain.handle(CHANNELS.sessionsRename, async (event, { sessionId, title }) => {
     return renameSessionTitle(sessionId, title);
+  });
+
+  // "Find in conversation…": the session's JSONL transcript read start to
+  // finish and searched for the word the user typed. The file grows while
+  // the session runs, so nothing is cached and nothing is watched — every
+  // Enter (and the Refresh link in the results) reads it again.
+  ipcMain.handle(CHANNELS.transcriptSearch, async (event, { sessionId, query }) => {
+    return searchSessionTranscript(sessionId, query);
   });
 
   // "Delete session": the one destructive action in the app. The window has
@@ -1464,6 +1501,10 @@ function registerIpc() {
 
   ipcMain.handle(CHANNELS.panelOpen, async (event, request) => {
     return openPanelTab(request || {});
+  });
+
+  ipcMain.handle(CHANNELS.panelOpenSearch, async (event, { sessionKey, query }) => {
+    return panelTabs.openSearch(sessionKey, String(query || "").slice(0, 200));
   });
 
   ipcMain.handle(CHANNELS.panelClose, async (event, { sessionKey, tabId }) => {

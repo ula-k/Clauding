@@ -187,6 +187,19 @@ export default function App() {
   const [panelOpenWithoutSession, setPanelOpenWithoutSession] = useState(false);
   const [panelWidth, setPanelWidth] = useState(loadPanelWidth);
   const [panelState, setPanelState] = useState(EMPTY_PANEL_STATE);
+  // "Find in conversation…" (⌘F, View → Find in conversation…). The bar
+  // sits over the terminal; the results are a tab in the side panel, so the
+  // two halves share one piece of state here.
+  //
+  // `result` is what the main process answered with last — it carries the
+  // query it was asked, which is how the bar knows whether Enter means
+  // "search again" or "next hit". Nothing watches the transcript file: it
+  // grows while the session runs, and Enter (or Refresh) reads it afresh.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findResult, setFindResult] = useState(null);
+  const [findCurrentIndex, setFindCurrentIndex] = useState(0);
+  const [findSearching, setFindSearching] = useState(false);
   // Sessions agents.json links to an agent, read by id in the main process.
   // The Sessions list only holds the pages it has loaded, so without these
   // an agent's older work would be missing from the Agents tab.
@@ -216,6 +229,13 @@ export default function App() {
   // screen what it is going to do differently.
   const awaitingAssignmentKickoffRef = useRef(new Map());
   const panelSessionKeyRef = useRef(null);
+  // The last answer, for the stepper, which is installed once and must not
+  // be rebuilt every time a hit list arrives.
+  const findResultRef = useRef(null);
+  // The session whose transcript a search reads, and the key its results
+  // tab belongs to. Read inside the menu listener, which is installed once.
+  const findSessionIdRef = useRef(null);
+  const findPanelKeyRef = useRef(null);
   // Counts the panel states the main process has pushed at us. The answer to
   // a getPanelTabs() we sent earlier must not overwrite a newer push: when a
   // terminal registers its session id, the key changes, we ask for the new
@@ -1310,6 +1330,97 @@ export default function App() {
     [panelSessionKey, panelBaseDirectory, setPanelVisible]
   );
 
+  // ------------------------------------------- Find in conversation ---
+  //
+  // The transcript belongs to the session, so the search is keyed by the
+  // session id; the results tab belongs to the panel key, which is the same
+  // thing once the CLI has registered the session.
+  findResultRef.current = findResult;
+  findSessionIdRef.current = headerSessionId;
+  findPanelKeyRef.current = panelSessionKey;
+
+  const runFindSearch = useCallback(async (rawQuery) => {
+    const query = String(rawQuery || "").trim();
+    const sessionId = findSessionIdRef.current;
+    const panelKey = findPanelKeyRef.current;
+    if (!query || !sessionId) {
+      return;
+    }
+    setFindSearching(true);
+    try {
+      const found = await window.clauding.searchTranscript(sessionId, query);
+      setFindResult(found);
+      setFindCurrentIndex(0);
+      if (panelKey) {
+        await window.clauding.openPanelSearchTab(panelKey, query);
+      }
+    } catch (error) {
+      setFindResult({ query, hits: [], totalMatches: 0, transcriptFound: false });
+    } finally {
+      setFindSearching(false);
+    }
+  }, []);
+
+  // ↑ / ↓ (and Enter / Shift+Enter) walk the hits, wrapping round at either
+  // end — a find bar that stops dead at the last match is a find bar people
+  // press twice and give up on.
+  const stepFindHit = useCallback((direction) => {
+    setFindCurrentIndex((current) => {
+      const total = findResultRef.current ? findResultRef.current.hits.length : 0;
+      if (total === 0) {
+        return 0;
+      }
+      return (current + direction + total) % total;
+    });
+  }, []);
+
+  const closeFind = useCallback(() => setFindOpen(false), []);
+
+  // View → Find in conversation… — and ⌘F, which is that menu item's
+  // accelerator, so there is no key handler of our own to fight xterm over.
+  useEffect(() => {
+    return window.clauding.onShowFind(() => {
+      if (!findSessionIdRef.current) {
+        return;
+      }
+      setFindOpen(true);
+    });
+  }, []);
+
+  // A different session on screen means a different transcript: the bar
+  // goes away rather than showing another conversation's hits.
+  useEffect(() => {
+    setFindOpen(false);
+    setFindResult(null);
+    setFindCurrentIndex(0);
+  }, [panelSessionKey]);
+
+  const findState = useMemo(
+    () => ({
+      open: findOpen,
+      query: findQuery,
+      result: findResult,
+      currentIndex: findCurrentIndex,
+      searching: findSearching,
+      onQueryChange: setFindQuery,
+      onSubmit: () => runFindSearch(findQuery),
+      onStep: stepFindHit,
+      onClose: closeFind
+    }),
+    [findOpen, findQuery, findResult, findCurrentIndex, findSearching, runFindSearch, stepFindHit, closeFind]
+  );
+
+  const panelSearch = useMemo(
+    () => ({
+      result: findResult,
+      currentIndex: findCurrentIndex,
+      searching: findSearching,
+      onSelectHit: setFindCurrentIndex,
+      onRefresh: () => runFindSearch(findResult ? findResult.query : findQuery)
+    }),
+    [findResult, findCurrentIndex, findSearching, findQuery, runFindSearch]
+  );
+
   // A skill or an agent definition opens in the middle column, over the
   // terminal — the place the user is already looking. The side panel stays
   // one click away ("Open in side panel"), which is what somebody who wants
@@ -1421,6 +1532,7 @@ export default function App() {
           reader={reader}
           onCloseReader={() => setReader(null)}
           onOpenReaderInPanel={openReaderInPanel}
+          find={findState}
           windowTools={
             <WindowTools
               settings={settings}
@@ -1450,7 +1562,13 @@ export default function App() {
           data-resize-handle="panel"
           onPointerDown={(event) => beginDrag(event, "panel")}
         />
-        <SidePanel open={panelOpen} sessionKey={panelSessionKey} panelState={panelState} actions={panelActions} />
+        <SidePanel
+          open={panelOpen}
+          sessionKey={panelSessionKey}
+          panelState={panelState}
+          actions={panelActions}
+          search={panelSearch}
+        />
         {skillsScanOpen && (
           <SkillsScanSheet
             onClose={() => setSkillsScanOpen(false)}

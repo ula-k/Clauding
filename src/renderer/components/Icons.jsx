@@ -148,6 +148,18 @@ export function MarkdownIcon() {
   );
 }
 
+// The magnifier on the side panel's search-results tab. SearchIcon above is
+// the one in the session list's search box and is sized by its own box, so
+// the tab strip gets its own with the tab icon's class.
+export function FindTabIcon() {
+  return (
+    <svg className="panel-tab-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // "Read this here": an open page with lines of text. Marks the rows that
 // open the middle-column reader — a skill, an agent definition.
 export function ReadIcon() {
