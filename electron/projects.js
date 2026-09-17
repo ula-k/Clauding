@@ -1,5 +1,5 @@
 // Turning a session's working directory into what the list shows: a short
-// name, a colour and a folder label.
+// name, a color and a folder label.
 //
 // The path may have been written on either system, so the folders are split
 // on both separators (folderSegments in lib/platformPaths.js) and a Windows
@@ -12,7 +12,7 @@ import {
   shortenHomePath as shortenHomePathFor
 } from "./lib/platformPaths.js";
 
-// Soft palette, one colour per project directory. Kept here rather than in
+// Soft palette, one color per project directory. Kept here rather than in
 // CSS so the main process can ship a ready-to-use index to the renderer.
 export const PROJECT_COLOR_COUNT = 10;
 

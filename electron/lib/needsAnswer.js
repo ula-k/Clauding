@@ -22,7 +22,12 @@
 //      your…", "czekam na Twoją decyzję"…).
 //
 // A **busy** session never needs an answer: it is still writing, and
-// whatever it said a minute ago is not a question yet.
+// whatever it said a minute ago is not a question yet. Whether anybody is
+// *running* the session, on the other hand, does not come into it: a
+// question asked before the app was restarted is still unanswered, and the
+// row has to keep saying so. Only age does — a conversation nobody has
+// touched for three days is history, not a pending question, and every old
+// transcript that happens to end with "shall I?" would light the list up.
 //
 // Everything here is pure: text in, a boolean out. The file reading, the
 // cache stamp and the wiring live in electron/sessions.js.
@@ -31,6 +36,24 @@
 // more than a few kB, so this holds the last several of them — and a
 // half-written first line is simply dropped when it does not parse.
 export const TAIL_BYTES = 64 * 1024;
+
+// How long a transcript that ends with a question keeps the badge. It is
+// about the conversation, not about a process: an app restart kills every
+// terminal, and the question in the file is no less unanswered for it. Three
+// days is the line between "I left this half-finished" and "this is an old
+// conversation that happened to end with a question mark".
+export const NEEDS_ANSWER_MAX_AGE_MILLISECONDS = 3 * 24 * 60 * 60 * 1000;
+
+// Whether a transcript is recent enough to be asked the question at all.
+export function isRecentEnoughToAsk(lastModified, now = Date.now()) {
+  const stamp = Number(lastModified);
+  if (!Number.isFinite(stamp) || stamp <= 0) {
+    return false;
+  }
+  // A clock that jumped, or a file with a time in the future: treat it as
+  // recent rather than hiding it.
+  return now - stamp <= NEEDS_ANSWER_MAX_AGE_MILLISECONDS;
+}
 
 // How far back from the end of a message "needs input" still counts as the
 // session asking for something, rather than a word in the middle of a long

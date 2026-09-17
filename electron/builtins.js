@@ -10,7 +10,7 @@
 //                   flagged `builtin: "agent-maker"` is already there. It
 //                   reads its definition straight out of `builtin/`, so a
 //                   new version of the app is a new definition with nothing
-//                   to migrate. The user may change its emoji and colour;
+//                   to migrate. The user may change its emoji and color;
 //                   deleting it is refused (electron/agents.js) and
 //                   "Restore built-in" puts a missing one back.
 //   * the skills  — copied into <skillsRoot>/<name>/SKILL.md, because
@@ -54,7 +54,7 @@ export function builtinSkillSource(skillName) {
 // stays. When the shipped skill changes, add the hash of the text being
 // replaced here:  shasum -a 256 builtin/skills/skill-maker/SKILL.md
 const PREVIOUS_BUILTIN_SKILL_HASHES = [
-  // clauding-agents, before agents stopped having a colour (--color went
+  // clauding-agents, before agents stopped having a color (--color went
   // from `clauding agent add`).
   "a25f50cf370dc0458286044b12e89a4c61436ffcd068abca63e20af5d8d88b2c"
 ];

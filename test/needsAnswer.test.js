@@ -8,7 +8,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   EXPLICIT_ASK_PHRASES,
+  NEEDS_ANSWER_MAX_AGE_MILLISECONDS,
   createNeedsAnswerCache,
+  isRecentEnoughToAsk,
   lastAssistantTurn,
   needsAnswerFromTail,
   parseTranscriptTail,
@@ -177,4 +179,43 @@ test("forgetting a session drops its answer", () => {
   assert.equal(cache.count(), 1);
   cache.forget("one");
   assert.equal(cache.count(), 0);
+});
+
+// ---- how old a conversation may be ---------------------------------------
+//
+// The badge does not need a live process: an app restart kills every
+// terminal and the question in the transcript is no less unanswered for it.
+// What does count is age — three days, so an old conversation that happened
+// to end with a question mark does not light the list up for ever.
+
+test("a transcript touched moments ago is asked the question", () => {
+  const now = Date.UTC(2026, 0, 10, 12, 0, 0);
+  assert.equal(isRecentEnoughToAsk(now - 60 * 1000, now), true);
+  assert.equal(isRecentEnoughToAsk(now - NEEDS_ANSWER_MAX_AGE_MILLISECONDS + 1000, now), true);
+});
+
+test("a transcript older than three days is never flagged", () => {
+  const now = Date.UTC(2026, 0, 10, 12, 0, 0);
+  assert.equal(isRecentEnoughToAsk(now - NEEDS_ANSWER_MAX_AGE_MILLISECONDS - 1000, now), false);
+  assert.equal(isRecentEnoughToAsk(now - 30 * 24 * 60 * 60 * 1000, now), false);
+});
+
+test("a missing or nonsensical modification time is not recent", () => {
+  const now = Date.UTC(2026, 0, 10, 12, 0, 0);
+  assert.equal(isRecentEnoughToAsk(null, now), false);
+  assert.equal(isRecentEnoughToAsk(0, now), false);
+  assert.equal(isRecentEnoughToAsk("not a time", now), false);
+});
+
+test("a time in the future (a clock that jumped) still counts as recent", () => {
+  const now = Date.UTC(2026, 0, 10, 12, 0, 0);
+  assert.equal(isRecentEnoughToAsk(now + 60 * 60 * 1000, now), true);
+});
+
+test("the tail decides on its own, with no process anywhere in it", () => {
+  // The same transcript, read after the session that wrote it is long gone:
+  // the question is still the last thing said, so the answer is still yes.
+  const tail = [assistantLine("Shall I delete the old branch?")].join("\n");
+  assert.equal(needsAnswerFromTail(tail), true);
+  assert.equal(needsAnswerFromTail(tail, { busy: true }), false, "a busy session is still writing");
 });

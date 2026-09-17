@@ -1,17 +1,12 @@
-// A colour per session: the **name on the row is drawn in it**, and nothing
+// A color per session: the **name on the row is drawn in it**, and nothing
 // else is — no bar, no chip, no tinted background. What the session is
 // *doing* stays the dot before the name, exactly as it always was, so the
 // two never get in each other's way.
 //
-// Two sources, in this order:
-//   1. the colour the user picked in the row menu's "Colour", stored in
-//      groups.json under `colors` (electron/sessionGroups.js),
-//   2. otherwise an automatic one, worked out from the session id alone.
-//
-// The automatic colour is a plain hash, so it never changes: the same
-// session gets the same colour on every start, with nothing written to
-// disk. "Automatic" in the menu simply drops the stored entry and this
-// takes over again.
+// A session has a color only when the user gave it one, in the row menu's
+// "Color". There is no automatic color: an untouched session's name is
+// written in the ordinary text color, so the colored ones are the ones that
+// were meant to stand out. "None" in the menu drops the stored entry again.
 //
 // The eight tokens are the ones in styles/theme.css that the project dots
 // use; electron/sessionGroups.js keeps the identical list, because it is the
@@ -27,39 +22,16 @@ export const SESSION_COLOR_TOKENS = [
   "--project-color-7"
 ];
 
-// FNV-1a over the session id, kept inside 32 bits. Any stable hash would do;
-// this one is four lines and spreads the near-identical uuids the CLI writes
-// evenly over the eight swatches.
-function hashOfText(text) {
-  let hash = 2166136261;
-  for (let position = 0; position < text.length; position += 1) {
-    hash ^= text.charCodeAt(position);
-    hash = Math.imul(hash, 16777619) >>> 0;
-  }
-  return hash >>> 0;
-}
-
-// The colour a session has when nobody picked one for it.
-export function automaticSessionColor(sessionId) {
-  const text = String(sessionId || "");
-  if (!text) {
-    return SESSION_COLOR_TOKENS[0];
-  }
-  return SESSION_COLOR_TOKENS[hashOfText(text) % SESSION_COLOR_TOKENS.length];
-}
-
-// What a row actually draws: the stored colour if there is a valid one, the
-// automatic one otherwise.
+// What a row actually draws: the color the user picked, or null — a
+// session nobody colored has no color of its own and the row falls back to
+// the ordinary text color.
 export function sessionColorToken(sessionId, storedColors) {
   const stored = storedColors ? storedColors[sessionId] : null;
-  if (stored && SESSION_COLOR_TOKENS.includes(stored)) {
-    return stored;
-  }
-  return automaticSessionColor(sessionId);
+  return stored && SESSION_COLOR_TOKENS.includes(stored) ? stored : null;
 }
 
-// Whether the menu should tick "Automatic" rather than one of the swatches.
+// Whether this session has a color of its own — what the menu ticks, and
+// the opposite of what "None" means.
 export function hasChosenColor(sessionId, storedColors) {
-  const stored = storedColors ? storedColors[sessionId] : null;
-  return Boolean(stored && SESSION_COLOR_TOKENS.includes(stored));
+  return sessionColorToken(sessionId, storedColors) !== null;
 }

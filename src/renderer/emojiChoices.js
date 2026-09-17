@@ -86,7 +86,7 @@ export const EMOJI_GROUPS = [
   {
     labelKey: "agents.emojiGroupSymbols",
     choices: [
-      { emoji: "⭐️", keywords: "star favourite quality" },
+      { emoji: "⭐️", keywords: "star favorite quality" },
       { emoji: "✨", keywords: "sparkles polish shine new" },
       { emoji: "💡", keywords: "idea light insight" },
       { emoji: "❤️", keywords: "heart love care" },

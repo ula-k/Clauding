@@ -25,23 +25,23 @@ export default function DocumentReader({ reader, onClose, onOpenInPanel, windowT
   const folder = reader.folder || parentFolderOf(reader.filePath);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     setText(null);
     setFailure(null);
     window.clauding
       .readPanelFile(reader.filePath)
       .then((content) => {
-        if (!cancelled) {
+        if (!canceled) {
           setText(content);
         }
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (!canceled) {
           setFailure(error && error.message ? error.message : String(error));
         }
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [reader.filePath]);
 

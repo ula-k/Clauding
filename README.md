@@ -22,13 +22,13 @@ else in this file describes the Mac.
 
 * **Your sessions, grouped your way.** Everything starts in one **Default**
   group; make more ("Website", "Work"), drag rows into them, fold a group
-  shut, hide the rows you never want to see. Every session's **name** is
-  written in a colour of its own — automatic, and yours from the row menu —
-  while what it is doing stays the dot in front of it. A search box matches
-  names, folders and first prompts.
+  shut, hide the rows you never want to see. Give a session's **name** a
+  color of your own from the row menu, and stick a **tag** or three on it
+  ("Finish today"), while what it is doing stays the dot in front of it. A
+  search box matches names, folders, tags and first prompts.
 * **Several rows at once.** ⌘-click and Shift-click pick rows out of the
   list; the menu is then about all of them — hide them, delete them, give
-  them an agent, a group or a colour, in one go.
+  them an agent, a group or a color, in one go.
 * **"Needs answer" for real sessions.** Not only a background job that
   reports itself blocked: a session that asked you something, or that is
   holding a permission prompt, says so on its row too.
@@ -222,7 +222,7 @@ assumes they are **identical on Windows apart from the folder separator**:
 its `projects` map — the same field names, the same `busy` / `idle` and
 `working` / `blocked` values. If Windows Claude Code puts them anywhere else,
 or spells the status differently, the session list will look empty or
-colourless and **that is where to look first**. The assumption is written
+colorless and **that is where to look first**. The assumption is written
 down in `electron/lib/platformPaths.js`, in one place, so changing it is one
 edit.
 
@@ -274,7 +274,7 @@ the transcripts under `~/.claude/projects/*` (through
 `@anthropic-ai/claude-agent-sdk`: `listSessions`, `getSessionInfo`,
 `renameSession`), the per-process registry `~/.claude/sessions/<pid>.json`
 and the background-job registry `~/.claude/jobs/<shortId>/state.json`, which
-together give the Running / Waiting colours. The app writes **one** file
+together give the Running / Waiting colors. The app writes **one** file
 under `~/.claude`, and only after you have said yes to it:
 `<skillsRoot>/skill-maker/SKILL.md`, the built-in skill (see **Seeding**) —
 Claude Code loads skills from that folder and nowhere else, so there is
@@ -297,7 +297,7 @@ entries, exactly as from Terminal.app.
 `electron/preamble-default.md`: it tells the session it runs inside Clauding,
 describes the panel and says to use `clauding open`. Edit it and your version
 is kept for good; while it is still byte-identical to a default this app once
-shipped (recognised by a SHA-256 in `electron/preamble.js`), a new version
+shipped (recognized by a SHA-256 in `electron/preamble.js`), a new version
 replaces it.
 
 **`--system-prompt-snapshot off`.** Every terminal is started with this flag.
@@ -339,7 +339,7 @@ electron/smokeResize.js    CLAUDING_SMOKE_RESIZE: the two drag handles (dev only
 electron/recentProjects.js recent project folders from ~/.claude.json for "+ New"
 electron/preload.cjs       contextBridge -> window.clauding
 electron/channels.cjs      IPC channel names (shared by main + preload)
-electron/sessions.js       listSessions() + enrichment (title, folder label, colour, status, ownership), and finding + reading a session's transcript files for the search
+electron/sessions.js       listSessions() + enrichment (title, folder label, color, status, ownership), and finding + reading a session's transcript files for the search
 electron/lib/transcriptSearch.js  parsing and searching a transcript JSONL (pure: no Electron, no fs)
 electron/lib/needsAnswer.js       whether the end of a transcript is a session waiting for an answer (pure)
 electron/sessionGroups.js  the user's own groups + hidden sessions (groups.json)
@@ -363,7 +363,7 @@ electron/smokeEmoji.js     CLAUDING_SMOKE_EMOJI: the agent form's emoji field (d
 electron/smokeGroups.js    CLAUDING_SMOKE_GROUPS automation for the list (dev only)
 electron/smokeCollapse.js  CLAUDING_SMOKE_COLLAPSE automation for folding a group shut (dev only)
 electron/liveStatus.js     Running / Waiting derived from ~/.claude registries
-electron/projects.js       folder labels ("…/projects/website"), colour index, ~ paths
+electron/projects.js       folder labels ("…/projects/website"), color index, ~ paths
 scripts/prepareNodePty.js  postinstall: makes node-pty usable inside Electron
 scripts/checkNodePty.js    CI: a real pty, no Electron — the one thing a Mac cannot answer for Windows
 scripts/start.js           npm start (Vite dev server, then Electron)
@@ -373,7 +373,7 @@ scripts/lib/appBundle.js   what goes inside Clauding.app (renamed Electron.app)
 scripts/lib/windowsLauncher.js  the Windows install, as a plan: launcher, icon, Start Menu shortcut
 scripts/lib/icoEncoder.js  PNG frames -> Clauding.ico, with no dependency
 scripts/uninstallApp.js    npm run uninstall-app
-src/renderer/              React 18 + Vite (JSX), styles/theme.css holds every colour
+src/renderer/              React 18 + Vite (JSX), styles/theme.css holds every color
 src/renderer/platform.js   the modifier key, the shortcut labels and whether there is an emoji panel
 src/renderer/terminalInstances.js  the xterm.js instances, kept alive outside React
 src/renderer/terminalKeys.js  what Cmd / Ctrl plus a letter means, and which printed paths are links
@@ -403,9 +403,12 @@ src/renderer/components/BuiltinSkillSheet.jsx  the first-run question about the 
 electron/skillsScan.js     where skills hide on a Mac, and copying one into the skills folder
 src/renderer/metaPrompts.js        the task lines the two meta actions put in the prompt file
 src/renderer/agentConstants.js     the small label helpers of the agent rows and menus
-src/renderer/sessionColors.js      a session's colour: the eight palette tokens, the stored one and the automatic one
+src/renderer/sessionColors.js      a session's color: the eight palette tokens and the one the user picked (there is no automatic one)
+src/renderer/sessionTags.js        the user's own tags: the two limits, what a row wears, what a bulk click would do
+src/renderer/components/TagMenu.jsx        the "Tags ▸" submenu: the catalogue, "New tag…" in place, "Manage tags…"
+src/renderer/components/ManageTagsSheet.jsx  renaming, recoloring and deleting a tag
 src/renderer/selectionPlan.js      what a click on a row means (⌘, Shift, plain) and what a bulk action would do
-src/renderer/components/ColorMenu.jsx      the "Colour ▸" submenu: "Automatic" and the eight swatches
+src/renderer/components/ColorMenu.jsx      the "Color ▸" submenu: "None" and the eight swatches
 src/renderer/sessionGrouping.js    sessions + groups.json -> what the column draws
 src/renderer/groupConstants.js     the "default" group id and its translated label
 src/renderer/i18n.js               translate(), the language list and the system-language mapping
@@ -538,7 +541,7 @@ selection, and terminals that are off screen keep receiving output. xterm is
 opened lazily the first time its pane is on screen (opening it in a detached
 element measures nothing); output that arrives before that is buffered.
 
-Look: colours are read from `theme.css` tokens (`--terminal-*` for the ANSI
+Look: colors are read from `theme.css` tokens (`--terminal-*` for the ANSI
 palette, `--text`, `--accent` for the lavender block cursor), font
 `"SF Mono", Menlo, monospace` 13 px, 12 px padding, 10 000 lines of
 scrollback, translucent surface over the window gradient. Cmd+C / Cmd+V go
@@ -552,7 +555,7 @@ What the middle column shows for the selected session:
 | state | shown |
 | --- | --- |
 | a live terminal of this app owns it | that terminal |
-| a terminal / job outside the app owns it | a short centred note: title, folder, "This session is running in another terminal or job. Finish it there, then click it here to continue." — and a **Fork** button |
+| a terminal / job outside the app owns it | a short centered note: title, folder, "This session is running in another terminal or job. Finish it there, then click it here to continue." — and a **Fork** button |
 | nobody runs it | a terminal, immediately: the click spawns `claude --resume` in its cwd |
 
 A third, barely visible state ("Opening a terminal…") is on screen for the
@@ -732,7 +735,7 @@ preload, `nodeIntegration` off, `contextIsolation` and `sandbox` on, its own
 and `window.open` from inside a page goes to the system browser. Markdown
 renders through the `marked` + `highlight.js` pipeline of `markdown.js`, in a
 scrollable reading view: serif ("Iowan Old Style", Palatino,
-Georgia) 17 px, line-height 1.7, max-width 46 rem centred, dark palette.
+Georgia) 17 px, line-height 1.7, max-width 46 rem centered, dark palette.
 
 **Auto-reload.** Local files open in a tab are watched (`fs.watch` on the
 parent folder filtered by file name, so editors that save through a rename
@@ -872,7 +875,7 @@ the user to look at. It also says, in as many words, that a **claude.ai
 Artifact is not the side panel** and that `ctrl+]` is not the answer either —
 both mistakes a session actually made.
 
-## The session list: your groups, a colour, and hiding
+## The session list: your groups, a color, and hiding
 
 The left column has two tabs: **Sessions** (everything below) and **Agents**
 (see the section above).
@@ -884,12 +887,12 @@ line. The search box still matches the folder and the first prompt under the
 hood, so typing "blueprint" finds a session in that folder.
 
 **A row says two things at once, in two places.** The **name** is written
-in the session's own colour (see **Session colours** below); the **dot** in
+in the session's own color (see **Session colors** below); the **dot** in
 front of it says what that session is doing right now. Neither borrows the
-other's colour, so a teal session is teal whether it is busy, waiting or
+other's color, so a teal session is teal whether it is busy, waiting or
 quiet.
 
-**Status is a colour, not a group.** Three tokens in `theme.css` decide the
+**Status is a color, not a group.** Three tokens in `theme.css` decide the
 dot and nothing else does — change them there and the whole list follows:
 
 | token | meaning | today |
@@ -905,29 +908,70 @@ less motion.
 The only words on a row besides the name are the small **needs answer**
 badge (see **When does a session say NEEDS ANSWER** below).
 
-### Session colours
+### Session colors
 
-**Every session's name is written in a colour of its own.** That is the
-whole of it: no bar, no chip, no tinted row — the list is read by colour
-because the names are coloured, and a quiet session's name is the same
-colour, faded.
+**A session's name can be written in a color you pick.** That is the whole
+of it: no bar, no chip, no tinted row — the list is read by color because
+the names are colored, and a quiet session's name is the same color, faded.
 
-* **It has one from the start.** Nobody has to pick anything: the colour is
-  worked out from the session id (a plain hash over the eight palette
-  tokens, `src/renderer/sessionColors.js`), so it is the same colour on
-  every start and nothing is written to disk for it.
-* **Change it** in the row's `…` menu (or its right-click) under
-  **Colour ▸**: the eight swatches, and **Automatic** to give the session
-  its own colour back. With several rows picked out, the same item in the
-  bulk menu colours all of them at once.
+* **Nothing is colored by itself.** A session nobody has colored has no
+  color at all: its name is the ordinary text color. There is no automatic
+  color any more — a colored name means somebody chose it, which is what
+  makes the colored rows worth looking at.
+* **Choose it** in the row's `…` menu (or its right-click) under
+  **Color ▸**: the eight swatches, and **None** to take the color away
+  again. With several rows picked out, the same item in the bulk menu
+  colors all of them at once.
 * **Where it is kept**: `colors` in groups.json, session id → palette token
   — only the choices made by hand. Anything else in there (a hex value, a
   token that is not in the palette) is dropped when the file is read, and a
-  deleted session takes its colour with it.
+  deleted session takes its color with it.
 * **What it never touches**: the selection. A picked row keeps the same
-  lavender background it always had, with its coloured name on top. The
-  colours are the `--project-color-0` … `-7` tokens of `theme.css` — the
+  lavender background it always had, with its colored name on top. The
+  colors are the `--project-color-0` … `-7` tokens of `theme.css` — the
   same palette the project dots use.
+
+### Tags
+
+**A row can carry a few words of your own.** A tag is a label of at most
+fifteen characters and one of the same eight colors, drawn as a small pill
+after the name — "Finish today", "Waiting", "Read later".
+
+* **NEEDS ANSWER is a system tag.** The app decides it (see below), it is
+  always the first pill on the row, and it cannot be renamed, recolored or
+  taken off. Everything below is about the tags that *are* yours.
+* **Three per session.** The fourth is refused, with a small note in the
+  menu saying so — pushing one of the three out silently would be worse.
+  Three of yours plus NEEDS ANSWER is four pills, which is what a row can
+  carry and still be read.
+* **Where they are.** The row's `…` menu (or its right-click) → **Tags ▸**:
+  the whole catalogue, with a check on the ones this session wears; click
+  one to put it on or take it off. Under it, **New tag…** opens in place (a
+  name, the eight swatches, Enter saves — and the new tag goes straight on
+  the session the menu belongs to) and **Manage tags…** opens a small sheet
+  where a tag is renamed, given another color, or deleted. **No new
+  buttons**: those two menus are the whole interface.
+* **Several rows at once.** With two or more rows picked out, the bulk
+  menu's **Tags ▸** works on all of them: a tag every picked row wears is
+  checked, one only some of them wear shows a **–** instead, and a click
+  puts it on all of them (or takes it off all of them when they all have
+  it).
+* **Deleting one asks first**, and says how many sessions wear it, because
+  it comes off every one of them at the same time.
+* **Searching.** The search box matches tag labels too, so typing "finish"
+  narrows the list to the sessions wearing that tag. There is no filter
+  control anywhere — the search box *is* the filter.
+* **A long row grows.** When the name and the pills do not fit on one line,
+  the row becomes two: the name on the first line, the pills on the second.
+  The time stays right-aligned on the first line and the status dot stays
+  level with it.
+* **Where they are kept**: `tags` and `sessionTags` in groups.json (see
+  below). A brand-new file — and one written before tags existed — is
+  seeded with the one shipped example, **Finish today** in a gold-ish
+  color; delete it and it stays deleted, because an empty catalogue is a
+  catalogue you emptied. Anything unexpected in the file is dropped or
+  repaired when it is read, like everything else in there, and a deleted
+  session takes its tags with it.
 
 ### When does a session say NEEDS ANSWER
 
@@ -935,8 +979,8 @@ A background job can say it is blocked, and always could. An ordinary
 session cannot: the CLI's registry entry only ever says `busy` or `idle`,
 so a session that has just asked a question looked exactly like one that
 finished an hour ago. The only thing that knows is the conversation itself,
-so for every session that is **alive in the registry and not busy** the app
-reads the **tail** of its transcript — the last 64 kB of
+so for every listed session that is **not busy** the app reads the **tail**
+of its transcript — the last 64 kB of
 `~/.claude/projects/<folder>/<sessionId>.jsonl`, never the whole file — and
 looks at the last thing the assistant said. It earns the badge when:
 
@@ -951,11 +995,21 @@ looks at the last thing the assistant said. It earns the badge when:
    `electron/lib/needsAnswer.js`).
 
 A **busy** session never earns it, whatever it last said: it is still
-writing. The rules are a pure function, the answer is kept per session
-under the transcript's size and modification time, and it is worked out
-again whenever the live status is polled or the sessions change. The badge
-itself is the one the jobs have always had, so the folded group header and
-the rows under an agent light up from the same flag.
+writing. **Nothing else about the process matters.** The badge used to need
+a live registry entry, and so it vanished on every restart of the app —
+every terminal dies with the window, while the question in the transcript
+sits there unanswered. Now a session nobody is running is asked the same
+question as a live one; what is asked instead is the transcript's **age**:
+one that has not been touched for **three days** is never flagged, because
+an old conversation that happened to end with a question mark is history,
+not something waiting for you.
+
+The rules are a pure function, the answer is kept per session under the
+transcript's size and modification time, and it is worked out for the rows
+actually loaded (one page, sixty of them) and again whenever the live
+status is polled or the sessions change. The badge itself is the one the
+jobs have always had, so the folded group header and the rows under an
+agent light up from the same flag.
 
 ### Selecting several sessions
 
@@ -986,6 +1040,7 @@ right-click) opens the **bulk menu** instead of the row's own:
 | **Delete N sessions…** | one confirmation, naming the count and the first five titles. Sessions running in a terminal outside the app are **not** deleted — they are named in the question as left alone, because they are not ours to end |
 | **Assign to agent ▸** | the ten most used agents and **More…**; the link is written for every picked session and no terminal is restarted (the "Assign only" half of the single question) |
 | **Move to group ▸** | every group |
+| **Tags ▸** | the tag catalogue: checked when every picked session wears it, **–** when only some do; a click puts it on all of them, or takes it off all of them |
 
 **⌘⌫ with a selection** follows the same "once stops, twice deletes" rule as
 on a single row: rows that are on screen are hidden, and a selection whose
@@ -1006,7 +1061,9 @@ The grouping is the user's, never derived from anything:
   "hidden": ["<sessionId>"],
   "hiddenSince": { "<sessionId>": { "at": 1730000000000, "awaitingIdle": false } },
   "collapsed": ["<groupId>"],
-  "colors": { "<sessionId>": "--project-color-3" }
+  "colors": { "<sessionId>": "--project-color-3" },
+  "tags": [{ "id": "<uuid>", "label": "Finish today", "color": "--project-color-4" }],
+  "sessionTags": { "<sessionId>": ["<tagId>"] }
 }
 ```
 
@@ -1027,8 +1084,8 @@ Enter). Each header shows, on hover, a `+` (new session in *this* group: the
 folder sheet opens and the session joins the group as soon as its CLI
 registers a session id) and a `…` menu with **Rename**, **Move up**,
 **Move down** and **Delete group**. Each row has a `…` menu (and a right-click)
-with **Move to** ▸ the groups, **Rename session** (the SDK rename), **Hide**
-and **Delete session…**. A row can also be **dragged onto a group header** (HTML5 drag and
+with **Move to** ▸ the groups, **Tags ▸** (see **Tags**), **Color ▸**,
+**Rename session** (the SDK rename), **Hide** and **Delete session…**. A row can also be **dragged onto a group header** (HTML5 drag and
 drop). Sessions started with the top "+ New" land in Default.
 
 **Collapsing.** Every header (Default included) has a **chevron** on the left:
@@ -1124,11 +1181,11 @@ never the folder it works in. The working folder is picked per session in
 }
 ```
 
-* `color` is **written and ignored**. Agents had a colour of their own
+* `color` is **written and ignored**. Agents had a color of their own
   once; they do not any more — what tells one agent from another is its
   emoji, and it sits in one neutral light circle wherever it is drawn,
   which is what makes the emoji itself readable on the dark ground. The
-  palette belongs to the **sessions** (see **Session colours**). The key
+  palette belongs to the **sessions** (see **Session colors**). The key
   stays in the file, always at the same value, so an agents.json written
   here still opens in an older version and the other way round.
 * `definitionFile` always lies inside `definitionFolder`; a stored path that
@@ -1228,7 +1285,7 @@ badge on its row.
 ### Where it shows
 
 * **Session rows**: the agent's emoji in a small neutral circle, between
-  the status dot and the name; the tooltip is the agent's name. (The colour
+  the status dot and the name; the tooltip is the agent's name. (The color
   of the name itself is the *session's*, not the agent's.) The
   name printed on the row drops the emoji the CLI put in front of it, so it
   is not shown twice. Rows without an agent are exactly as they were.
@@ -1630,7 +1687,7 @@ Fields observed (CLI 2.1.270): `pid`, `sessionId`, `cwd`, `startedAt`,
 The pid is verified with `process.kill(pid, 0)`; files whose process is gone
 are ignored (stale files do linger).
 
-| process alive and `status` | row colour |
+| process alive and `status` | row color |
 | --- | --- |
 | `busy` (also accepted: `working`, `running`) | working (`--status-working`) |
 | `idle` or anything else | waiting for you (`--status-waiting`) |
@@ -1647,7 +1704,7 @@ Fields observed: `state`, `tempo`, `detail`, `needs`, `sessionId`,
 `state` values observed: `working`, `blocked`, `done`, `stopped`.
 `tempo` values observed: `active`, `idle`, `blocked`.
 
-| `state` | row colour |
+| `state` | row color |
 | --- | --- |
 | `working` (also accepted: `active`, `running`) | working (`--status-working`) |
 | `idle`, `blocked` (also accepted: `waiting`) | waiting for you (`--status-waiting`) |
@@ -1731,7 +1788,7 @@ CLAUDING_SMOKE_GROUPS=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     reads the note back -> stage5-elsewhere.png; then drives the group
     management through the UI — "+ group", the header menu's Move down
     (stage5-group-menu.png; a new group opens at the top, so Move up is the
-    greyed-out one), a drag and drop onto the header, Delete group
+    grayed-out one), a drag and drop onto the header, Delete group
     with its confirmation — and checks the store after each; reloads the
     renderer and checks groups / membership / hidden survived; hides a session
     the registry shows as busy and checks it comes back by itself; unhides
@@ -1820,7 +1877,7 @@ CLAUDING_SMOKE_ASSIGN=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     "Assign to agent" submenu and picks
     that agent -> assign-dialog.png with nothing written yet; presses Cancel
     and checks that agents.json, the row badge and the header chip are all
-    unchanged -> assign-cancelled.png; opens the dialog again and presses
+    unchanged -> assign-canceled.png; opens the dialog again and presses
     "Assign and restart terminal now", then checks that the old pty is gone,
     that the new one resumes the SAME session with the definition in its
     prompt file, that the app typed the assignment message in by itself and
@@ -1893,10 +1950,10 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: **331 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the transcript search, the terminal header's one-line fit, what a click on
-a row selects and what a bulk action would do, the session colours, when a
-session needs an answer, i18n key
-sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behaviour they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-23`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
+`npm test` runs `node --test test/*.test.js`: **356 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the transcript search, the terminal header's one-line fit, what a click on
+a row selects and what a bulk action would do, the session colors, the
+user's own tags, when a session needs an answer, i18n key
+sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behavior they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-24`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
 
 `test/platform.test.js` is the odd one out: it runs on macOS and exercises the **Windows** branches by handing in `platform: "win32"` and made-up Windows paths — the CLI lookup order, the `cmd.exe /c` wrapper, the named pipe, the Ctrl shortcuts, the menu without the macOS-only roles, the whole installer plan, the .ico encoder. It proves the decisions, not that Windows obeys them.
 

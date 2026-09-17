@@ -8,7 +8,7 @@
 //
 // Layout (all little-endian):
 //   header    reserved:2 = 0, type:2 = 1 (icon), count:2
-//   entry     width:1, height:1, colours:1, reserved:1, planes:2, bitCount:2,
+//   entry     width:1, height:1, colors:1, reserved:1, planes:2, bitCount:2,
 //             byteLength:4, offset:4
 //   data      the frames, in the order of their entries
 // A side of 256 is written as 0, because the field is one byte and 256 does
@@ -21,7 +21,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 const HEADER_BYTES = 6;
 const ENTRY_BYTES = 16;
 
-// Width, height and colour depth out of a PNG's first chunk (IHDR), which is
+// Width, height and color depth out of a PNG's first chunk (IHDR), which is
 // always the one right after the signature.
 export function readPngHeader(bytes) {
   const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
@@ -33,7 +33,7 @@ export function readPngHeader(bytes) {
   }
   const bitDepth = buffer.readUInt8(24);
   const colorType = buffer.readUInt8(25);
-  // 6 = truecolour with alpha, 2 = truecolour, 4 = grey with alpha, 3 = palette.
+  // 6 = truecolor with alpha, 2 = truecolor, 4 = gray with alpha, 3 = palette.
   const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType] || 4;
   return {
     width: buffer.readUInt32BE(16),

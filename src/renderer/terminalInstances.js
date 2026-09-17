@@ -99,7 +99,7 @@ function cssToken(name, fallback) {
   return value || fallback;
 }
 
-// The xterm colours come from theme.css so the terminal matches the window.
+// The xterm colors come from theme.css so the terminal matches the window.
 export function terminalTheme() {
   return {
     background: cssToken("--terminal-background", "rgba(0, 0, 0, 0)"),

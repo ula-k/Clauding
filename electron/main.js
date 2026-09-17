@@ -1320,6 +1320,22 @@ function registerIpc() {
     return sessionGroups.setSessionColor(sessionId, color || null);
   });
 
+  ipcMain.handle(CHANNELS.tagsCreate, async (event, draft) => {
+    return sessionGroups.createTag(draft || {});
+  });
+
+  ipcMain.handle(CHANNELS.tagsUpdate, async (event, { tagId, draft }) => {
+    return sessionGroups.updateTag(tagId, draft || {});
+  });
+
+  ipcMain.handle(CHANNELS.tagsDelete, async (event, { tagId }) => {
+    return sessionGroups.deleteTag(tagId);
+  });
+
+  ipcMain.handle(CHANNELS.tagsSetOnSessions, async (event, { sessionIds, tagId, applied }) => {
+    return sessionGroups.setSessionsTag(sessionIds || [], tagId, Boolean(applied));
+  });
+
   ipcMain.handle(CHANNELS.agentsGet, async () => {
     return agents.get();
   });
@@ -1365,7 +1381,7 @@ function registerIpc() {
   });
 
   // "Restore built-in": the Agent Maker goes back to the name, emoji,
-  // colour and definition the app ships with (and the built-in skills are
+  // color and definition the app ships with (and the built-in skills are
   // seeded again if they are missing).
   ipcMain.handle(CHANNELS.agentsRestoreBuiltin, async () => {
     agents.ensureBuiltinAgent(builtinAgentDraft(), { force: true });

@@ -4,6 +4,7 @@ import { relativeTime } from "../time.js";
 import { DotsIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuLabel, MenuSeparator, MenuSubmenu } from "./PopupMenu.jsx";
 import ColorMenuItems from "./ColorMenu.jsx";
+import TagMenuItems from "./TagMenu.jsx";
 import { AgentBadge } from "./AgentBadge.jsx";
 import { groupDisplayName } from "../groupConstants.js";
 import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
@@ -16,7 +17,7 @@ export const SESSION_DRAG_TYPE = "application/x-clauding-session";
 const HIDE_SHORTCUT = { shortcut: shortcutLabels().hideSession };
 
 // running -> working, waiting for you -> waiting, everything else -> idle.
-// The row shows this as a colour only; the words live in theme.css tokens.
+// The row shows this as a color only; the words live in theme.css tokens.
 function statusName(session) {
   if (session.statusGroup === "running") {
     return "working";
@@ -30,10 +31,10 @@ function statusName(session) {
 // One line: a status dot, the name, and a dim relative time. The folder is
 // only in the tooltip — names, not a second line of noise.
 //
-// The **name is drawn in the session's own colour** (the row menu's
-// "Colour", or one worked out from the session id), and a quiet session's
+// The **name is drawn in the session's own color** (the row menu's
+// "Color", or one worked out from the session id), and a quiet session's
 // name is faded; the **dot** says what the session is doing right now. Two
-// signals, two places, and neither borrows the other's colour.
+// signals, two places, and neither borrows the other's color.
 //
 // A session started with an agent shows that agent's emoji in a small
 // neutral circle between the dot and the name (`session.agent`, attached in
@@ -63,8 +64,13 @@ export default function SessionRow({
   onHarvestSkills,
   onEditSessionFlags,
   colorToken,
-  colorIsAutomatic = true,
+  hasOwnColor = false,
   onSetColor,
+  // The user's own tags on this row: the ones it wears (whole tag objects,
+  // drawn as pills after the name) and everything the "Tags ▸" submenu
+  // needs — see TagMenu.jsx for the shape.
+  tags = [],
+  tagMenu = null,
   // Part of a selection of several rows: the row is drawn as picked out, and
   // its menu is the bulk one as soon as there are two or more.
   isMultiSelected = false,
@@ -159,8 +165,15 @@ export default function SessionRow({
       >
         <span className="row-status-dot" />
         <AgentBadge agent={session.agent} />
-        <span className="row-title">{titleWithoutAgentEmoji(session.title, session.agent)}</span>
-        {session.needsAnswer && <span className="row-needs-answer">{translate("row.needsAnswer")}</span>}
+        <span className="row-main">
+          <span className="row-title">{titleWithoutAgentEmoji(session.title, session.agent)}</span>
+          {session.needsAnswer && <span className="row-needs-answer">{translate("row.needsAnswer")}</span>}
+          {tags.map((tag) => (
+            <span className="tag-pill" key={tag.id} style={{ "--tag-color": `var(${tag.color})` }} data-row-tag={tag.id}>
+              {tag.label}
+            </span>
+          ))}
+        </span>
         <span className="row-time">{relativeTime(session.lastModified, translate, now)}</span>
       </button>
       {hiddenVariant ? (
@@ -270,10 +283,24 @@ export default function SessionRow({
               </MenuItem>
             ))}
           </MenuSubmenu>
+          {bulkMenu.tags && (
+            <MenuSubmenu label={translate("tags.submenu")} marker="bulk-tags">
+              <TagMenuItems
+                tags={bulkMenu.tags.catalogue}
+                tagState={bulkMenu.tags.stateForTag}
+                onToggle={bulkMenu.tags.onToggle}
+                onCreate={bulkMenu.tags.onCreate}
+                onManage={() => {
+                  setMenuAnchor(null);
+                  bulkMenu.tags.onManage();
+                }}
+              />
+            </MenuSubmenu>
+          )}
           <MenuSubmenu label={translate("row.color")} marker="bulk-color">
             <MenuLabel>{translate("row.color")}</MenuLabel>
             <ColorMenuItems
-              automatic={false}
+              hasOwnColor={false}
               currentToken={null}
               onPick={(token) => {
                 setMenuAnchor(null);
@@ -375,6 +402,23 @@ export default function SessionRow({
               </MenuItem>
             </>
           )}
+          {tagMenu && (
+            <>
+              <MenuSeparator />
+              <MenuSubmenu label={translate("tags.submenu")} marker="session-tags">
+                <TagMenuItems
+                  tags={tagMenu.catalogue}
+                  tagState={tagMenu.stateForTag}
+                  onToggle={tagMenu.onToggle}
+                  onCreate={tagMenu.onCreate}
+                  onManage={() => {
+                    setMenuAnchor(null);
+                    tagMenu.onManage();
+                  }}
+                />
+              </MenuSubmenu>
+            </>
+          )}
           {onSetColor && (
             <>
               <MenuSeparator />
@@ -382,7 +426,7 @@ export default function SessionRow({
                 <MenuLabel>{translate("row.color")}</MenuLabel>
                 <ColorMenuItems
                   currentToken={colorToken}
-                  automatic={colorIsAutomatic}
+                  hasOwnColor={hasOwnColor}
                   onPick={(token) => {
                     setMenuAnchor(null);
                     onSetColor(session.sessionId, token);

@@ -24,7 +24,7 @@ clauding agent add <definition folder> [--name "Release Notes Writer"] [--emoji 
 * Without the flags the app suggests everything itself: the definition file
   (`<folder>/<folder name>.md`, else `README.md`, else the only `.md` there),
   the name from the `# Agent: …` heading and the emoji from the file. There
-  is no colour to give an agent: the emoji is what tells one from another.
+  is no color to give an agent: the emoji is what tells one from another.
 * The same folder is never registered twice; a second attempt prints the name
   it is already registered under.
 * On success it prints `Added agent "<name>" to Clauding.`, and on refusal

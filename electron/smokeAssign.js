@@ -239,7 +239,7 @@ export async function runAssignSmoke({ window, registry, agents, sendCommand, qu
     if (!registry.get(terminalId)) {
       throw new Error("Cancel closed the terminal");
     }
-    await capture(window, "assign-cancelled.png");
+    await capture(window, "assign-canceled.png");
 
     // 3. Assign and restart: the same session comes back in a new pty, with
     //    the definition in its prompt file and the first message typed in.

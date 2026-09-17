@@ -32,7 +32,7 @@ Paths and URLs you print are also clickable and open in the same panel.
 // them was never touched by the user, so it is replaced with the current
 // default on start (see refreshStoredPreamble); anything else is the user's
 // own edit and stays. Hashes rather than the old texts themselves: the whole
-// point is to recognise a file byte for byte, and a list of hashes says that
+// point is to recognize a file byte for byte, and a list of hashes says that
 // without carrying three versions of the same paragraph around.
 //
 // When the default changes, add the hash of the text being replaced here:

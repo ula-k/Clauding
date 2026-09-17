@@ -8,6 +8,8 @@ import AgentsTab from "./AgentsTab.jsx";
 import AgentForm from "./AgentForm.jsx";
 import { buildGroupedList, groupIdForSession } from "../sessionGrouping.js";
 import { hasChosenColor, sessionColorToken } from "../sessionColors.js";
+import { bulkTagPlan, tagLabelsForSession, tagsForSession } from "../sessionTags.js";
+import ManageTagsSheet from "./ManageTagsSheet.jsx";
 import { commandKeyPressed } from "../platform.js";
 
 // The left column: two tabs. "Sessions" is the user's own groups, each a header
@@ -52,6 +54,9 @@ export default function SessionsColumn({
   selectedSessionIds = [],
   onRowClick,
   onSetSessionColor,
+  // The user's own tags: the catalogue and the per-session lists live in
+  // groups.json, next to the groups; these four are what the menus call.
+  tagActions,
   onSelectAllVisible,
   onClearSelection,
   bulkActions
@@ -65,9 +70,26 @@ export default function SessionsColumn({
   const [searchText, setSearchText] = useState("");
   const [hiddenExpanded, setHiddenExpanded] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
+  // "Manage tags…" — the small sheet where a tag is renamed, recolored or
+  // deleted. It is opened from either tag submenu and belongs to neither.
+  const [manageTagsOpen, setManageTagsOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const listRef = useRef(null);
   const lastSearchTextRef = useRef(searchText);
+
+  const tagCatalogue = groupState.tags || [];
+  const sessionTags = groupState.sessionTags || {};
+
+  // Every label the search box should match, per session: typing a tag's
+  // name narrows the list to the sessions wearing it, which is why tags
+  // need no filter of their own.
+  const tagLabels = useMemo(() => {
+    const labels = {};
+    for (const sessionId of Object.keys(sessionTags)) {
+      labels[sessionId] = tagLabelsForSession(sessionId, tagCatalogue, sessionTags);
+    }
+    return labels;
+  }, [tagCatalogue, sessionTags]);
 
   const { buckets, hiddenSessions, visibleCount } = useMemo(
     () =>
@@ -77,9 +99,10 @@ export default function SessionsColumn({
         membership: groupState.membership,
         hidden: groupState.hidden,
         collapsed: groupState.collapsed,
-        searchText
+        searchText,
+        tagLabels
       }),
-    [sessions, groupState, searchText]
+    [sessions, groupState, searchText, tagLabels]
   );
 
   // The rows as they are drawn, top to bottom: that is the order a
@@ -106,17 +129,52 @@ export default function SessionsColumn({
 
   const pickedIds = useMemo(() => new Set(selectedSessionIds || []), [selectedSessionIds]);
   const selectionCount = pickedIds.size;
+  // The same submenu for a whole selection: a tag is ticked when every
+  // picked row wears it and shown mixed when only some do; clicking it puts
+  // it on all of them, or takes it off all of them when they all have it
+  // (src/renderer/sessionTags.js).
+  const bulkTagMenu = {
+    catalogue: tagCatalogue,
+    stateForTag: (tagId) => bulkTagPlan({ sessionIds: selectedSessionIds, sessionTags, tagId }).state,
+    onToggle: (tagId, applied) => tagActions.setSessionsTag(selectedSessionIds, tagId, applied),
+    onCreate: async (draft) => {
+      const tag = await tagActions.createTag(draft);
+      if (tag) {
+        await tagActions.setSessionsTag(selectedSessionIds, tag.id, true);
+      }
+    },
+    onManage: () => setManageTagsOpen(true)
+  };
+
   // Only a real selection — two rows or more — turns the row menus into the
   // bulk one; one picked row is just the row it always was.
-  const bulkMenu = selectionCount > 1 && bulkActions ? { count: selectionCount, ...bulkActions } : null;
+  const bulkMenu =
+    selectionCount > 1 && bulkActions ? { count: selectionCount, ...bulkActions, tags: bulkTagMenu } : null;
   const storedColors = groupState.colors || {};
 
-  // The colour a row's name is drawn in, and whether the menu should tick
-  // "Automatic" rather than one of the swatches.
+  // The color a row's name is drawn in (null when nobody picked one), and
+  // whether the menu should tick a swatch rather than "None".
   function rowColorProps(sessionId) {
     return {
       colorToken: sessionColorToken(sessionId, storedColors),
-      colorIsAutomatic: !hasChosenColor(sessionId, storedColors)
+      hasOwnColor: hasChosenColor(sessionId, storedColors)
+    };
+  }
+
+  // Everything one row's "Tags ▸" needs. Making a tag from a row's menu
+  // also puts it on that row — that is why it was made there.
+  function rowTagMenu(sessionId) {
+    return {
+      catalogue: tagCatalogue,
+      stateForTag: (tagId) => ((sessionTags[sessionId] || []).includes(tagId) ? "all" : "none"),
+      onToggle: (tagId, applied) => tagActions.setSessionsTag([sessionId], tagId, applied),
+      onCreate: async (draft) => {
+        const tag = await tagActions.createTag(draft);
+        if (tag) {
+          await tagActions.setSessionsTag([sessionId], tag.id, true);
+        }
+      },
+      onManage: () => setManageTagsOpen(true)
     };
   }
 
@@ -343,6 +401,8 @@ export default function SessionsColumn({
                     onHarvestSkills={onHarvestSkillsFromSession}
                     onEditSessionFlags={onEditSessionFlags}
                     onSetColor={onSetSessionColor}
+                    tags={tagsForSession(session.sessionId, tagCatalogue, sessionTags)}
+                    tagMenu={rowTagMenu(session.sessionId)}
                     {...rowColorProps(session.sessionId)}
                   />
                 ))
@@ -380,6 +440,8 @@ export default function SessionsColumn({
                     onRenameSession={onRenameSession}
                     onDeleteSession={onDeleteSession}
                     onSetColor={onSetSessionColor}
+                    tags={tagsForSession(session.sessionId, tagCatalogue, sessionTags)}
+                    tagMenu={rowTagMenu(session.sessionId)}
                     {...rowColorProps(session.sessionId)}
                     hiddenVariant
                   />
@@ -393,6 +455,16 @@ export default function SessionsColumn({
             </button>
           )}
         </div>
+      )}
+
+      {manageTagsOpen && (
+        <ManageTagsSheet
+          tags={tagCatalogue}
+          sessionTags={sessionTags}
+          onUpdate={tagActions.updateTag}
+          onDelete={tagActions.deleteTag}
+          onClose={() => setManageTagsOpen(false)}
+        />
       )}
 
       <div className="left-footer">

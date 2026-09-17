@@ -109,22 +109,22 @@ function MarkdownTab({ tab, active, reloadCounter }) {
   const [failure, setFailure] = useState(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     window.clauding
       .readPanelFile(tab.target)
       .then((content) => {
-        if (!cancelled) {
+        if (!canceled) {
           setText(content);
           setFailure(null);
         }
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (!canceled) {
           setFailure(error && error.message ? error.message : String(error));
         }
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [tab.target, reloadCounter]);
 

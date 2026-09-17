@@ -281,12 +281,12 @@ test("the state handed out is a copy, not the store's own objects", () => {
   assert.deepEqual(store.get().hidden, []);
 });
 
-// ---- Session colours -------------------------------------------------
-// The colour a row's name is drawn in is the user's choice, kept in the
+// ---- Session colors -------------------------------------------------
+// The color a row's name is drawn in is the user's choice, kept in the
 // same file as the groups. Only a palette token may be stored, and
 // "Automatic" is the absence of an entry rather than a value of its own.
 
-test("a session colour is stored, changed and taken away again", () => {
+test("a session color is stored, changed and taken away again", () => {
   const { store } = storeIn(scratchFolder());
   assert.deepEqual(store.get().colors, {});
 
@@ -296,13 +296,13 @@ test("a session colour is stored, changed and taken away again", () => {
   store.setSessionColor("session-one", "--project-color-5");
   assert.deepEqual(store.get().colors, { "session-one": "--project-color-5" });
 
-  // null is "Automatic": the entry goes, and the list works the colour out
+  // null is "Automatic": the entry goes, and the list works the color out
   // from the session id again.
   store.setSessionColor("session-one", null);
   assert.deepEqual(store.get().colors, {});
 });
 
-test("only a palette token may be a session colour", () => {
+test("only a palette token may be a session color", () => {
   const { store } = storeIn(scratchFolder());
   store.setSessionColor("session-one", "#ff0000");
   store.setSessionColor("session-two", "--project-color-9");
@@ -310,7 +310,7 @@ test("only a palette token may be a session colour", () => {
   assert.deepEqual(store.get().colors, {});
 });
 
-test("a colours map full of rubbish is dropped when the file is read", () => {
+test("a colors map full of rubbish is dropped when the file is read", () => {
   const { store } = storeIn(scratchFolder(), {
     version: 1,
     colors: {
@@ -323,14 +323,14 @@ test("a colours map full of rubbish is dropped when the file is read", () => {
   assert.deepEqual(store.get().colors, { good: "--project-color-2" });
 });
 
-test("a deleted session takes its colour with it", () => {
+test("a deleted session takes its color with it", () => {
   const { store } = storeIn(scratchFolder());
   store.setSessionColor("session-one", "--project-color-4");
   store.forgetSession("session-one");
   assert.deepEqual(store.get().colors, {});
 });
 
-test("colours survive a round trip through the file", async () => {
+test("colors survive a round trip through the file", async () => {
   const folder = scratchFolder();
   const { store, storagePath } = storeIn(folder);
   store.setSessionColor("session-one", "--project-color-6");

@@ -159,7 +159,7 @@ test("the variables that would make the CLI think it is a nested session are dro
   assert.equal(environment.CLAUDE_CONFIG_DIR, "/Users/someone/.claude", "only the nesting variables go");
 });
 
-test("the terminal is told it is a colour terminal inside Clauding", () => {
+test("the terminal is told it is a color terminal inside Clauding", () => {
   const environment = terminalEnvironment({ PATH: "/usr/bin" });
   assert.equal(environment.TERM, "xterm-256color");
   assert.equal(environment.COLORTERM, "truecolor");

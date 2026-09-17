@@ -193,7 +193,7 @@ export async function runGroupsSmoke({ window, sessionGroups, listSessions, sync
     }
 
     // The header menu: Move down. A new group opens at the very top of the
-    // list, so "Move up" is the one item that is greyed out on it — the
+    // list, so "Move up" is the one item that is grayed out on it — the
     // swap to check here is the other one.
     const openedGroupMenu = await runInWindow(
       window,

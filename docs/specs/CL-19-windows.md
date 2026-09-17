@@ -15,7 +15,7 @@ entry that run this checkout. macOS behaves exactly as it did before.
 
 ## Steps
 1. Start the app from the Start Menu.
-2. Look at the session list: names, folder labels, the status colours.
+2. Look at the session list: names, folder labels, the status colors.
 3. Click a row that is not running anywhere. Type something and read the reply.
 4. Ask the session to run `clauding open <some .md file>` and watch the panel.
 5. Press Ctrl+Backspace on a selected row, then again on the hidden row.
@@ -25,7 +25,7 @@ entry that run this checkout. macOS behaves exactly as it did before.
 9. `npm run uninstall-app`.
 
 ## Expected state
-- The list is the same list: one line per session, a colour for the status,
+- The list is the same list: one line per session, a color for the status,
   `…\projects\website` as the folder label.
 - The click opens a terminal, the CLI draws normally and the row turns into
   an owned session (the terminal, not the "running elsewhere" note).

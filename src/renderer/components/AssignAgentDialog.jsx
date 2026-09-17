@@ -62,7 +62,7 @@ export default function AssignAgentDialog({ request, onChoose }) {
   return (
     <div className="sheet-backdrop" data-assign-dialog onMouseDown={handleBackdropMouseDown}>
       <div className="sheet assign-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}>
-        {/* The agent's own emoji is already in the title (and its colour on
+        {/* The agent's own emoji is already in the title (and its color on
             the line under it), so there is no second copy of it here. */}
         <div
           className="sheet-title assign-dialog-title"

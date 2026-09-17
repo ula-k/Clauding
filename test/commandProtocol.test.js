@@ -328,7 +328,7 @@ function definitionFolderIn(folder, slug, text) {
   return definitionFolder;
 }
 
-test("agent add registers the folder with the name, emoji and colour it suggests", async () => {
+test("agent add registers the folder with the name, emoji and color it suggests", async () => {
   const agents = fakeAgentList();
   const { handler, folder } = appWithAgents(agents);
   const definitionFolder = definitionFolderIn(folder, "release-notes-writer", "# Agent: Release Notes Writer 📝\n\nRole.\n");

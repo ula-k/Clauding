@@ -2,7 +2,7 @@
 //
 // The renderer has no Node: the preload script puts `process.platform` on
 // `window.clauding.platform` and everything here reads it from there — or
-// takes it as a parameter, so the Windows behaviour can be checked on a Mac
+// takes it as a parameter, so the Windows behavior can be checked on a Mac
 // (test/platform.test.js).
 //
 // Two things actually differ. The modifier key: ⌘ on macOS, Ctrl on Windows,

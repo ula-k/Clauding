@@ -136,7 +136,7 @@ test("a folder inside the home folder is written with a tilde", () => {
   assert.equal(projectFolderLabel(home), "~");
 });
 
-test("the project colour is stable for a folder and inside the palette", () => {
+test("the project color is stable for a folder and inside the palette", () => {
   const first = projectColorIndex("/Users/someone/Documents/projects/website");
   assert.equal(first, projectColorIndex("/Users/someone/Documents/projects/website"));
   assert.ok(Number.isInteger(first) && first >= 0 && first < 10);

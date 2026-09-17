@@ -503,11 +503,18 @@ a {
   position: relative;
 }
 
+/* Three cells: the status dot, everything the row says (the name and the
+   pills after it), and the time. The middle cell wraps — a name and three
+   tags that do not fit on one line make the row two lines high — so the row
+   is aligned to the **top** and the dot and the time are nudged onto the
+   first line by hand. Centring them would leave them floating between the
+   two lines of a wrapped row. */
 .session-row {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   column-gap: 9px;
-  align-items: center;
+  align-items: start;
+  --row-line-height: 18px;
   width: 100%;
   min-width: 0;
   padding: 6px 8px;
@@ -537,9 +544,24 @@ a {
   box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--border-lavender);
 }
 
-/* The status is a colour and nothing else — the three tokens live in theme.css. */
+/* Everything the row says, in reading order: the name, then NEEDS ANSWER,
+   then the user's own tags. They wrap as a block, so a row that runs out of
+   width puts its pills on a second line under the name instead of cutting
+   the name down to nothing. */
+.session-row .row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 3px;
+  min-width: 0;
+}
+
+/* The status is a color and nothing else — the three tokens live in theme.css. */
 .session-row .row-status-dot {
   justify-self: center;
+  align-self: start;
+  margin-top: calc((var(--row-line-height) - 7px) / 2);
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -575,11 +597,14 @@ a {
   box-shadow: 0 0 0 3px var(--status-waiting-soft);
 }
 
-/* The name is the session's colour (the row menu's "Colour", or one worked
+/* The name is the session's color (the row menu's "Color", or one worked
    out from its id); the dot before it is still the only thing that says
    what the session is doing. A quiet session's name is faded rather than
-   grey, so the list reads as colour first and activity second. */
+   gray, so the list reads as color first and activity second. */
 .session-row .row-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  line-height: var(--row-line-height);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -589,6 +614,14 @@ a {
 
 .session-row.is-idle .row-title {
   opacity: 0.6;
+}
+
+/* The two pills a row can carry are the same pill: NEEDS ANSWER in the
+   waiting color, a tag in its own. NEEDS ANSWER is the system one — it is
+   always drawn first and cannot be taken off. */
+.session-row .row-needs-answer,
+.session-row .tag-pill {
+  flex: 0 0 auto;
 }
 
 .session-row .row-needs-answer {
@@ -603,7 +636,25 @@ a {
   border-radius: var(--radius-pill);
 }
 
+/* A user tag: the same pill as NEEDS ANSWER, in the tag's own color — a
+   soft wash of it behind the label, the label itself in the color. Labels
+   are capped at fifteen characters (src/renderer/sessionTags.js), so a pill
+   never needs an ellipsis. */
+.tag-pill {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--tag-color, var(--text-dim));
+  background: color-mix(in srgb, var(--tag-color, var(--text-dim)) 16%, transparent);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+}
+
 .session-row .row-time {
+  align-self: start;
+  line-height: var(--row-line-height);
   font-size: 11.5px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
@@ -790,7 +841,7 @@ a {
   background: var(--border-soft);
 }
 
-/* The eight session colours inside the "Colour" submenu: two rows of four,
+/* The eight session colors inside the "Color" submenu: two rows of four,
    so the whole palette is one glance and one click. */
 .popup-menu-swatches {
   display: grid;
@@ -816,6 +867,57 @@ a {
 .color-swatch.is-selected {
   opacity: 1;
   box-shadow: 0 0 0 2px var(--surface-raised), 0 0 0 3.5px var(--session-color);
+}
+
+/* A tag in the "Tags ▸" submenu: the pill itself is the label, so the menu
+   shows the color the row will show. The check on the right is the same one
+   every menu uses; a dash is the mixed state of a selection where only some
+   of the picked rows wear the tag. */
+.popup-menu-item.is-tag {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.popup-menu-item-mark.is-mixed {
+  color: var(--text-faint);
+}
+
+/* "New tag…" opened in place: a label field, the eight swatches, and the
+   line saying how long a label may be. Enter saves it. */
+.tag-form {
+  padding: 4px 9px 8px;
+}
+
+.tag-form-input {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--accent-outline);
+  background: var(--background);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.tag-form-swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 16px);
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.tag-form-swatches .color-swatch {
+  width: 16px;
+  height: 16px;
+}
+
+.tag-form-hint {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.popup-menu-note.is-warning {
+  color: var(--gold);
 }
 
 .popup-menu-item {
@@ -1016,8 +1118,8 @@ input:focus-visible {
 
 /* The agent's emoji in one light, neutral circle — the same for every agent,
    in the list, in the Agents tab, in the header chip and in the pickers.
-   Colour in this window means the session, not the agent, and a coloured
-   disc behind a coloured emoji only made the emoji harder to read. */
+   Color in this window means the session, not the agent, and a colored
+   disc behind a colored emoji only made the emoji harder to read. */
 .agent-badge {
   display: inline-flex;
   align-items: center;
@@ -1042,7 +1144,13 @@ input:focus-visible {
 /* A row with an agent gets one more grid column; rows without one keep the
    layout they always had. */
 .session-row.has-agent {
-  grid-template-columns: 12px auto minmax(0, 1fr) auto auto;
+  grid-template-columns: 12px auto minmax(0, 1fr) auto;
+}
+
+/* The badge sits on the first line of a wrapped row, like the dot. */
+.session-row.has-agent .agent-badge {
+  align-self: start;
+  margin-top: calc((var(--row-line-height) - 18px) / 2);
 }
 
 .agent-chip {
@@ -1789,9 +1897,9 @@ input:focus-visible {
   display: inline-block;
 }
 
-/* ---------- Middle column: the centred note ---------- */
+/* ---------- Middle column: the centered note ---------- */
 
-.middle-centred {
+.middle-centered {
   flex: 1;
   display: grid;
   place-items: center;
@@ -1800,7 +1908,7 @@ input:focus-visible {
   font-size: 14px;
 }
 
-.middle-centred .empty-card {
+.middle-centered .empty-card {
   text-align: center;
   padding: 26px 32px;
   border-radius: var(--radius);
@@ -1808,7 +1916,7 @@ input:focus-visible {
   box-shadow: var(--shadow-card);
 }
 
-.middle-centred .empty-card .empty-icon {
+.middle-centered .empty-card .empty-icon {
   font-size: 26px;
   margin-bottom: 8px;
 }
@@ -1998,7 +2106,7 @@ input:focus-visible {
   margin: 14px 0;
 }
 
-/* highlight.js colours, tuned to the theme */
+/* highlight.js colors, tuned to the theme */
 .hljs-comment,
 .hljs-quote {
   color: var(--text-faint);
@@ -2807,7 +2915,7 @@ input:focus-visible {
 /* The small "read the definition" button on an agent row. */
 /* Both row buttons line up with the agent's own row (27px badge plus 7px of
    padding), not with the middle of the wrapper — the wrapper also holds the
-   agent's sessions, so a centred button drifted down the list. */
+   agent's sessions, so a centered button drifted down the list. */
 .agent-row-wrapper .row-menu-button,
 .agent-row-wrapper .row-read-button {
   top: 9px;
@@ -3354,4 +3462,89 @@ input:focus-visible {
   font-family: var(--font-ui);
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* ---------- Manage tags (the small sheet behind "Manage tags…") ---------- */
+
+.sheet.manage-tags {
+  min-width: 420px;
+}
+
+.manage-tags-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.manage-tags-row:last-of-type {
+  border-bottom: none;
+}
+
+/* The label is edited where it is read, in the tag's own color, so a rename
+   and a recolor look like the same small act. */
+.manage-tags-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-small);
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--tag-color, var(--text-dim)) 14%, transparent);
+  color: var(--tag-color, var(--text));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  outline: none;
+}
+
+.manage-tags-label:focus {
+  border-color: var(--accent-outline);
+}
+
+.manage-tags-swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 15px);
+  gap: 5px;
+}
+
+.manage-tags-swatches .color-swatch {
+  width: 15px;
+  height: 15px;
+}
+
+.manage-tags-delete {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.manage-tags-delete:hover {
+  border-color: var(--rose);
+  color: var(--rose);
+}
+
+/* Deleting asks inside the row it is about, because it takes the tag off
+   every session wearing it. */
+.manage-tags-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.manage-tags-confirm-text {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.manage-tags-confirm .button {
+  padding: 3px 10px;
+  font-size: 11.5px;
 }

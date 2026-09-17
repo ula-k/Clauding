@@ -47,10 +47,11 @@ elsewhere"), never the exact wording on screen — wording is quoted only as
 | [CL-19](CL-19-windows.md) | App · Windows | P2 | dry test `test/platform.test.js` + CI on `windows-latest`; manual **not done yet** |
 | [CL-20](CL-20-find-in-conversation.md) | Panel · find in conversation | P2 | dry test `test/transcriptSearch.test.js` + manual |
 | [CL-21](CL-21-selecting-several-sessions.md) | List · selecting several sessions | P2 | dry test `test/selectionPlan.test.js` + manual |
-| [CL-22](CL-22-session-colours.md) | List · session colours | P2 | dry test `test/selectionPlan.test.js`, `test/sessionGroups.test.js` + manual |
+| [CL-22](CL-22-session-colors.md) | List · session colors | P2 | dry test `test/selectionPlan.test.js`, `test/sessionGroups.test.js` + manual |
 | [CL-23](CL-23-needs-answer.md) | List · when a session says NEEDS ANSWER | P2 | dry test `test/needsAnswer.test.js` + manual |
+| [CL-24](CL-24-tags.md) | List · tags | P2 | dry test `test/tags.test.js` + manual |
 
-Eleven P1, nine P2, two P3.
+Eleven P1, ten P2, two P3.
 
 ## Rules every specification follows
 
@@ -80,7 +81,7 @@ is hidden; a throw-away folder is in use).
 1. Click … 2. Type … 3. Run `clauding open …` — a click path, not a URL.
 
 ## Expected state
-What is on screen and what it means (the row changed colour; this session's
+What is on screen and what it means (the row changed color; this session's
 panel shows the page), not the exact words — wording as "currently e.g. …".
 
 ## Evidence

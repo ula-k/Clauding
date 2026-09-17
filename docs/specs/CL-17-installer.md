@@ -68,7 +68,7 @@ inherits; `npm run uninstall-app` removes it again.
   which is enough to start it locally but not to hand it to anybody else.
 - Renaming the helper bundles inside Electron.app ("Electron Helper"): they
   are not user-visible outside Activity Monitor.
-- `node-pty` and rebuilding the binary: installation, not behaviour (the plan
+- `node-pty` and rebuilding the binary: installation, not behavior (the plan
   puts it out of scope).
 
 ## What the dry tests do not prove

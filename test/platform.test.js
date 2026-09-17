@@ -156,7 +156,7 @@ test("a Windows working directory gets the same kind of folder label as a Mac on
   assert.equal(
     projectShortName("C:\\Users\\ula\\projects\\notes\\.claude\\worktrees\\fix-7"),
     "notes › fix-7",
-    "the worktree shape is recognised with backslashes too"
+    "the worktree shape is recognized with backslashes too"
   );
   assert.equal(
     projectFolderLabel("C:\\Users\\ula\\projects\\notes\\.claude\\worktrees\\fix-7", options),
@@ -324,7 +324,7 @@ test("PATH gets the folders that exist on that system, and no others", () => {
   assert.equal(macEnvironment.PATH, "/Users/ula/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin");
 });
 
-test("the terminal environment is the same on both: colours in, nesting markers out", () => {
+test("the terminal environment is the same on both: colors in, nesting markers out", () => {
   const environment = terminalEnvironment({ PATH: "C:\\Windows", CLAUDECODE: "1", USERPROFILE: WINDOWS_HOME });
   assert.equal(environment.TERM, "xterm-256color");
   assert.equal(environment.COLORTERM, "truecolor");

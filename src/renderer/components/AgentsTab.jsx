@@ -9,7 +9,7 @@ import { sessionColorToken } from "../sessionColors.js";
 import { buildAgentSessionList } from "../sessionGrouping.js";
 
 // running -> working, waiting for you -> waiting, everything else -> idle:
-// the same three colours the session list uses.
+// the same three colors the session list uses.
 function statusName(session) {
   if (session.statusGroup === "running") {
     return "working";
@@ -48,7 +48,7 @@ function AgentSessionRow({ session, isSelected, onSelect, now, colorToken }) {
   );
 }
 
-// One agent in the list: the emoji in its coloured circle, the name, and the
+// One agent in the list: the emoji in its colored circle, the name, and the
 // dim definition folder under it. Clicking the row opens the "+ New" sheet
 // with this agent already picked — the quickest way to put it to work.
 function AgentRow({

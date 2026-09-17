@@ -90,7 +90,7 @@ export function harvestSkillsKickoffMessage(skillsRoot) {
 // agent picked, a group header's "+" with one) has exactly the same problem
 // as an assignment: the definition is appended to the system prompt, which
 // nobody can see, and the CLI comes up at an empty prompt — so the session
-// looked like any other empty terminal with a coloured chip on it. This is
+// looked like any other empty terminal with a colored chip on it. This is
 // the message the app types in for it, so the first thing on screen is the
 // agent saying who it is.
 export function agentStartKickoffMessage(agentName) {

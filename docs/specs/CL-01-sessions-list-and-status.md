@@ -3,7 +3,7 @@ Priority: P1 · Verified by: dry test `test/sessions.test.js`, `test/liveStatus.
 
 ## Goal
 Every Claude Code session on this Mac has a row in the left column, the row's
-colour says what the CLI itself says the session is doing, the "needs answer"
+color says what the CLI itself says the session is doing, the "needs answer"
 badge appears only for a session whose job is stuck, and throw-away sessions
 are not in the list at all.
 
@@ -20,12 +20,12 @@ are not in the list at all.
 ## Steps
 1. Open Clauding and look at the left column without clicking anything.
 2. Find the session that is busy right now — its row carries the working
-   colour and, if the group it sits in is folded shut, the group header does.
+   color and, if the group it sits in is folded shut, the group header does.
 3. Find the session whose job is waiting for a permission answer — its row
-   carries the waiting colour and the badge (currently e.g. "needs answer").
-4. Find a session that has not run for days — no badge, the quiet colour.
+   carries the waiting color and the badge (currently e.g. "needs answer").
+4. Find a session that has not run for days — no badge, the quiet color.
 5. Let the busy session finish and watch the same row without touching it: it
-   changes to the waiting or quiet colour on its own within a few seconds.
+   changes to the waiting or quiet color on its own within a few seconds.
 6. Search the list for the scratch conversation from the preconditions, by its
    folder name and by its first words.
 7. Compare the whole list, side by side, with what the CLI's own agents view
@@ -34,13 +34,13 @@ are not in the list at all.
 ## Expected state
 - One row per session the SDK lists, newest first, with the project label
   ("…/projects/x" or "~/Desktop/notes") and the relative time.
-- The colour of a row is the meaning the registry gives, not a guess: running
+- The color of a row is the meaning the registry gives, not a guess: running
   (a live CLI process reporting busy, or a job working), waiting for you (a
   live process that is idle, or a job that is idle or blocked), quiet
   otherwise.
 - The badge is on the row of the blocked job only. A CLI sitting idle at its
   prompt has no badge: it is not waiting for an answer, it is simply idle.
-- A session that stops running loses its colour without a click and without a
+- A session that stops running loses its color without a click and without a
   reload.
 - The scratch conversation has no row and cannot be found by searching.
 
@@ -50,12 +50,12 @@ are not in the list at all.
     is working, waiting or finished, by its state" — the whole mapping in the
     table above, including the values the CLI has not used yet.
   - "registry files whose process is gone are ignored" — a stale registry file
-    (they do linger) never colours a row; the pid check is handed in, so no
+    (they do linger) never colors a row; the pid check is handed in, so no
     process is signalled.
   - "a live process wins over the job state for the same session" — a job that
     says "done" while its process still sits idle shows as waiting for you.
   - "a job is matched to both its session ids" — a job resumed into a new
-    transcript colours both rows.
+    transcript colors both rows.
   - "the needs-answer badge is only for a job that says it is stuck" — the
     badge rule, including the idle CLI that must not get one.
   - "a session running in one of the app's own terminals is marked as ours" —
@@ -71,11 +71,11 @@ are not in the list at all.
     labelled by the repository it belongs to", "a folder inside the home
     folder is written with a tilde" — the project label of a row.
 - Manual, with screenshots: the list next to the CLI's own agents view (step
-  7), the colour changing on its own (step 5), the badge on the blocked job
+  7), the color changing on its own (step 5), the badge on the blocked job
   (step 3).
 
 ## Out of scope
-- Whether the three colours are exactly the ones the CLI's agents view uses —
+- Whether the three colors are exactly the ones the CLI's agents view uses —
   undecided; this specification only requires that the meaning matches. When
   the decision is made it belongs here.
 - Deleting hidden test sessions — undecided, not specified anywhere yet.
@@ -86,4 +86,4 @@ are not in the list at all.
 - That the list actually redraws when a registry file changes (the watcher and
   the 15 s heartbeat): manual, step 5.
 - That the SDK returns every session on this Mac: assumed, out of scope.
-- The colours themselves: manual, from the screenshot.
+- The colors themselves: manual, from the screenshot.

@@ -55,7 +55,7 @@ and asks nothing even when the original is busy.
   interface.
 
 ## Out of scope
-- The CLI's own behaviour under `--fork-session`: assumed.
+- The CLI's own behavior under `--fork-session`: assumed.
 - Panel tabs: CL-10. Agents: CL-15.
 
 ## What the dry tests do not prove

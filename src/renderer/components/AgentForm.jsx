@@ -9,7 +9,7 @@ import { DEFAULT_AGENT_EMOJI, definitionFolderLabel, fileNameOf } from "../agent
 
 // The form behind "+ Add agent" and the row menu's "Edit": a name, an emoji,
 // the folder the definition is read from and which .md file inside it is
-// the definition. There is no colour to pick — the emoji is what tells one
+// the definition. There is no color to pick — the emoji is what tells one
 // agent from another, and the palette belongs to the sessions
 // (sessionColors.js).
 //

@@ -1,6 +1,6 @@
 // The small helpers the agent list, the form and the badges share.
 //
-// Agents have no colour of their own: what tells one from another is its
+// Agents have no color of their own: what tells one from another is its
 // emoji, drawn in one neutral circle wherever it appears. The palette
 // belongs to the sessions — see sessionColors.js.
 import { lastSegmentOf, segmentsOf, separatorOf } from "./paths.js";

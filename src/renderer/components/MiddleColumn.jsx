@@ -424,7 +424,7 @@ export default function MiddleColumn({
         {!reader && (
           <>
             <div className="middle-tools">{underTools}</div>
-            <div className="middle-centred">
+            <div className="middle-centered">
               <div className="empty-card">
                 <div className="empty-icon">✿</div>
                 {translate("transcript.empty")}
@@ -448,7 +448,7 @@ export default function MiddleColumn({
         {!reader && (
           <>
             <div className="middle-tools">{underTools}</div>
-            <div className="middle-centred">
+            <div className="middle-centered">
               <div className="elsewhere-note" data-elsewhere-note={mode === "elsewhere" ? "1" : "0"}>
                 <div className="elsewhere-title">{title}</div>
                 <div className="elsewhere-folder" title={workingDirectoryShort}>

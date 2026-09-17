@@ -3,7 +3,7 @@ Priority: P2 · Verified by: dry test `test/selectionPlan.test.js` + manual
 
 ## Goal
 Several rows can be picked out of the list and dealt with in one go — hidden,
-deleted, given an agent, a group or a colour — and picking them out never
+deleted, given an agent, a group or a color — and picking them out never
 starts a `claude` process.
 
 ## Preconditions
@@ -28,7 +28,7 @@ starts a `claude` process.
   its placeholder ("3 selected").
 - The menu in step 3 is about the selection: hide them all, delete them
   all, assign them to an agent, move them to a group, give them all one
-  colour. Nothing in it is about the one row under the pointer.
+  color. Nothing in it is about the one row under the pointer.
 - Step 4 extends the selection to the whole range between the last row
   clicked and this one, in the order the rows are drawn; a second
   Shift-click moves that block rather than leaving rows behind.
@@ -59,7 +59,7 @@ starts a `claude` process.
 
 ## Out of scope
 - What a single row's menu does: CL-04, CL-05.
-- The colours of the names themselves: CL-22.
+- The colors of the names themselves: CL-22.
 
 ## What the dry tests do not prove
 - That ⌘-click, Shift-click, ⌘A and ⌘⌫ reach the list at all (the terminal

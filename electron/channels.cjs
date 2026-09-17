@@ -23,6 +23,12 @@ const CHANNELS = {
   groupsSetHidden: "groups:set-hidden",
   groupsSetCollapsed: "groups:set-collapsed",
   groupsSetColor: "groups:set-color",
+  // The user's own tags, kept in groups.json next to the groups: the
+  // catalogue itself and which sessions wear which tag.
+  tagsCreate: "tags:create",
+  tagsUpdate: "tags:update",
+  tagsDelete: "tags:delete",
+  tagsSetOnSessions: "tags:set-on-sessions",
   groupsChanged: "groups:changed",
   agentsGet: "agents:get",
   agentsAdd: "agents:add",

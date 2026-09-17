@@ -23,7 +23,7 @@
 //   }
 //
 // `color` is still written, and always has the same value: agents are not
-// coloured any more. What tells one agent from another is its emoji, which
+// colored any more. What tells one agent from another is its emoji, which
 // sits in one neutral circle wherever it is drawn, and the palette belongs
 // to the sessions instead (see electron/sessionGroups.js). The key is kept
 // so an agents.json written by an older version still reads, and one
@@ -139,7 +139,7 @@ function sanitizeAgent(entry) {
     // used agents first and settle ties with this.
     lastUsedAt: Number.isFinite(entry.lastUsedAt) ? Number(entry.lastUsedAt) : null,
     // Which built-in this agent is ("agent-maker"), or null for the user's
-    // own. A built-in can be recoloured and renamed but never deleted, and
+    // own. A built-in can be recolored and renamed but never deleted, and
     // the app puts a missing one back at the next start.
     builtin: cleanBuiltin(entry.builtin),
     // Extra `claude` flags every session this agent runs gets, on top of
@@ -360,7 +360,7 @@ export function createAgentStore({ storagePath, onChange, log }) {
   }
 
   // Deleting an agent also drops every session's link to it: a badge in a
-  // colour nothing explains any more would only be noise.
+  // color nothing explains any more would only be noise.
   function deleteAgent(agentId) {
     const position = state.agents.findIndex((agent) => agent.id === agentId);
     if (position === -1) {
@@ -385,7 +385,7 @@ export function createAgentStore({ storagePath, onChange, log }) {
   // The built-in agents the app ships with (see electron/builtins.js). Adds
   // the agent when agents.json has none flagged with this marker, and puts
   // its definition path back when the folder the app ships from has moved.
-  // `force` is the "Restore built-in" action: name, emoji, colour and paths
+  // `force` is the "Restore built-in" action: name, emoji, color and paths
   // all go back to what the app ships.
   function ensureBuiltinAgent(draft, { force = false } = {}) {
     const marker = cleanBuiltin(draft && draft.builtin);

@@ -1,9 +1,9 @@
 // CL-21, CL-22 — picking several sessions out of the list, what a bulk
-// action would then do (src/renderer/selectionPlan.js), and the colour a
+// action would then do (src/renderer/selectionPlan.js), and the color a
 // session's name is drawn in (src/renderer/sessionColors.js).
 //
 // All of it is pure functions: no window, no React, no Electron. The rules
-// a click follows and the colour a session gets are decided here and only
+// a click follows and the color a session gets are decided here and only
 // read by the components.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +16,6 @@ import {
 import { SESSION_COLOR_TOKENS as STORED_COLOR_TOKENS } from "../electron/sessionGroups.js";
 import {
   SESSION_COLOR_TOKENS,
-  automaticSessionColor,
   hasChosenColor,
   sessionColorToken
 } from "../src/renderer/sessionColors.js";
@@ -142,42 +141,27 @@ test("the confirmation names the first five and counts the rest", () => {
   ]);
 });
 
-// ---- the colour a session's name is drawn in -------------------------
+// ---- the color a session's name is drawn in -------------------------
 
-test("the automatic colour of a session never changes", () => {
-  const sessionId = "6f1f9d1e-0a2b-4c3d-8e5f-1234567890ab";
-  const first = automaticSessionColor(sessionId);
-  assert.ok(SESSION_COLOR_TOKENS.includes(first));
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    assert.equal(automaticSessionColor(sessionId), first);
-  }
-});
-
-test("the automatic colours spread over the whole palette", () => {
-  const seen = new Set();
-  for (let index = 0; index < 400; index += 1) {
-    seen.add(automaticSessionColor(`session-${index}-2f8a`));
-  }
-  assert.equal(seen.size, SESSION_COLOR_TOKENS.length, "every swatch is used by some session");
-});
-
-test("a colour picked by hand wins over the automatic one", () => {
+test("only a color picked by hand gives a session a color", () => {
   const colors = { one: "--project-color-7" };
   assert.equal(sessionColorToken("one", colors), "--project-color-7");
   assert.equal(hasChosenColor("one", colors), true);
-  assert.equal(sessionColorToken("two", colors), automaticSessionColor("two"));
+  // Nobody colored this one, so it has no color at all: the row writes its
+  // name in the ordinary text color.
+  assert.equal(sessionColorToken("two", colors), null);
   assert.equal(hasChosenColor("two", colors), false);
 });
 
-test("a stored colour that is not in the palette falls back to the automatic one", () => {
+test("a stored color that is not in the palette is no color at all", () => {
   const colors = { one: "#ff0000" };
-  assert.equal(sessionColorToken("one", colors), automaticSessionColor("one"));
+  assert.equal(sessionColorToken("one", colors), null);
   assert.equal(hasChosenColor("one", colors), false);
 });
 
-test("a session with no id at all still gets a colour", () => {
-  assert.ok(SESSION_COLOR_TOKENS.includes(sessionColorToken("", {})));
-  assert.ok(SESSION_COLOR_TOKENS.includes(automaticSessionColor(null)));
+test("a session with no id has no color", () => {
+  assert.equal(sessionColorToken("", {}), null);
+  assert.equal(sessionColorToken(null, null), null);
 });
 
 test("the palette the renderer draws is the palette the store accepts", () => {

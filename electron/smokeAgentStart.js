@@ -1,7 +1,7 @@
 // Dev-only automation (CLAUDING_SMOKE_AGENT_START=1) for the first message a
 // session started *as an agent* gets. It is the proof that clicking an agent
 // in the Agents tab produces a session that says who it is instead of an
-// empty prompt with a coloured chip over it:
+// empty prompt with a colored chip over it:
 //
 //   1. writes a small agent definition into the scratch folder, adds it
 //      through the real store and points its last working directory at the

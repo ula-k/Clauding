@@ -1,5 +1,5 @@
 // CL-01, CL-02 — what the two Claude Code registries mean for a row: the
-// colour group, the "needs answer" badge, and which entry wins when a job and
+// color group, the "needs answer" badge, and which entry wins when a job and
 // a process disagree (electron/lib/liveStatusCore.js, electron/sessions.js).
 //
 // The registries are faked inside a throw-away folder under the system
@@ -166,7 +166,7 @@ test("a session running in one of the app's own terminals is marked as ours", ()
   assert.equal(idle.statusGroup, STATUS_GROUPS.waiting);
 });
 
-test("what the registry says about our own terminal still decides its colour", () => {
+test("what the registry says about our own terminal still decides its color", () => {
   const statusBySession = new Map([
     ["session-one", { group: STATUS_GROUPS.running, source: "process", rawStatus: "busy", needs: null }]
   ]);

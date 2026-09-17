@@ -2,9 +2,9 @@
 // session rows use the circle alone (before the name, next to the status
 // dot); the terminal header uses the chip, which adds the name.
 //
-// The circle is the same light grey for every agent on purpose: colour in
-// this window means the session (see sessionColors.js), and a coloured disc
-// behind a coloured emoji only made the emoji harder to read.
+// The circle is the same light gray for every agent on purpose: color in
+// this window means the session (see sessionColors.js), and a colored disc
+// behind a colored emoji only made the emoji harder to read.
 import { useTranslation } from "../i18n.js";
 
 export function AgentBadge({ agent }) {

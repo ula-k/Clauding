@@ -157,7 +157,7 @@ test("a definition file given by its bare name is resolved inside the folder", (
   assert.equal(agent.definitionFile, path.join(folder, "spec-writer.md"));
 });
 
-test("the emoji is cut to one whole character, and the colour field is always the same", () => {
+test("the emoji is cut to one whole character, and the color field is always the same", () => {
   const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
   const { store } = storeIn(scratchFolder());
   const draft = { name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" };
@@ -165,7 +165,7 @@ test("the emoji is cut to one whole character, and the colour field is always th
   assert.equal(store.addAgent({ ...draft, emoji: "✅ Test" }).emoji, "✅");
   assert.equal(store.addAgent({ ...draft, emoji: "  🧑‍💻 dev  " }).emoji, "🧑‍💻");
   assert.equal(store.addAgent({ ...draft, emoji: "" }).emoji, DEFAULT_AGENT_EMOJI);
-  // Agents have no colour any more: whatever arrives, the key that stays in
+  // Agents have no color any more: whatever arrives, the key that stays in
   // agents.json is the one constant (see IGNORED_AGENT_COLOR).
   assert.equal(store.addAgent({ ...draft, color: "#ff0000" }).color, IGNORED_AGENT_COLOR);
   assert.equal(store.addAgent({ ...draft, color: "--project-color-3" }).color, IGNORED_AGENT_COLOR);

@@ -21,7 +21,7 @@ emoji field holds exactly one whole character.
 3. Choose a different `.md` file in the same folder and watch the name and
    emoji change with it.
 4. Paste "✅ Test" into the emoji field, then "🧑‍💻 developer", then "👩🏽‍🔬".
-5. Pick a colour and save the agent.
+5. Pick a color and save the agent.
 6. Start a session as that agent from "+ New", and ask it who it is and where
    its definition lives.
 7. Look at the row of that session and at the header of its terminal.
@@ -37,7 +37,7 @@ emoji field holds exactly one whole character.
   (without an "Agent:" prefix) and the emoji from the first emoji in the text.
 - The emoji field keeps one whole character, joined emoji and skin tones
   included, and anything pasted after it is dropped.
-- A colour is one of the eight palette tokens, never a free colour.
+- A color is one of the eight palette tokens, never a free color.
 - The session started as the agent answers with its own name, its definition
   file and its folder; its title carries the agent's emoji, the row shows the
   agent's circle, and the row does not print the emoji twice.
@@ -45,7 +45,7 @@ emoji field holds exactly one whole character.
   the hidden ones are not listed but counted on a line of their own.
 - A link to a session that never wrote a transcript is skipped in the list
   without an error, and the count matches what is shown.
-- Deleting the agent removes the badge from every row: no circle in a colour
+- Deleting the agent removes the badge from every row: no circle in a color
   nothing explains any more.
 
 ## Evidence
@@ -58,7 +58,7 @@ emoji field holds exactly one whole character.
   - "an agent needs a name, a folder and a file inside that folder" and "a
     definition file given by its bare name is resolved inside the folder" —
     a stored path that wandered outside the folder is refused.
-  - "the emoji is cut to one whole character and the colour must be a palette
+  - "the emoji is cut to one whole character and the color must be a palette
     token".
   - "deleting an agent takes every session link with it" (step 10).
   - "a link to a session with no transcript is kept, not treated as broken"

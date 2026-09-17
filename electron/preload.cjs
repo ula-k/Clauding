@@ -71,10 +71,28 @@ contextBridge.exposeInMainWorld("clauding", {
   setSessionHidden(sessionId, hidden) {
     return ipcRenderer.invoke(CHANNELS.groupsSetHidden, { sessionId, hidden });
   },
-  // The colour one session's name is drawn in, from the row menu's
-  // "Colour": a palette token, or null for "Automatic" (groups.json).
+  // The color one session's name is drawn in, from the row menu's
+  // "Color": a palette token, or null for "Automatic" (groups.json).
   setSessionColor(sessionId, color) {
     return ipcRenderer.invoke(CHANNELS.groupsSetColor, { sessionId, color: color || null });
+  },
+  // The user's own tags (groups.json). Creating one answers with the tag
+  // itself as well as the new state, because the menu that made it puts it
+  // on the session straight away.
+  createSessionTag(draft) {
+    return ipcRenderer.invoke(CHANNELS.tagsCreate, draft || {});
+  },
+  updateSessionTag(tagId, draft) {
+    return ipcRenderer.invoke(CHANNELS.tagsUpdate, { tagId, draft: draft || {} });
+  },
+  deleteSessionTag(tagId) {
+    return ipcRenderer.invoke(CHANNELS.tagsDelete, { tagId });
+  },
+  // One tag on (or off) every session named. Answers
+  // { state, refused: [sessionId…] } — a session already wearing three tags
+  // refuses the fourth.
+  setSessionsTag(sessionIds, tagId, applied) {
+    return ipcRenderer.invoke(CHANNELS.tagsSetOnSessions, { sessionIds, tagId, applied: Boolean(applied) });
   },
   // Folding a group shut in the list (remembered in groups.json).
   setSessionGroupCollapsed(groupId, collapsed) {

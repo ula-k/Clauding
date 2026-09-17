@@ -1,7 +1,7 @@
 // Renderer-side twin of projectFolderLabel() in electron/projects.js, for
 // paths the renderer only has as a raw string (a folder picked in the dialog).
 //
-// The renderer has no `os.homedir()`, so the home folder is recognised by its
+// The renderer has no `os.homedir()`, so the home folder is recognized by its
 // shape: "/Users/<name>" on macOS, "/home/<name>" on Linux, and
 // "C:\Users\<name>" on Windows. Either separator is accepted, because the
 // string may have been written on either system.

@@ -37,7 +37,7 @@ itself, while one that was typed into or started from "+ New" never does.
   - "a project folder is shortened to its last two parts", "a folder inside
     the home folder is written with a tilde", "a worktree is labelled by the
     repository it belongs to" — the labels the sheet prints for each folder.
-  - "the project colour is stable for a folder and inside the palette" — the
+  - "the project color is stable for a folder and inside the palette" — the
     dot next to each folder.
 - `test/sessionGroups.test.js`, "a session with no membership lands in
   Default" (in `test/sessionGrouping.test.js`) — step 3.

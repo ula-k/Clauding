@@ -1,4 +1,4 @@
-/* Every colour used by the app lives here. Graphite with a sage tint as the
+/* Every color used by the app lives here. Graphite with a sage tint as the
    base, lavender as the accent — dark but gentle, nothing neon. */
 :root {
   --background: #171b18;
@@ -38,8 +38,8 @@
   --gold: #d6c58f;
   --gold-soft: rgba(214, 197, 143, 0.16);
 
-  /* ---- Session status colours -------------------------------------------
-     The one place the list's status colours are decided. The row shows a dot
+  /* ---- Session status colors -------------------------------------------
+     The one place the list's status colors are decided. The row shows a dot
      in one of these three and nothing else; change them here and the whole
      list follows (they are meant to be matched to the Claude Code agents
      view). */

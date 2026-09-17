@@ -88,7 +88,9 @@ const INITIAL_GROUP_STATE = {
   membership: {},
   hidden: [],
   collapsed: [],
-  colors: {}
+  colors: {},
+  tags: [],
+  sessionTags: {}
 };
 // Until agents.json has been read: no agents, so no badges anywhere.
 const INITIAL_AGENT_STATE = { agents: [], sessionAgents: {} };
@@ -708,8 +710,8 @@ export default function App() {
     setSelection({ sessionIds: [], anchorId: null });
   }, []);
 
-  // The colour one row's name is drawn in (groups.json). `token` null is
-  // "Automatic": the stored colour goes and the list works one out from the
+  // The color one row's name is drawn in (groups.json). `token` null is
+  // "Automatic": the stored color goes and the list works one out from the
   // session id again.
   const setSessionColor = useCallback((sessionId, token) => {
     window.clauding.setSessionColor(sessionId, token).then(setGroupState);
@@ -808,6 +810,32 @@ export default function App() {
       },
       unhideSession(sessionId) {
         window.clauding.setSessionHidden(sessionId, false).then(setGroupState);
+      }
+    }),
+    []
+  );
+
+  // The user's own tags (groups.json). Making one answers with the tag
+  // itself, because the menu that made it puts it on the session straight
+  // away; putting one on answers how many sessions refused it, so the menu
+  // can say why nothing happened (three tags is the most a session wears).
+  const tagActions = useMemo(
+    () => ({
+      async createTag(draft) {
+        const answer = await window.clauding.createSessionTag(draft);
+        setGroupState(answer.state);
+        return answer.tag;
+      },
+      async updateTag(tagId, draft) {
+        setGroupState(await window.clauding.updateSessionTag(tagId, draft));
+      },
+      async deleteTag(tagId) {
+        setGroupState(await window.clauding.deleteSessionTag(tagId));
+      },
+      async setSessionsTag(sessionIds, tagId, applied) {
+        const answer = await window.clauding.setSessionsTag(sessionIds, tagId, applied);
+        setGroupState(answer.state);
+        return answer.refused.length;
       }
     }),
     []
@@ -1278,7 +1306,7 @@ export default function App() {
         window.clauding.deleteAgent(agentId).then(setAgentState);
       },
       // An agent that came with the app: back to the definition, name,
-      // emoji and colour Clauding ships with (and the built-in skill is
+      // emoji and color Clauding ships with (and the built-in skill is
       // put back too if it is missing).
       restoreBuiltin() {
         window.clauding.restoreBuiltinAgents().then(setAgentState);
@@ -1333,7 +1361,7 @@ export default function App() {
   // "+ New" confirmed: a brand new conversation in the chosen folder, as the
   // chosen agent or as nobody. A session that starts *as an agent* is also
   // given its first message — the definition is only in the system prompt,
-  // so without it the terminal shows a coloured chip and an empty prompt and
+  // so without it the terminal shows a colored chip and an empty prompt and
   // nothing says that an agent is working here at all.
   const startNewSession = useCallback(
     ({ workingDirectory, agentId, extraArguments }) => {
@@ -1693,6 +1721,7 @@ export default function App() {
           onRowClick={handleRowClick}
           onSelectAllVisible={selectAllVisible}
           onSetSessionColor={setSessionColor}
+          tagActions={tagActions}
           onClearSelection={clearSelection}
           bulkActions={bulkActions}
         />

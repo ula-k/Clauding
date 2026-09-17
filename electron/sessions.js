@@ -1,5 +1,5 @@
 // Session listing: the SDK gives us the raw list, we enrich each row with a
-// project short name, a project colour and the live status group.
+// project short name, a project color and the live status group.
 import { listSessions, getSessionInfo, renameSession, deleteSession } from "@anthropic-ai/claude-agent-sdk";
 import { projectShortName, projectFolderLabel, projectColorIndex, shortenHomePath } from "./projects.js";
 import { collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
@@ -9,7 +9,7 @@ import path from "node:path";
 import { isInsideSmokeFolder } from "./smokeFolder.js";
 import { claudeRegistryPaths } from "./lib/platformPaths.js";
 import { searchTranscriptFiles } from "./lib/transcriptSearch.js";
-import { TAIL_BYTES, createNeedsAnswerCache } from "./lib/needsAnswer.js";
+import { TAIL_BYTES, createNeedsAnswerCache, isRecentEnoughToAsk } from "./lib/needsAnswer.js";
 
 export const DEFAULT_PAGE_SIZE = 60;
 
@@ -80,35 +80,68 @@ export function forgetNeedsAnswer(sessionId) {
   needsAnswerCache.forget(sessionId);
 }
 
-// The transcript of a session and how it stands right now, as a stamp the
-// cache can compare: null when the session has not written one yet.
-function transcriptStamp(sessionId) {
+// Where each session's transcript was last found. Looking it up means
+// asking every project folder whether it holds <sessionId>.jsonl, and the
+// answer does not move, so it is remembered — and thrown away again the
+// moment the file is not there (a session deleted, a project folder
+// renamed), which sends the next call back through the search.
+const transcriptPathBySession = new Map();
+
+function transcriptPathFor(sessionId) {
+  const remembered = transcriptPathBySession.get(sessionId);
+  if (remembered && fs.existsSync(remembered)) {
+    return remembered;
+  }
+  transcriptPathBySession.delete(sessionId);
   const files = transcriptFilesFor(sessionId);
   if (files.length === 0) {
     return null;
   }
-  const filePath = files[0].filePath;
+  transcriptPathBySession.set(sessionId, files[0].filePath);
+  return files[0].filePath;
+}
+
+// The transcript of a session and how it stands right now, as a stamp the
+// cache can compare: null when the session has not written one yet.
+function transcriptStamp(sessionId) {
+  const filePath = transcriptPathFor(sessionId);
+  if (!filePath) {
+    return null;
+  }
   try {
     const stats = fs.statSync(filePath);
     return { filePath, stamp: `${stats.mtimeMs}:${stats.size}` };
   } catch (error) {
+    transcriptPathBySession.delete(sessionId);
     return null;
   }
 }
 
 // The "needs answer" badge in the list. A job says so itself; an ordinary
 // session cannot, so the end of its conversation is read and the last thing
-// it said decides (see electron/lib/needsAnswer.js). Only sessions that are
-// **alive and not busy** are looked at: a session nobody is running is not
-// waiting for an answer, and a busy one is still writing.
-function needsAnswer(sessionId, liveStatus) {
-  if (!liveStatus) {
-    return false;
-  }
-  if (Boolean(liveStatus.needs) || liveStatus.rawStatus === "blocked") {
+// it said decides (see electron/lib/needsAnswer.js).
+//
+// **A live process is not part of it.** The badge used to need one, and so
+// it vanished on every restart of the app — every terminal dies with the
+// window, while the question in the transcript sits there unanswered. Now
+// any listed session that is **not busy** is asked, running or not; only
+// its age counts, because a transcript nobody has touched for three days is
+// an old conversation, not a pending question. A **busy** session never
+// earns it: it is still writing.
+//
+// It is worked out for the rows actually loaded (one page, 60 of them) and
+// again whenever the list changes, and each answer is kept under the
+// transcript's size and modification time, so the file is only read when it
+// has really moved.
+function needsAnswer(sessionId, liveStatus, lastModified) {
+  if (liveStatus && (Boolean(liveStatus.needs) || liveStatus.rawStatus === "blocked")) {
     return true;
   }
-  if (liveStatus.group === STATUS_GROUPS.running) {
+  if (liveStatus && liveStatus.group === STATUS_GROUPS.running) {
+    needsAnswerCache.forget(sessionId);
+    return false;
+  }
+  if (!isRecentEnoughToAsk(lastModified)) {
     needsAnswerCache.forget(sessionId);
     return false;
   }
@@ -150,7 +183,7 @@ export function enrichSession(session, statusBySession, ownedStates = new Map())
     fileSize: session.fileSize || null,
     tag: session.tag || null,
     statusGroup,
-    needsAnswer: needsAnswer(session.sessionId, liveStatus),
+    needsAnswer: needsAnswer(session.sessionId, liveStatus, session.lastModified),
     ownedByApp: Boolean(ownedState),
     liveStatus
   };

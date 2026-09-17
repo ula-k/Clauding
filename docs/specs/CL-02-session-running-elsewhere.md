@@ -20,9 +20,9 @@ starts no `claude` at all.
 4. Click the same row here again.
 
 ## Expected state
-- The row is marked as running outside the app, in the colour its registry
+- The row is marked as running outside the app, in the color its registry
   entry earns it (working while busy, waiting for you while idle).
-- The middle column shows a short centred note with the session's title and
+- The middle column shows a short centered note with the session's title and
   its folder, saying the session is running somewhere else (currently e.g.
   "This session is running in another terminal or job. Finish it there, then
   click it here to continue.").
@@ -34,10 +34,10 @@ starts no `claude` at all.
 ## Evidence
 - `test/liveStatus.test.js`
   - "a live CLI process is working when busy and waiting otherwise" — the
-    colour such a row gets.
+    color such a row gets.
   - "a session running in one of the app's own terminals is marked as ours"
     and "what the registry says about our own terminal still decides its
-    colour" — the difference between *ours* and *elsewhere*, which is what
+    color" — the difference between *ours* and *elsewhere*, which is what
     decides between a terminal and the note.
 - Manual: clicking a session that runs elsewhere must show the note and Fork
   and must NOT start a terminal — no new `claude` process appears. Then, with
