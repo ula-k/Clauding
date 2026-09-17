@@ -46,7 +46,6 @@ function HeaderMenuButton({
   onOpenAgentPicker,
   onEditSessionFlags,
   onDeleteSession,
-  onOpenSkills,
   onRenameSession
 }) {
   const { translate } = useTranslation();
@@ -137,11 +136,6 @@ function HeaderMenuButton({
               onClick={() => runAndClose(() => onDeleteSession(sessionId))}
             >
               {translate("row.delete")}
-            </MenuItem>
-          )}
-          {onOpenSkills && (
-            <MenuItem marker="skills" title={translate("skills.tooltip")} onClick={() => runAndClose(onOpenSkills)}>
-              {translate("skills.button")}
             </MenuItem>
           )}
           {onRenameSession && (
@@ -399,7 +393,6 @@ export default function MiddleColumn({
   onHarvestSkills,
   onEditSessionFlags,
   onDeleteSession,
-  onOpenSkills,
   reader,
   onCloseReader,
   onOpenReaderInPanel,
@@ -593,7 +586,6 @@ export default function MiddleColumn({
                 onAssignAgent={onAssignAgent}
                 onEditSessionFlags={onEditSessionFlags}
                 onDeleteSession={onDeleteSession}
-                onOpenSkills={onOpenSkills}
                 onRenameSession={session && onRename ? () => setRenameRequest(renameRequest + 1) : null}
               />
             )}

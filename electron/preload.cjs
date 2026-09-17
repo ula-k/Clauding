@@ -276,6 +276,10 @@ contextBridge.exposeInMainWorld("clauding", {
   openPanelSearchTab(sessionKey, query) {
     return ipcRenderer.invoke(CHANNELS.panelOpenSearch, { sessionKey, query });
   },
+  // The Skills tab of the side panel: one per session, never saved to disk.
+  openPanelSkillsTab(sessionKey) {
+    return ipcRenderer.invoke(CHANNELS.panelOpenSkills, { sessionKey });
+  },
   closePanelTab(sessionKey, tabId) {
     return ipcRenderer.invoke(CHANNELS.panelClose, { sessionKey, tabId });
   },

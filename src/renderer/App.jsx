@@ -149,9 +149,10 @@ export default function App() {
   const [groupState, setGroupState] = useState(INITIAL_GROUP_STATE);
   const [agentState, setAgentState] = useState(INITIAL_AGENT_STATE);
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
-  // The Skills item in the macOS menu bar asks the window to open the same
-  // popover the Skills button opens.
-  const [skillsMenuOpen, setSkillsMenuOpen] = useState(false);
+  // The one place the skills are read: the **Skills** tab of the side
+  // panel. The macOS Skills menu opens it and nothing else does — the
+  // window has no button for it, and the popover it used to hang off the
+  // gear is gone.
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   // "Scan for skills…": the sheet that lists every skill-looking folder on
   // the Mac and lets the user pick which ones to copy into the skills folder.
@@ -428,30 +429,9 @@ export default function App() {
     return window.clauding.onSessionFlagsChanged(setSessionFlagsState);
   }, []);
 
-  // The Skills item in the macOS menu bar, and "Scan for skills…" next to it.
-  useEffect(() => {
-    return window.clauding.onShowSkills((request) => {
-      if (request && request.scan) {
-        setSkillsScanOpen(true);
-        return;
-      }
-      setSkillsMenuOpen(true);
-    });
-  }, []);
-
   // "Clauding → Settings…" in the menu bar opens the gear's popover.
   useEffect(() => {
     return window.clauding.onShowSettings(() => setSettingsMenuOpen(true));
-  }, []);
-
-  // One skill picked straight from the macOS Skills menu: the same reader a
-  // click in the popover opens.
-  useEffect(() => {
-    return window.clauding.onReadSkill((skill) => {
-      if (skill && skill.filePath) {
-        setReader({ kind: "skill", name: skill.name, filePath: skill.filePath, folder: skill.folder });
-      }
-    });
   }, []);
 
   // A definition folder that turned up under the agents root. The same
@@ -1537,6 +1517,73 @@ export default function App() {
     [panelSessionKey, panelBaseDirectory, setPanelVisible]
   );
 
+  // ------------------------------------------------------- Skills ---
+  //
+  // The skills live in the side panel now, as one tab per session that is
+  // never written to disk. Nothing in the window opens it: the macOS
+  // **Skills** menu does — "Show skills…" for the catalogue, a skill's own
+  // item for the catalogue plus its text in the reader.
+  const openSkillsTab = useCallback(() => {
+    const panelKey = panelSessionKeyRef.current;
+    if (!panelKey) {
+      // Nothing is selected, so there is no tab set to put it in; the panel
+      // still comes up, which is what every other "show me" does here.
+      setPanelVisible(true);
+      return;
+    }
+    window.clauding
+      .openPanelSkillsTab(panelKey)
+      .then(() => setPanelVisible(true))
+      .catch((error) => console.error("Could not open the skills tab", error));
+  }, [setPanelVisible]);
+
+  // Everything that tab needs: the folder it lists, what a click on a row
+  // does, and the two links in its footer.
+  const panelSkills = useMemo(
+    () => ({
+      skillsRoot: settings.skillsRoot,
+      skillMakerSeeding: settings.skillMakerSeeding,
+      onOpenSkill: (skill) => {
+        setNewSheetOpen(false);
+        setReader({
+          kind: "skill",
+          name: skill.name,
+          description: skill.description,
+          filePath: skill.filePath,
+          folder: skill.folder
+        });
+      },
+      onScanForSkills: () => setSkillsScanOpen(true),
+      onInstallBuiltinSkill: () => window.clauding.answerBuiltinSkill(true).then(setSettings)
+    }),
+    [settings.skillsRoot, settings.skillMakerSeeding]
+  );
+
+  // "Show skills…" in the macOS Skills menu, and "Scan for skills…" next to
+  // it. The first opens the panel's Skills tab for the session on screen.
+  useEffect(() => {
+    return window.clauding.onShowSkills((request) => {
+      if (request && request.scan) {
+        setSkillsScanOpen(true);
+        return;
+      }
+      openSkillsTab();
+    });
+  }, [openSkillsTab]);
+
+  // One skill picked straight from the macOS Skills menu: it opens in the
+  // reader in the middle column **and** puts the catalogue up next to it,
+  // so the menu lands in the same place a click in the list does.
+  useEffect(() => {
+    return window.clauding.onReadSkill((skill) => {
+      if (skill && skill.filePath) {
+        setNewSheetOpen(false);
+        setReader({ kind: "skill", name: skill.name, filePath: skill.filePath, folder: skill.folder });
+        openSkillsTab();
+      }
+    });
+  }, [openSkillsTab]);
+
   // ------------------------------------------- Find in conversation ---
   //
   // The transcript belongs to the session, so the search is keyed by the
@@ -1634,7 +1681,6 @@ export default function App() {
   // the page *next to* the conversation reaches for.
   const openReader = useCallback((page) => {
     setNewSheetOpen(false);
-    setSkillsMenuOpen(false);
     setReader(page);
   }, []);
 
@@ -1742,7 +1788,6 @@ export default function App() {
           onHarvestSkills={() => harvestSkillsFromConversation(null)}
           onEditSessionFlags={requestSessionFlags}
           onDeleteSession={requestSessionDelete}
-          onOpenSkills={() => setSkillsMenuOpen(true)}
           reader={reader}
           onCloseReader={() => setReader(null)}
           onOpenReaderInPanel={openReaderInPanel}
@@ -1750,22 +1795,8 @@ export default function App() {
           windowTools={
             <WindowTools
               settings={settings}
-              skillsOpen={skillsMenuOpen}
-              onSkillsOpenChange={setSkillsMenuOpen}
               settingsOpen={settingsMenuOpen}
               onSettingsOpenChange={setSettingsMenuOpen}
-              onOpenSkill={(skill) =>
-                openReader({
-                  kind: "skill",
-                  name: skill.name,
-                  description: skill.description,
-                  filePath: skill.filePath,
-                  folder: skill.folder
-                })
-              }
-              onScanForSkills={() => setSkillsScanOpen(true)}
-              skillMakerSeeding={settings.skillMakerSeeding}
-              onInstallBuiltinSkill={() => window.clauding.answerBuiltinSkill(true).then(setSettings)}
               onPickAgentsRoot={() => window.clauding.pickAgentsRoot().then(setSettings)}
               onSaveExtraFlags={(flags) => window.clauding.updateSettings({ extraClaudeArguments: flags }).then(setSettings)}
             />
@@ -1782,6 +1813,7 @@ export default function App() {
           panelState={panelState}
           actions={panelActions}
           search={panelSearch}
+          skills={panelSkills}
         />
         {skillsScanOpen && (
           <SkillsScanSheet

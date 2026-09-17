@@ -53,11 +53,13 @@ else in this file describes the Mac.
   the app: **Agent Maker** is the first row of the Agents tab, **skill-maker**
   is seeded into your skills folder. **Create agent** turns the conversation
   you are in into a new agent definition, **Harvest skills** turns it into
-  skills, and **Skills** in the menu bar (and at the bottom of the terminal
-  header's "…") lists every skill on the Mac with its description. Clicking one **reads it
-  over the terminal** — the terminal keeps running underneath — and **Scan
-  for skills…** looks through the rest of the Mac for skills worth copying
-  into your skills folder.
+  skills, and the **Skills** menu in the menu bar opens a **Skills tab in
+  the side panel** listing every skill on the Mac with its whole
+  description, a search field over it and the folder each one comes from.
+  Clicking a skill there **reads it over the terminal** — the terminal keeps
+  running underneath, the list stays next to it — and **Scan for skills…**
+  looks through the rest of the Mac for skills worth copying into your
+  skills folder.
 * **`clauding open <path or URL>`.** A command on the PATH of every terminal
   the app opens, so the session itself can put a page in the panel. Every
   session is told about it through a preamble appended to its system prompt.
@@ -394,10 +396,12 @@ src/renderer/components/AssignAgentDialog.jsx  the "Assign to agent" question, a
 src/renderer/assignmentPlan.js     what each of that dialog's buttons means (write the link? restart?)
 src/renderer/components/DeleteSessionDialog.jsx  the one destructive confirmation: delete a session
 src/renderer/components/AgentPickerSheet.jsx     "More…": every agent, with a search box
-src/renderer/components/WindowTools.jsx    the settings gear (top-right) and the Skills + settings popovers
+src/renderer/components/WindowTools.jsx    the settings gear (top-right) and its settings popover
 src/renderer/components/DocumentReader.jsx a skill / an agent definition read over the terminal
 src/renderer/components/FindBar.jsx        "Find in conversation…": the bar over the terminal
 src/renderer/components/SearchResults.jsx  its hits, in the side panel's Search tab
+src/renderer/components/SkillsPanel.jsx    the Skills tab of the side panel: search, the list, the footer links
+src/renderer/skillsList.js         what that tab draws: the order, the search filter and where a skill comes from
 src/renderer/components/SkillsScanSheet.jsx  "Scan for skills…": candidates found on the Mac
 src/renderer/components/BuiltinSkillSheet.jsx  the first-run question about the built-in skill
 electron/skillsScan.js     where skills hide on a Mac, and copying one into the skills folder
@@ -605,8 +609,9 @@ in `test/toolbarFit.test.js`):
 The order, most important first: **Hide / Show panel**, the **settings
 gear** (neither is ever hidden — they are the corner the eye goes to), the
 **agent chip**, the **status pill**, **Fork**, **Create agent**, **Harvest
-skills**. **Skills** has no button at all any more: it is at the bottom of
-the "…" and in the macOS **Skills** menu.
+skills**. **Skills** is not in the header at all any more — not as a button
+and not in the "…": the macOS **Skills** menu is the one way in, and what it
+opens is the panel's Skills tab.
 
 The "…" holds, in this order:
 
@@ -615,11 +620,10 @@ The "…" holds, in this order:
    never buttons and a menu row that cannot be clicked would be a lie;
 2. a separator;
 3. the session actions that were never buttons: **Extra claude flags…**,
-   **Assign to agent ▸**, **Delete session…**, **Skills**, **Rename
-   session**.
+   **Assign to agent ▸**, **Delete session…**, **Rename session**.
 
 Because that second group is always there, the "…" is always on the header —
-it is the only way to those five.
+it is the only way to those four.
 
 ## Fork
 
@@ -709,8 +713,9 @@ window resize**, because a width stored while the window was bigger used to
 push the handle off screen, and then the panel could not be moved at all.
 
 A **tab strip** at the top, one tab per page: a local **HTML** file
-(`file://`), a local **Markdown** file, an **http(s) URL**, or the one
-**Search** tab of "Find in conversation…" (see below); the "+" tab is
+(`file://`), a local **Markdown** file, an **http(s) URL**, the one
+**Search** tab of "Find in conversation…" (see below), or the one **Skills**
+tab (see **The Skills menu, and the Skills tab in the panel**); the "+" tab is
 an address field (paste a path or URL, Enter opens it; relative paths resolve
 against the session's folder there, against the caller's cwd from `clauding open`).
 Tab header: icon by type, short title (file name for files, the document
@@ -807,10 +812,11 @@ and nothing is watched: pressing Enter reads the file again, and so does the
 **Refresh** link in the results header. That link is inside the panel — the
 toolbar gets no new button.
 
-**Search tabs are not saved.** `panel-tabs.json` keeps pages, not searches: a
-search is a view of the transcript right now, so it is filtered out on the
-way to disk and a restart comes back to the pages, not to somebody's old
-query.
+**Search and Skills tabs are not saved.** `panel-tabs.json` keeps pages, not
+views: a search is the transcript right now and the Skills tab is the skills
+folder right now, so both are filtered out on the way to disk
+(`TRANSIENT_TAB_KINDS` in `electron/panelTabs.js`) and a restart comes back
+to the pages, not to somebody's old query.
 
 IPC: `transcript:search` (renderer → main, read-only) and
 `transcript:find-show` (main → renderer, the menu item asking for the bar);
@@ -1442,7 +1448,7 @@ At every start:
   skills?"*, naming both files, with **Install** and **Not now**. The answer is remembered
   in `settings.json` as `skillMakerSeeding` (`"unanswered"` → `"installed"` /
   `"declined"`) and the question is never asked again; somebody who said no
-  gets **Install built-in skills** at the bottom of the Skills popover,
+  gets **Install built-in skills** at the bottom of the panel's Skills tab,
   and **Restore built-in** counts as a yes. Until then nothing is written.
   Once installed: every `<skillsRoot>/<name>/SKILL.md` that is missing
   (`BUILTIN_SKILL_NAMES` in `electron/skills.js`) is copied there, with a line
@@ -1458,7 +1464,7 @@ else.
 
 ### Settings (`settings.json`)
 
-Two folders, both shown under the **gear** next to the Skills button:
+Two folders, both shown under the **gear** in the top-right corner:
 
 | setting | default | |
 | --- | --- | --- |
@@ -1467,26 +1473,49 @@ Two folders, both shown under the **gear** next to the Skills button:
 | `skillScanRoots` | `[]` | extra folders **Scan for skills…** looks through, added with a folder picker |
 | `skillMakerSeeding` | `"unanswered"` | whether the built-in skills may be written into `skillsRoot`: asked once on the first start, then `"installed"` or `"declined"` |
 
-### The Skills menu
+### The Skills menu, and the Skills tab in the panel
 
-The same list in two places: a **Skills** menu in the macOS menu bar and
-**Skills** at the bottom of the terminal header's "…". (It had a button of
-its own in the window's top-right and lost it: see **The terminal header:
-one line**. The popover now hangs off the gear, which is where the macOS
-menu opens it too.) Both read
-`<skillsRoot>/*/SKILL.md` **every time they are opened** (the list is short and
-a session can write a skill at any moment) and show the `name` and
-`description` from each file's frontmatter, falling back to the folder name and
-the first paragraph. `skill-maker` is always first, the rest are alphabetical.
-Clicking a skill **reads it in the middle column** (see below); the footer
-shows the folder path and reveals it in Finder. Nothing is created or edited
-here — a skill is written by running the skill-maker over a conversation.
+**One way in: the macOS menu bar.** The **Skills** menu is built from the
+skills folder itself, so it says what is really installed. **Show skills…**
+at the top opens the **Skills tab in the side panel**; every skill under it
+opens that same tab *and* reads the skill in the middle column. There is no
+Skills button in the window, nothing in the terminal header's "…" and
+nothing under the gear any more: a list of thirty skills with their whole
+descriptions was never a popover's job, and the popover is gone.
+
+The tab (`src/renderer/components/SkillsPanel.jsx`) reads
+`<skillsRoot>/*/SKILL.md` **every time it is mounted** — the list is short
+and a session can write a skill at any moment — and shows the `name` and
+`description` from each file's frontmatter, falling back to the folder name
+and the first paragraph. In it:
+
+* a **search field**, which narrows the list as it is typed, matching the
+  name *and* the description (`matchesSkillSearch`), and a **count** beside
+  it: `31` with an empty field, `2 of 31` with something in it;
+* one row per skill: the **name** (with a **BUILT-IN** badge on the two the
+  app ships), the **whole description** — not clipped, because what a skill
+  is for is the reason to read the list — and on the right where it comes
+  from: `built-in`, `plugin <name>` for anything under a plugin folder, or
+  the folder itself (`~/.claude/skills`);
+* the order: the app's own first, then alphabetical (`sortSkills`);
+* a **footer**: `<skillsRoot> · N skills` on the left, and on the right the
+  two text links **Scan for skills…** and **Reveal in Finder** — links, not
+  buttons, because the window gets no new buttons.
+
+The tab is **one per session** and is **not saved** to `panel-tabs.json`,
+exactly like the search results tab: it is a view of the skills folder as it
+is now, not a page to come back to after a restart. The decisions behind the
+list are pure functions in `src/renderer/skillsList.js`, dry-tested in
+`test/skillsList.test.js`.
+
+Nothing is created or edited here — a skill is written by running the
+skill-maker over a conversation ("Harvest skills").
 
 ### Reading a skill or an agent definition
 
-Clicking a skill — in the popover or in the macOS **Skills** menu — opens its
-`SKILL.md` **over the terminal**, in the middle column, the way an editor
-opens a file. The same reader shows an agent's definition: the Agents tab
+Clicking a skill — in the panel's Skills tab or in the macOS **Skills**
+menu — opens its `SKILL.md` **over the terminal**, in the middle column, the
+way an editor opens a file; the Skills tab stays open beside it. The same reader shows an agent's definition: the Agents tab
 gives every row a small **read** icon and a **Read definition** item in its
 `…` menu.
 
@@ -1510,8 +1539,8 @@ panel the session has hidden looks like nothing happening at all.
 ### Scan for skills…
 
 One main skills folder — but skills end up all over a Mac, and **not
-everything that looks like a skill is one**. **Scan for skills…**, at the
-bottom of the Skills popover and in the macOS Skills menu, walks the places
+everything that looks like a skill is one**. **Scan for skills…**, in the
+footer of the panel's Skills tab and in the macOS Skills menu, walks the places
 they turn up in (`electron/skillsScan.js`) and lists what it found, grouped
 by where it came from, with a search box and a checkbox per row:
 
@@ -1758,6 +1787,12 @@ CLAUDING_SCREENSHOT_FIND=lavender ...                     # open "Find in conver
                                                          # for that word before the shutter — the one
                                                          # view with no button to click, because its
                                                          # entry points are ⌘F and the View menu
+CLAUDING_SCREENSHOT_SKILLS=telegram ...                   # open the panel's Skills tab (the other
+                                                         # view with no button: the macOS Skills
+                                                         # menu is its only entry point), type that
+                                                         # word into its search field and open the
+                                                         # first skill left in the list, so the tab
+                                                         # and the reader are on screen together
 CLAUDING_SCREENSHOT_CLICK='[data-agents-tab]>>[data-add-agent]' ...
                                                          # click these selectors in order first
                                                          # (a tab, a sheet, a menu item), so any
@@ -1950,10 +1985,10 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: **356 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the transcript search, the terminal header's one-line fit, what a click on
+`npm test` runs `node --test test/*.test.js`: **370 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder, the transcript search, the terminal header's one-line fit, what a click on
 a row selects and what a bulk action would do, the session colors, the
-user's own tags, when a session needs an answer, i18n key
-sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behavior they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-24`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
+user's own tags, the skills catalogue, when a session needs an answer, i18n key
+sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behavior they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-25`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
 
 `test/platform.test.js` is the odd one out: it runs on macOS and exercises the **Windows** branches by handing in `platform: "win32"` and made-up Windows paths — the CLI lookup order, the `cmd.exe /c` wrapper, the named pipe, the Ctrl shortcuts, the menu without the macOS-only roles, the whole installer plan, the .ico encoder. It proves the decisions, not that Windows obeys them.
 

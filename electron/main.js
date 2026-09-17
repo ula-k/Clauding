@@ -653,6 +653,9 @@ function createWindow() {
 //       much longer before quitting, so it can be read from outside
 //   CLAUDING_SCREENSHOT_CLICK=a>>b         click these selectors, in order,
 //       before the capture (a sheet, a tab, a menu item)
+//   CLAUDING_SCREENSHOT_SKILLS=<word>      open the panel's Skills tab, type
+//                                          that word into its search field and
+//                                          open the first skill left in the list
 //   CLAUDING_SCREENSHOT_FIND=<word>        open "Find in conversation…" and
 //       search for that word — the one view with no button to click, since
 //       its entry points are the menu bar and ⌘F
@@ -705,7 +708,7 @@ async function captureScreenshotAndQuit() {
     console.log(`[screenshot] searched for ${findQuery}: ${typed}`);
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
-  // CLAUDING_SCREENSHOT_CLICK: CSS selectors to click before the capture,
+  // CLAUDING_SCREENSHOT_CLICK: CSS selectors to click before the capture,  // CLAUDING_SCREENSHOT_CLICK: CSS selectors to click before the capture,
   // separated by ">>" and clicked in order, so any sheet or menu can be put
   // on screen without a smoke run of its own.
   //
@@ -745,6 +748,37 @@ async function captureScreenshotAndQuit() {
       })()`
     );
     console.log(`[screenshot] clicked ${entry}: ${clicked}`);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  }
+  // CLAUDING_SCREENSHOT_SKILLS=<word>: the Skills tab has no button either
+  // (its entry point is the macOS Skills menu), so the hook asks for it the
+  // way "Show skills…" does, types the word into the tab's search field and
+  // opens the first skill left in the list — the tab and the reader side by
+  // side, which is the whole point of the tab.
+  const skillsQuery = process.env.CLAUDING_SCREENSHOT_SKILLS || "";
+  if (skillsQuery && mainWindow) {
+    sendToWindow(CHANNELS.skillsShow, {});
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const typed = await mainWindow.webContents.executeJavaScript(
+      `(() => {
+        const field = document.querySelector("[data-skills-search]");
+        if (!field) { return false; }
+        const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        valueSetter.call(field, ${JSON.stringify(skillsQuery === "*" ? "" : skillsQuery)});
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      })()`
+    );
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const opened = await mainWindow.webContents.executeJavaScript(
+      `(() => {
+        const row = document.querySelector("[data-skills-panel] [data-skill-row]");
+        if (!row) { return false; }
+        row.click();
+        return true;
+      })()`
+    );
+    console.log(`[screenshot] skills tab for ${skillsQuery}: typed ${typed}, opened ${opened}`);
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
   if (process.env.CLAUDING_SCREENSHOT_NEW === "1" && mainWindow) {
@@ -1550,6 +1584,10 @@ function registerIpc() {
 
   ipcMain.handle(CHANNELS.panelOpenSearch, async (event, { sessionKey, query }) => {
     return panelTabs.openSearch(sessionKey, String(query || "").slice(0, 200));
+  });
+
+  ipcMain.handle(CHANNELS.panelOpenSkills, async (event, { sessionKey }) => {
+    return panelTabs.openSkills(sessionKey);
   });
 
   ipcMain.handle(CHANNELS.panelClose, async (event, { sessionKey, tabId }) => {

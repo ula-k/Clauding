@@ -2597,41 +2597,7 @@ input:focus-visible {
   max-height: 76vh;
 }
 
-/* Only the rows scroll; the label above and the folder path below stay. */
-.skill-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.skill-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 7px 9px;
-  border-radius: 7px;
-  text-align: left;
-}
-
-.skill-row:hover {
-  background: var(--accent-soft);
-}
-
-.skill-row-name {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.skill-row:hover .skill-row-name {
-  color: var(--accent-strong);
-}
-
-.skill-row-builtin,
+.skills-panel-builtin,
 .agent-row-builtin {
   padding: 1px 7px;
   border-radius: var(--radius-pill);
@@ -2646,45 +2612,6 @@ input:focus-visible {
 .agent-row-builtin {
   margin-left: 7px;
   vertical-align: 1px;
-}
-
-.skill-row-description {
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--text-dim);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.skill-footer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 9px 5px;
-}
-
-.skill-footer-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-faint);
-}
-
-.skill-footer-reveal {
-  flex-shrink: 0;
-  font-size: 11.5px;
-  color: var(--accent);
-}
-
-.skill-footer-reveal:hover {
-  color: var(--accent-strong);
-  text-decoration: underline;
 }
 
 .settings-block {
@@ -3143,23 +3070,6 @@ input:focus-visible {
   color: var(--secondary);
 }
 
-.skill-scan-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 9px;
-  border-radius: 7px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.skill-scan-button:hover {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
 .sheet-path {
   margin: 10px 0 0;
   padding: 8px 10px;
@@ -3547,4 +3457,166 @@ input:focus-visible {
 .manage-tags-confirm .button {
   padding: 3px 10px;
   font-size: 11.5px;
+}
+
+/* ---------- The Skills tab of the side panel ---------- */
+/*
+   The skills as a catalogue: a search field, a count, and one row per
+   skill with its whole description — the thing a popover could never hold.
+   Opened from the macOS Skills menu only; clicking a row reads the skill in
+   the middle column and leaves this list where it is.
+*/
+
+.skills-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.skills-panel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.skills-panel-search {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.skills-panel-search:focus {
+  border-color: var(--accent-outline);
+}
+
+.skills-panel-count {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.skills-panel-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 10px;
+}
+
+.skills-panel-note {
+  padding: 14px 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+/* Name and source on one line, the description under both — and the
+   description is never clipped: what a skill is for is the reason to read
+   the list at all. */
+.skills-panel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.skills-panel-row:hover {
+  background: var(--surface-hover);
+}
+
+.skills-panel-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.skills-panel-row:hover .skills-panel-name {
+  color: var(--accent-strong);
+}
+
+.skills-panel-where {
+  justify-self: end;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.skills-panel-description {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.skills-panel-install {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 0 8px 6px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.skills-panel-install:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* Links, not buttons: no new buttons anywhere in the window. */
+.skills-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.skills-panel-root {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.skills-panel-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.skills-panel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.skills-panel-link:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
 }

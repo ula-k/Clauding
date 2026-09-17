@@ -90,6 +90,8 @@ const CHANNELS = {
   panelOpen: "panel:open",
   // The one search-results tab of a session ("Find in conversation…").
   panelOpenSearch: "panel:open-search",
+  // The one skills-catalogue tab of a session (the macOS Skills menu).
+  panelOpenSkills: "panel:open-skills",
   panelClose: "panel:close",
   panelActivate: "panel:activate",
   panelSetTitle: "panel:set-title",

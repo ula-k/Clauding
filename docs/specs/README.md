@@ -50,8 +50,9 @@ elsewhere"), never the exact wording on screen — wording is quoted only as
 | [CL-22](CL-22-session-colors.md) | List · session colors | P2 | dry test `test/selectionPlan.test.js`, `test/sessionGroups.test.js` + manual |
 | [CL-23](CL-23-needs-answer.md) | List · when a session says NEEDS ANSWER | P2 | dry test `test/needsAnswer.test.js` + manual |
 | [CL-24](CL-24-tags.md) | List · tags | P2 | dry test `test/tags.test.js` + manual |
+| [CL-25](CL-25-skills-tab.md) | Panel · the Skills tab | P2 | dry test `test/skillsList.test.js` + manual |
 
-Eleven P1, ten P2, two P3.
+Eleven P1, eleven P2, two P3.
 
 ## Rules every specification follows
 

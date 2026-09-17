@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { renderMarkdown, withoutFrontmatter } from "../markdown.js";
-import { CloseIcon, FindTabIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon } from "./Icons.jsx";
+import { CloseIcon, FindTabIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon, SparkIcon } from "./Icons.jsx";
 import SearchResults from "./SearchResults.jsx";
+import SkillsPanel from "./SkillsPanel.jsx";
 import { fileUrlFor, splitAddress } from "../paths.js";
 
 // The right panel: Hermes-style tabs next to the terminal. Each tab is a
@@ -37,6 +38,9 @@ function TabIcon({ kind }) {
   }
   if (kind === "search") {
     return <FindTabIcon />;
+  }
+  if (kind === "skills") {
+    return <SparkIcon />;
   }
   return <PageIcon />;
 }
@@ -181,7 +185,7 @@ function AddressForm({ onOpen, autoFocus }) {
   );
 }
 
-export default function SidePanel({ open, sessionKey, panelState, actions, search }) {
+export default function SidePanel({ open, sessionKey, panelState, actions, search, skills }) {
   const { translate } = useTranslation();
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -195,9 +199,9 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
     .join("\n");
   const activeTab = tabs.find((tab) => tab.tabId === panelState.activeTabId) || null;
   // Reload, the address and "Open in Chrome" are about a page on disk or on
-  // the web; a search has none of those, and its own Refresh link sits in
-  // the results header instead.
-  const activePage = activeTab && activeTab.kind !== "search" ? activeTab : null;
+  // the web; a search and the skills catalogue have none of those — each
+  // carries what it needs (Refresh, the footer links) inside itself.
+  const activePage = activeTab && activeTab.kind !== "search" && activeTab.kind !== "skills" ? activeTab : null;
   const showAddressForm = adding || tabs.length === 0;
 
   // A new active tab (opened by the CLI, a click, or the address field) closes the "+" view.
@@ -284,7 +288,11 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
                 >
                   <TabIcon kind={tab.kind} />
                   <span className="panel-tab-title">
-                    {tab.kind === "search" ? translate("find.tabTitle", { query: tab.target }) : tab.title}
+                    {tab.kind === "search"
+                      ? translate("find.tabTitle", { query: tab.target })
+                      : tab.kind === "skills"
+                        ? translate("skills.title")
+                        : tab.title}
                   </span>
                   <button
                     type="button"
@@ -319,13 +327,15 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
               disabled={!activePage}
               title={activePage ? translate("panel.copyHint") : undefined}
             >
-              {activeTab && !activePage
-                ? translate("find.tabTitle", { query: activeTab.target })
-                : !activePage
-                  ? translate("panel.noTab")
-                  : copied
-                    ? translate("panel.copied")
-                    : <AddressText target={activePage.target} />}
+              {activeTab && activeTab.kind === "skills"
+                ? translate("skills.title")
+                : activeTab && !activePage
+                  ? translate("find.tabTitle", { query: activeTab.target })
+                  : !activePage
+                    ? translate("panel.noTab")
+                    : copied
+                      ? translate("panel.copied")
+                      : <AddressText target={activePage.target} />}
             </button>
             <button type="button" className="panel-tool" onClick={reloadActive} disabled={!activePage} title={translate("panel.reload")}>
               <ReloadIcon />
@@ -354,6 +364,20 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
                     searching={Boolean(search && search.searching)}
                     onSelectHit={search ? search.onSelectHit : () => {}}
                     onRefresh={search ? search.onRefresh : () => {}}
+                  />
+                </div>
+              ) : tab.kind === "skills" ? (
+                <div
+                  key={tab.tabId}
+                  className={!showAddressForm && tab.tabId === panelState.activeTabId ? "" : "is-hidden"}
+                  data-panel-skills
+                >
+                  <SkillsPanel
+                    skillsRoot={skills ? skills.skillsRoot : ""}
+                    onOpenSkill={skills ? skills.onOpenSkill : () => {}}
+                    onScanForSkills={skills ? skills.onScanForSkills : () => {}}
+                    onInstallBuiltinSkill={skills ? skills.onInstallBuiltinSkill : null}
+                    skillMakerSeeding={skills ? skills.skillMakerSeeding : "installed"}
                   />
                 </div>
               ) : tab.kind === "markdown" ? (

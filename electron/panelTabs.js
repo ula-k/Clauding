@@ -11,6 +11,10 @@
 //                     **not** saved to disk: a search is a view of the
 //                     transcript right now, not a page to come back to
 //                     after a restart.
+//   kind "skills"     the catalogue of the skills on this Mac, opened from
+//                     the macOS Skills menu. One per session, and not saved
+//                     to disk either: it is a view of the skills folder as
+//                     it is right now, read again every time it is opened.
 //
 // Keys are session ids; a terminal that has not registered its session yet
 // uses "terminal:<terminalId>" and its tabs move to the session id once known.
@@ -27,6 +31,11 @@ import { randomUUID } from "node:crypto";
 import { expandHomeFolder, isWindows } from "./lib/platformPaths.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 200;
+
+// Tabs that are a live view of something and are never written to
+// panel-tabs.json: a search is the transcript as it is now, the skills tab
+// is the skills folder as it is now. A restart comes back to the pages.
+const TRANSIENT_TAB_KINDS = new Set(["search", "skills"]);
 
 export function expandHomePath(target, platform = process.platform) {
   return expandHomeFolder(target, { platform, homeDirectory: os.homedir() });
@@ -100,7 +109,7 @@ export function createPanelTabStore({ storagePath, onChange }) {
       saveTimer = null;
       try {
         fs.mkdirSync(path.dirname(storagePath), { recursive: true });
-        fs.writeFileSync(storagePath, JSON.stringify({ version: 1, sessions: withoutSearchTabs() }, null, 2));
+        fs.writeFileSync(storagePath, JSON.stringify({ version: 1, sessions: withoutTransientTabs() }, null, 2));
       } catch (error) {
         console.log(`[panel] could not save ${storagePath}: ${error.message}`);
       }
@@ -111,12 +120,14 @@ export function createPanelTabStore({ storagePath, onChange }) {
     return { tabs: [], activeTabId: null };
   }
 
-  // What goes on disk: everything but the search results. A session left
-  // with nothing but a search tab keeps only its panelVisible flag.
-  function withoutSearchTabs() {
+  // What goes on disk: everything but the two tabs that are a view of
+  // something rather than a page — the search results and the skills
+  // catalogue. A session left with nothing but one of those keeps only its
+  // panelVisible flag.
+  function withoutTransientTabs() {
     const saved = {};
     for (const [sessionKey, state] of Object.entries(tabsBySession)) {
-      const tabs = state.tabs.filter((tab) => tab.kind !== "search");
+      const tabs = state.tabs.filter((tab) => !TRANSIENT_TAB_KINDS.has(tab.kind));
       if (tabs.length === 0 && typeof state.panelVisible !== "boolean") {
         continue;
       }
@@ -194,6 +205,26 @@ export function createPanelTabStore({ storagePath, onChange }) {
       tab.title = query;
     } else {
       tab = { tabId: randomUUID(), kind: "search", target: query, title: query };
+      state.tabs.push(tab);
+    }
+    state.activeTabId = tab.tabId;
+    state.panelVisible = true;
+    tabsBySession[sessionKey] = state;
+    announce(sessionKey, true);
+    return { ...tab };
+  }
+
+  // The macOS Skills menu: one skills tab per session, reused rather than
+  // opened a second time, and the panel goes up for that session — a
+  // catalogue nobody can see is no catalogue.
+  function openSkills(sessionKey) {
+    if (!sessionKey) {
+      throw new Error("No session to show the skills next to.");
+    }
+    const state = tabsBySession[sessionKey] || emptyState();
+    let tab = state.tabs.find((existing) => existing.kind === "skills");
+    if (!tab) {
+      tab = { tabId: randomUUID(), kind: "skills", target: "", title: "Skills" };
       state.tabs.push(tab);
     }
     state.activeTabId = tab.tabId;
@@ -292,5 +323,5 @@ export function createPanelTabStore({ storagePath, onChange }) {
     return true;
   }
 
-  return { get, open, openSearch, close, activate, setTitle, setVisible, migrate, forgetSession };
+  return { get, open, openSearch, openSkills, close, activate, setTitle, setVisible, migrate, forgetSession };
 }
