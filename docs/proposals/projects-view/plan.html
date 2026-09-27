@@ -172,7 +172,7 @@ td { padding: 8px 10px; border-bottom: 1px solid #252c26; vertical-align: top; }
   <ul>
     <li><b>Spec:</b> no spec → session (jest sesja Spec Writera) → draft → review / approval → approved. Z etapu na liście speców + obecności sesji.</li>
     <li><b>Build:</b> open → builder (jest sesja buildera) → branch → PR → staging (gałąź w <code>docker-staging</code>) → QA (status „in staging” / „issues found”) → prod.</li>
-    <li>Łączenie taska speca z taskiem buildowym: pole Spec URL → link między taskami w ClickUpie → identyczna nazwa → ręcznie (decyzja nr 5).</li>
+    <li>Łączenie taska buildowego ze spekiem (ustalone z notatek Buildera): task z listy <b>Initial Build Web</b> ma zależność „depends on” na <b>planning task</b>, a planning task ma pole <b>Spec URL</b> → strona speca w doku Product v2 <code>173fz-212393</code>. Czyli: <code>dependencies</code> z API → planning task → Spec URL. Gdy łańcuch się urywa — ręczne powiązanie.</li>
     <li>„Czeka na mnie”: needs answer w sesji, status feedback przypisany do Ciebie, review speca, niewypchnięta gałąź z gotowym builderem, czerwone CI.</li>
     <li>Testy tabelaryczne: każda kombinacja statusu / gałęzi / PR-a → oczekiwany etap.</li>
   </ul>
@@ -193,6 +193,7 @@ td { padding: 8px 10px; border-bottom: 1px solid #252c26; vertical-align: top; }
   <div class="meta"><span class="tag base">FUNDAMENT</span><span>electron/main.js · channels.cjs · preload.cjs</span></div>
   <h3><span class="id">0.9</span>Most do okna</h3>
   <ul>
+    <li>Projekt dodaje się <b>linkiem do dowolnego taska</b> z listy — Clauding sam odczyta z API, na jakiej liście i w jakim folderze on leży (nie trzeba znać numerów list).</li>
     <li>Kanały: lista projektów, zapis projektu, <b>snapshot projektu</b> (gotowy model widoku: deadline'y, statystyki, karty, tablica), odśwież, zdarzenie „projekt się zmienił”, przeglądanie ClickUpa w ustawieniach.</li>
     <li>Całe liczenie w procesie głównym; okno dostaje gotowe dane i tylko rysuje.</li>
     <li>Tryb danych testowych (<code>CLAUDING_PROJECTS_FIXTURE</code>): snapshot z pliku — do screenshotów i testów bez Twojego ClickUpa.</li>
@@ -254,10 +255,10 @@ td { padding: 8px 10px; border-bottom: 1px solid #252c26; vertical-align: top; }
 <p class="small">Nie blokują makiet. Część blokuje kod etapu 0 — zaznaczone.</p>
 
 <div class="card gold decision"><span class="number">1</span><div><b>Skąd deadline'y Groove?</b> Due date konkretnych tasków / milestone'ów w ClickUpie, jakaś strona, czy wpiszesz ręcznie? <div class="recommend">Propozycja: oba źródła naraz (tak jest w planie); blokuje tylko prawdziwe daty, nie kod.</div></div></div>
-<div class="card gold decision"><span class="number">2</span><div><b>Linki do dwóch list Groove</b> — buildowej i speców. <div class="recommend">Blokuje 0.3 i 0.7: bez nich zgaduję statusy.</div></div></div>
+<div class="card gold decision"><span class="number">2</span><div><b>✅ Listy Groove — znalezione w notatkach Buildera.</b> Build: lista „Initial Build Web” (np. task <code>86ak7bh2e</code>). Speki: planning taski w space Groove <code>901313890025</code> → folder Groove Planning <code>901318589660</code> (np. <code>86ajn44t6</code>). Numerów list nikt nie zapisał — Clauding odczyta je sam z tych tasków. <div class="recommend">Do potwierdzenia przez Ulę jednym słowem, że to te dwie listy.</div></div></div>
 <div class="card gold decision"><span class="number">3</span><div><b>Nazwa zakładki.</b> <div class="recommend">Propozycja: „Projects”.</div></div></div>
 <div class="card gold decision"><span class="number">4</span><div><b>Czy Clauding może sam robić <code>git fetch</code></b> w blueprint i prime (tylko pobiera, nie zmienia Twoich gałęzi ani plików)? Bez tego „w stagingu” i PR-y są tak świeże jak Twój ostatni pull. <div class="recommend">Propozycja: tak, ale tylko po kliknięciu ↻ — nigdy w tle.</div></div></div>
-<div class="card gold decision"><span class="number">5</span><div><b>Jak task speca łączy się z taskiem buildowym?</b> Pole „Spec URL”, link między taskami, ta sama nazwa? <div class="recommend">Sprawdzę na Twoich listach w ClickUpie, gdy dostanę linki (nr 2), i przyjdę z jednym zdaniem.</div></div></div>
+<div class="card gold decision"><span class="number">5</span><div><b>✅ Łańcuch build → spec — ustalony z notatek Buildera:</b> task buildowy „depends on” planning task, a planning task ma pole Spec URL ze stroną speca. Tego samego łańcucha używa Builder na starcie każdej pracy.</div></div>
 <div class="card gold decision"><span class="number">6</span><div><b><code>gh</code> zalogowane jako ula-k na tym Macu?</b> Bez tego nie ma PR-ów ani CI; reszta działa. <div class="recommend">Logowanie robisz Ty (żelazna zasada nr 3).</div></div></div>
 
 </main>
