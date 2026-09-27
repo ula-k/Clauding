@@ -206,3 +206,32 @@ body { margin: 0; background: #0e100f; color: var(--text); font-family: var(--fo
 
 .caption { width: 1600px; font-family: var(--font-ui); color: #cfd6cd; font-size: 15px; padding: 0 4px 12px; }
 .caption b { color: #fff; }
+
+/* chosen: project list B */
+.project-line { padding: 10px 10px; border-radius: 10px; margin-bottom: 4px; }
+.project-line.is-selected { background: var(--surface-lavender); border: 1px solid var(--border-lavender); }
+.project-line .top { display: flex; align-items: center; gap: 8px; }
+.project-line .top .name { flex: 1; font-size: 13.5px; }
+.project-line .top .meta { color: var(--text-faint); font-size: 11.5px; }
+.thin-bar { height: 4px; border-radius: 3px; background: var(--surface-hover); margin: 7px 0 5px; overflow: hidden; display: flex; }
+.thin-bar div { height: 100%; }
+.project-line .under { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-faint); }
+
+/* chosen: daily pace under the timeline */
+.pace { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-soft); font-size: 12.5px; color: var(--text-dim); }
+.pace b { color: var(--text); }
+.pace .today-dots { display: inline-flex; gap: 4px; }
+.pace .today-dots span { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--gold); }
+.pace .today-dots span.done { background: var(--sage); border-color: var(--sage); }
+
+/* chosen: specs pipeline C */
+.funnel { display: flex; gap: 4px; }
+.funnel div { flex: 1; text-align: center; padding: 10px 4px; font-size: 11.5px; color: var(--text-dim); background: var(--surface-raised); }
+.funnel div b { display: block; font-size: 22px; color: var(--text); }
+.funnel div:first-child { border-radius: 10px 0 0 10px; }
+.funnel div:last-child { border-radius: 0 10px 10px 0; }
+.funnel div.is-active { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+.stage-head { font-size: 11px; letter-spacing: 0.05em; color: var(--text-faint); text-transform: uppercase; font-weight: 700; margin-top: 4px; }
+.list-row { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--border-soft); border-radius: 10px; font-size: 13px; background: rgba(31,37,32,0.6); }
+.list-row .t { font-weight: 600; min-width: 230px; }
+.button-accent { background: var(--accent); color: var(--on-accent); padding: 3px 10px; border-radius: 7px; font-weight: 600; }

@@ -34,6 +34,7 @@
           <div class="milestone" style="left:78%"><div class="diamond"></div><div class="label">QA done · <b>Nov 1</b></div></div>
           <div class="milestone" style="left:96%"><div class="diamond"></div><div class="label">Launch · <b>Nov 17</b></div></div>
         </div>
+        <div class="pace"><span class="pill ghost" style="font-size:10.5px">PROPOSAL</span><span>To make <b>Feature freeze</b>: <b>17 tasks</b> in <b>13 work days</b> → about <b>1–2 a day</b></span><span class="spacer"></span><span>Today</span><span class="today-dots"><span class="done"></span><span></span></span><span>1 of 2 closed</span></div>
       </div>
 
       <div class="stats">
@@ -96,7 +97,7 @@
   </div>
   <div class="col-right" data-panel="empty"></div>
 </div>
-<div class="caption"><b>1 · Przegląd projektu.</b> Trzecia zakładka „Projects” po lewej; środek zamiast terminala pokazuje projekt. Góra: deadline'y na osi z „Today” i pasek, który się przesuwa; pod nim statusy z ClickUpa, kto ma co, i burn-down „ile zostało do zamknięcia”. Niżej — tylko Twoje bieżące rzeczy („My focus”), reszta za filtrami.</div>
+<div class="caption"><b>1 · Przegląd — z Twoimi wyborami.</b> Lista projektów B (pasek statusów + najbliższy deadline), oś deadline'ów A, statystyki A, filtry A, karty A. Nowe, do decyzji: linijka pod osią — ile tasków dziennie trzeba zamykać do najbliższego deadline'u i ile dziś już poszło.</div>
 
 <!-- ============ SCREEN 2: item open + ClickUp task in panel ============ -->
 <div class="screen" id="screen-item">
@@ -124,7 +125,7 @@
   </div>
   <div class="col-right" data-panel="clickup"></div>
 </div>
-<div class="caption"><b>2 · Rozwinięty task.</b> Klik w wiersz rozwija szczegóły: obie sesje (speki i builder) z ich stanem, gałąź w obu repo, PR z CI, gdzie jest względem <code>docker-staging</code>. Klik w ClickUp / spec otwiera taska po prawej jako zakładkę panelu; klik w sesję przełącza na nią terminal.</div>
+<div class="caption"><b>2 · Rozwinięty task.</b> Klik w wiersz rozwija szczegóły: obie sesje (speki i builder) z ich stanem, gałąź w obu repo, PR z CI, gdzie jest względem <code>docker-staging</code>. Klik w ClickUp / spec otwiera taska po prawej — Clauding sam czyta opis, pola i komentarze; „Open in ClickUp ↗” otwiera prawdziwego ClickUpa w przeglądarce. Klik w sesję przełącza na nią terminal.</div>
 
 <!-- ============ SCREEN 3: specs pipeline ============ -->
 <div class="screen" id="screen-specs">
@@ -136,23 +137,25 @@
         <span class="subtle">›</span>
         <span style="font-size:15px;color:var(--text-dim)">Specs pipeline</span>
         <span class="spacer"></span>
-        <span class="subtle">Groove Specs list · 12 not yet in Groove Web</span>
+        <span class="subtle">Groove Specs list · 28 not approved yet</span>
       </div>
     </div>
     <div class="mid-body">
       <div class="filters">
         <span class="chip">My focus<span class="count">6</span></span>
         <span class="chip">Up next<span class="count">4</span></span>
-        <span class="chip is-active">Specs pipeline<span class="count">12</span></span>
+        <span class="chip is-active">Specs pipeline<span class="count">28</span></span>
         <span class="chip">Build<span class="count">30</span></span>
         <span class="chip">Everything<span class="count">64</span></span>
       </div>
-      <div class="kanban" data-kanban></div>
+      <div class="funnel" data-funnel></div>
+      <div class="stage-head" data-stage-head></div>
+      <div style="display:flex;flex-direction:column;gap:6px" data-stage-list></div>
     </div>
   </div>
   <div class="col-right" data-panel="spec"></div>
 </div>
-<div class="caption"><b>3 · Pipeline speców.</b> Druga lista z ClickUpa jako tablica: bez speca → sesja Spec Writera → szkic lokalny → review / approval → zatwierdzony. Zatwierdzony spec (złota ramka) to moment przejścia — task wchodzi do listy buildowej jako Open, bez developera, i tam go widać w zakładce Build.</div>
+<div class="caption"><b>3 · Pipeline speców — wariant C.</b> Liczniki etapów zawsze na górze, pod nimi lista jednego etapu. Działa przy 10–15 specach na etap, gdzie tablica A by się rozjechała. Klik w licznik przełącza etap.</div>
 
 <!-- ============ SCREEN 4: project setup ============ -->
 <div class="screen" id="screen-setup">
@@ -190,19 +193,28 @@
 <div class="caption"><b>4 · Ustawienia projektu.</b> Raz na projekt: dwie listy ClickUpa (build + speki), repo, kim jesteś w ClickUpie, deadline'y (z daty taska w ClickUpie albo wpisane ręcznie) i co wpada do „My focus”.</div>
 
 <script>
+const projectList = [
+  ["Groove", "#b9a7e6", 50, [21, 9, 5, 4, 11, 14], "Freeze in 18 d", 22, "Work"],
+  ["Walktober 2026", "#a9c7a4", 6, [1, 2, 1, 0, 2, 26], "Closes in 5 d", 81, "Work"],
+  ["QA tests program", "#8fa9c9", 18, [8, 4, 2, 1, 3, 12], "no deadline", 40, "Work"],
+  ["Clauding", "#c49bb8", 4, [2, 1, 1, 0, 0, 7], "no deadline", 63, "Private"],
+  ["KLOT", "#d3bd97", 12, [7, 3, 1, 1, 0, 5], "no deadline", 30, "Private"],
+];
+const listBucketColors = ["#4b564d", "var(--accent)", "var(--gold)", "var(--coral)", "var(--teal)", "var(--sage)"];
+let projectRows = "";
+let lastGroup = "";
+projectList.forEach(([name, color, left, buckets, next, closed, group], index) => {
+  if (group !== lastGroup) { lastGroup = group; projectRows += `<div class="group-title">${group}</div>`; }
+  const nextColor = next.startsWith("no") ? "var(--text-faint)" : "var(--gold)";
+  projectRows += `<div class="project-line ${index === 0 ? "is-selected" : ""}"><div class="top"><span class="dot" style="background:${color}"></span><span class="name">${name}</span><span class="meta">${left} left</span></div><div class="thin-bar">${buckets.map((count, bucketIndex) => count ? `<div style="flex:${count};background:${listBucketColors[bucketIndex]}"></div>` : "").join("")}</div><div class="under"><span style="color:${nextColor}">${next}</span><span>${closed}% closed</span></div></div>`;
+});
 const leftColumn = `
   <div class="tabs-row">
     <div class="tabs"><span class="tab">Sessions</span><span class="tab">Agents</span><span class="tab is-active">Projects</span></div>
     <span class="button-new">＋</span>
   </div>
   <div class="search">⌕ Search projects and tasks</div>
-  <div class="group-title">Work</div>
-  <div class="project-row is-selected">${ring(0.22, "#b9a7e6")}<span class="name">Groove</span><span class="meta">50 left</span></div>
-  <div class="project-row">${ring(0.81, "#a9c7a4")}<span class="name">Walktober 2026</span><span class="meta">6 left</span></div>
-  <div class="project-row">${ring(0.4, "#8fa9c9")}<span class="name">QA tests program</span><span class="meta">18 left</span></div>
-  <div class="group-title">Private</div>
-  <div class="project-row">${ring(0.63, "#c49bb8")}<span class="name">Clauding</span><span class="meta">4 left</span></div>
-  <div class="project-row">${ring(0.3, "#d3bd97")}<span class="name">KLOT</span><span class="meta">12 left</span></div>
+  ${projectRows}
   <div class="left-footer">＋ Add project from a ClickUp space</div>
 `;
 function ring(fraction, color) {
@@ -314,30 +326,26 @@ document.querySelector("[data-items]").innerHTML = items.slice(0, 4).map((item) 
   `<div class="more-row">＋ 2 more in My focus · <span style="color:var(--accent)">44 open tasks not started — hidden until pinned to Up next</span></div>`;
 document.querySelector("[data-items-detail]").innerHTML = itemHtml(items[0], true) + items.slice(1).map((item) => itemHtml(item, false)).join("");
 
-const lanes = [
-  ["No spec yet", 4, [["Song links", ""], ["Encore modal copy", ""], ["Friends invites", ""], ["Badges", ""]]],
-  ["Spec session", 3, [["Forgot Password + ELEvate", "✍️ working"], ["Login page", "✍️ idle 2 d"], ["Welcome page", "✍️ needs answer"]]],
-  ["Draft (local)", 2, [["Countdown", "4 drift flags"], ["Theme modes", "draft"]]],
-  ["Review / approval", 3, [["Progress Status", "your approval"], ["Dashboard Timeline Editor", "Design"], ["Eligibility", "Product"]]],
-  ["Approved → Build", 4, [["Timeline", "→ Open in Web"], ["Encore", "→ Open in Web"], ["Toast alerts", "→ Open, no dev"], ["Daily Tips", "→ building"]]],
+const stages = [["No spec yet", 11], ["Spec session", 6], ["Draft", 4], ["Review", 7], ["Approved", 14]];
+document.querySelector("[data-funnel]").innerHTML = stages.map(([name, count], index) => `<div class="${index === 3 ? "is-active" : ""}"><b>${count}</b>${name}</div>`).join("");
+document.querySelector("[data-stage-head]").textContent = "Review · 7 waiting";
+const reviewRows = [
+  ["Progress Status — technical", "your approval", "gold", "✍️ spec-progress-status", "idle"],
+  ["Dashboard Timeline Editor", "Design", "", "✍️ spec-timeline", "idle 4 d"],
+  ["Eligibility", "Product", "", "✍️ spec-eligibility", "idle 6 d"],
+  ["Forgot Password + ELEvate", "your approval", "gold", "✍️ spec-forgot", "idle 1 d"],
+  ["Login page", "Design", "", "✍️ spec-login", "idle 2 d"],
+  ["Welcome page", "your approval", "gold", "✍️ spec-welcome", "needs answer"],
+  ["Toast alerts", "Product", "", "✍️ spec-toasts", "idle 9 d"],
 ];
-document.querySelector("[data-kanban]").innerHTML = lanes.map(([title, count, tickets], laneIndex) => `
-  <div class="lane"><h4><span>${title}</span><span>${count}</span></h4>
-  ${tickets.map(([name, note]) => {
-    let noteClass = "";
-    if (note.includes("working")) noteClass = "lav";
-    if (note.includes("needs") || note.includes("your")) noteClass = "gold";
-    if (note.includes("flags")) noteClass = "coral";
-    if (note.startsWith("→")) noteClass = "teal";
-    return `<div class="ticket ${laneIndex === 4 && note.includes("no dev") ? "handoff" : ""}"><div class="t">${name}</div><div class="m"><span class="link" style="padding:2px 6px"><span class="cu-icon"></span>task</span>${note ? `<span class="pill ${noteClass}">${note}</span>` : `<span class="link missing" style="padding:2px 6px">＋ Spec Writer</span>`}</div></div>`;
-  }).join("")}</div>`).join("");
+document.querySelector("[data-stage-list]").innerHTML = reviewRows.map(([name, waiting, color, session, state]) => `<div class="list-row"><span class="cu-icon"></span><span class="t">${name}</span><span class="link"><span class="dot" style="background:${state === "needs answer" ? "var(--gold)" : "var(--text-faint)"}"></span><b>${session}</b><span>${state}</span></span><span class="spacer"></span><span class="pill ${color}">${waiting}</span></div>`).join("");
 
 const panels = {
   empty: `<div class="panel-tabs"><span class="panel-tab is-active">📄 groove-plan.html</span><span class="subtle" style="padding:0 8px 8px">＋</span></div>
     <div class="panel-bar"><span class="addr">~/Documents/claude/groove/plan.html</span>↻ Reload<span>Hide panel</span></div>
     <div class="panel-body cu"><h2>Groove — plan tygodnia</h2><p>Panel zostaje jak jest: dowolne zakładki HTML / MD / URL. Widok projektu tylko do niego dokłada — klik w taska z ClickUpa albo w spec otwiera go tutaj jako nową zakładkę.</p><p style="color:var(--text-dim)">Zakładki panelu w widoku projektu pamiętają się per projekt, tak jak dziś per sesja.</p></div>`,
   clickup: `<div class="panel-tabs"><span class="panel-tab"><span class="cu-icon"></span>Spec · Friends</span><span class="panel-tab is-active"><span class="cu-icon"></span>CU-86ak7brvp</span><span class="subtle" style="padding:0 8px 8px">＋</span></div>
-    <div class="panel-bar"><span class="addr">app.clickup.com/t/86ak7brvp</span>↻ Reload<span>Open in ClickUp</span></div>
+    <div class="panel-bar"><span class="addr">app.clickup.com/t/86ak7brvp</span>↻ Reload<span class="button-accent">Open in ClickUp ↗</span></div>
     <div class="panel-body cu">
       <span class="pill lav">in progress</span> <span class="pill">Groove Web 2026</span>
       <h2>Friends + User Modal</h2>
@@ -354,7 +362,7 @@ const panels = {
       <div class="comment"><b>Ula</b> · Sep 23 — agreed, builder is on it.</div>
     </div>`,
   spec: `<div class="panel-tabs"><span class="panel-tab is-active"><span class="cu-icon"></span>Spec · Progress Status</span><span class="subtle" style="padding:0 8px 8px">＋</span></div>
-    <div class="panel-bar"><span class="addr">app.clickup.com/1281535/v/dc/173fz-212393/173fz-301613</span>↻ Reload<span>Open in ClickUp</span></div>
+    <div class="panel-bar"><span class="addr">app.clickup.com/1281535/v/dc/173fz-212393/173fz-301613</span>↻ Reload<span class="button-accent">Open in ClickUp ↗</span></div>
     <div class="panel-body cu"><span class="pill gold">spec review</span>
       <h2>Progress Status — Technical Implementation</h2>
       <p>Thresholds default on the Timeline scene and are copied to the promotion's settings on creation, editable until start. The tier is computed, never stored.</p>
