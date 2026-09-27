@@ -586,3 +586,73 @@ test("the store keeps projects, cleans what it reads and survives a broken file"
   assert.deepEqual(readBoardsFile(storagePath).boards, []);
   assert.ok(fs.existsSync(`${storagePath}.bak`));
 });
+
+// ---- the service: finding lists, the cache, offline -------------------------
+
+test("the service finds both lists from one task, caches ClickUp and survives going offline", async () => {
+  const { createProjectDataService } = await import("../electron/projectData.js");
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "clauding-test-projectdata-"));
+  const boardStore = createProjectBoardStore({ storagePath: path.join(folder, "project-boards.json") });
+  const board = boardStore.addBoard({ name: "Groove", clickup: { seedTaskId: "86ak7bh2e" } });
+
+  const buildList = { id: "901300000001", name: "Initial Build Web" };
+  const planningList = { id: "901300000002", name: "Groove Planning" };
+  const leaderboards = rawTask({ list: buildList });
+  const planningTask = rawTask({ id: "86ajn44t6", name: "Leaderboards", list: planningList, dependencies: [], status: { status: "approved", type: "custom" } });
+  let online = true;
+  const calls = [];
+  const fetchImplementation = async (url) => {
+    calls.push(url);
+    if (!online) {
+      throw new Error("offline");
+    }
+    const body = (() => {
+      if (url.includes("/task/86ak7bh2e")) return leaderboards;
+      if (url.includes("/task/86ajn44t6")) return planningTask;
+      if (url.includes(`/list/${buildList.id}/task`)) return { tasks: [leaderboards], last_page: true };
+      if (url.includes(`/list/${planningList.id}/task`)) return { tasks: [planningTask], last_page: true };
+      return null;
+    })();
+    return body ? { ok: true, status: 200, json: async () => body } : { ok: false, status: 404, json: async () => ({}) };
+  };
+  let clock = NOW;
+  const service = createProjectDataService({
+    boardStore,
+    cacheDirectory: path.join(folder, "project-cache"),
+    getSessions: async () => [],
+    getAgents: () => ({ agents: [], sessionAgents: {} }),
+    readToken: async () => "pk_test",
+    fetchImplementation,
+    inspectRepositoryImplementation: async () => ({ available: true, branchesByTask: {} }),
+    listPullRequestsImplementation: async () => ({ available: true, byTask: {} }),
+    fixturePath: null,
+    now: () => clock
+  });
+
+  const first = await service.snapshot(board.id);
+  assert.equal(first.sources.clickup.ok, true);
+  assert.equal(first.cards[0].specUrl, null, "the fixture planning task has no Spec URL field");
+  assert.equal(first.cards[0].spec.state, "done", "approved planning task");
+  const saved = boardStore.getBoard(board.id).clickup;
+  assert.equal(saved.buildListName, "Initial Build Web");
+  assert.equal(saved.planningListName, "Groove Planning");
+
+  // Within five minutes: the cache, no request at all.
+  const before = calls.length;
+  clock += 60 * 1000;
+  const cached = await service.snapshot(board.id);
+  assert.equal(calls.length, before);
+  assert.equal(cached.sources.clickup.fromCache, true);
+
+  // ↻ while offline: the cached tasks stay, the header says why.
+  online = false;
+  const offline = await service.snapshot(board.id, { refresh: true });
+  assert.equal(offline.sources.clickup.ok, false);
+  assert.equal(offline.sources.clickup.error, "network");
+  assert.equal(offline.cards.length, 1);
+
+  // The left list reads the cache only.
+  const [summary] = service.summaries();
+  assert.equal(summary.name, "Groove");
+  assert.equal(summary.summary.leftToClose, 1);
+});

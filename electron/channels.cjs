@@ -74,6 +74,16 @@ const CHANNELS = {
   systemLanguage: "system:language",
   systemEmojiPanel: "system:emoji-panel",
   systemReveal: "system:reveal",
+  // The Projects tab (project-boards.json + electron/projectData.js). Named
+  // "boards" because "projects" above means working folders.
+  boardsGet: "boards:get",
+  boardsAdd: "boards:add",
+  boardsUpdate: "boards:update",
+  boardsDelete: "boards:delete",
+  boardsChanged: "boards:changed",
+  boardsSummaries: "boards:summaries",
+  boardsSnapshot: "boards:snapshot",
+  boardsTaskDetail: "boards:task-detail",
   projectsRecent: "projects:recent",
   projectsPick: "projects:pick",
   terminalOpen: "terminal:open",

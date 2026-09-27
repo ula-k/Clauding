@@ -56,6 +56,8 @@ import { listSkills } from "./skills.js";
 import { copySkillCandidate, scanForSkillCandidates } from "./skillsScan.js";
 import { builtinAgentDraft, seedBuiltinSkills, seedBuiltins } from "./builtins.js";
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
+import { createProjectBoardStore } from "./projectBoards.js";
+import { createProjectDataService } from "./projectData.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
@@ -238,6 +240,10 @@ function sendToWindow(channel, payload) {
 // stores at start-up; the registry reaches it through the three callbacks
 // below, the same way it reaches the agents.
 let sessionFlags = null;
+// The Projects tab: the projects themselves and the service that reads
+// ClickUp, git, gh and the sessions for one of them.
+let projectBoards = null;
+let projectData = null;
 
 const terminalRegistry = createTerminalRegistry({
   sendToWindow,
@@ -1297,6 +1303,19 @@ function registerIpc() {
     return listSessionsPage({ offset, limit, ownedStates: terminalRegistry.ownedStates() });
   });
 
+  ipcMain.handle(CHANNELS.boardsGet, async () => projectBoards.getState());
+  ipcMain.handle(CHANNELS.boardsAdd, async (event, { draft }) => projectBoards.addBoard(draft || {}));
+  ipcMain.handle(CHANNELS.boardsUpdate, async (event, { boardId, update }) => projectBoards.updateBoard(boardId, update || {}));
+  ipcMain.handle(CHANNELS.boardsDelete, async (event, { boardId }) => {
+    projectBoards.deleteBoard(boardId);
+    return projectBoards.getState();
+  });
+  ipcMain.handle(CHANNELS.boardsSummaries, async () => projectData.summaries());
+  ipcMain.handle(CHANNELS.boardsSnapshot, async (event, { boardId, options }) =>
+    projectData.snapshot(boardId, { refresh: Boolean(options && options.refresh), fetchGit: Boolean(options && options.fetchGit) })
+  );
+  ipcMain.handle(CHANNELS.boardsTaskDetail, async (event, { taskId }) => projectData.taskDetail(taskId));
+
   ipcMain.handle(CHANNELS.sessionsGet, async (event, { sessionId }) => {
     return getSession(sessionId, terminalRegistry.ownedStates());
   });
@@ -1876,6 +1895,24 @@ app.whenReady().then(() => {
       sendToWindow(CHANNELS.panelChanged, change);
     }
   });
+  projectBoards = createProjectBoardStore({
+    storagePath: path.join(userDataDirectory, "project-boards.json"),
+    onChange(state) {
+      sendToWindow(CHANNELS.boardsChanged, state);
+    }
+  });
+  projectData = createProjectDataService({
+    boardStore: projectBoards,
+    cacheDirectory: path.join(userDataDirectory, "project-cache"),
+    async getSessions() {
+      const page = await listSessionsPage({ offset: 0, limit: 500, ownedStates: terminalRegistry.ownedStates() });
+      return page.sessions;
+    },
+    getAgents: () => agents.get(),
+    log(line) {
+      console.log(line);
+    }
+  });
   stopCommandSocket = startCommandSocket({
     socketPath: commandSocketPath,
     handleRequest: handleCommandRequest,
@@ -1921,6 +1958,10 @@ app.on("before-quit", () => {
     stopCommandSocket = null;
   }
   panelFileWatchers.stopAll();
+  // A project change made in the last 200 ms is still waiting to be saved.
+  if (projectBoards) {
+    projectBoards.flush();
+  }
   if (stopWatchingLiveStatus) {
     stopWatchingLiveStatus();
   }

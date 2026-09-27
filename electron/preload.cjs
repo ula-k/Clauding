@@ -103,6 +103,35 @@ contextBridge.exposeInMainWorld("clauding", {
   },
   // The user's agents (agents.json): the definition folders and which agent each
   // session was started with.
+  // The Projects tab. A project ("board") is read-only towards ClickUp,
+  // git and GitHub: these calls only ever change project-boards.json.
+  getBoards() {
+    return ipcRenderer.invoke(CHANNELS.boardsGet);
+  },
+  addBoard(draft) {
+    return ipcRenderer.invoke(CHANNELS.boardsAdd, { draft });
+  },
+  updateBoard(boardId, update) {
+    return ipcRenderer.invoke(CHANNELS.boardsUpdate, { boardId, update });
+  },
+  deleteBoard(boardId) {
+    return ipcRenderer.invoke(CHANNELS.boardsDelete, { boardId });
+  },
+  onBoardsChanged(listener) {
+    return subscribe(CHANNELS.boardsChanged, listener);
+  },
+  // The left list: one summary per project, from the cache only.
+  getBoardSummaries() {
+    return ipcRenderer.invoke(CHANNELS.boardsSummaries);
+  },
+  // Everything one project's view draws. `refresh` asks ClickUp again even
+  // when the cache is fresh; `fetchGit` runs git fetch first (↻ only).
+  getBoardSnapshot(boardId, options) {
+    return ipcRenderer.invoke(CHANNELS.boardsSnapshot, { boardId, options: options || {} });
+  },
+  getBoardTaskDetail(taskId) {
+    return ipcRenderer.invoke(CHANNELS.boardsTaskDetail, { taskId });
+  },
   getAgents() {
     return ipcRenderer.invoke(CHANNELS.agentsGet);
   },
