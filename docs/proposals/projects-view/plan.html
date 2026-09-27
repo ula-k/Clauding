@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projects — plan wdrożenia</title>
+<style>
+:root {
+  --background: #161b17;
+  --card: #1f2520;
+  --card-edge: #2e372f;
+  --text: #e6ebe4;
+  --dim: #a0aa9e;
+  --faint: #6f7a6f;
+  --accent: #b9a7e6;
+  --accent-soft: rgba(185, 167, 230, 0.14);
+  --gold: #d6c58f;
+  --gold-soft: rgba(214, 197, 143, 0.14);
+  --sage: #a9c7a4;
+  --sage-soft: rgba(169, 199, 164, 0.14);
+  --blue: #8fa9c9;
+  --blue-soft: rgba(143, 169, 201, 0.14);
+  --coral: #d9968a;
+  --serif: "Iowan Old Style", "Palatino", Georgia, serif;
+  --sans: -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: linear-gradient(135deg, #161b17 0%, #191b1d 50%, #1d1a27 100%); background-attachment: fixed; color: var(--text); font-family: var(--serif); font-size: 17px; line-height: 1.6; }
+main { max-width: 980px; margin: 0 auto; padding: 48px 20px 80px; }
+h1 { font-size: 34px; color: var(--accent); font-weight: 500; margin: 0 0 6px; }
+h2 { font-size: 25px; color: var(--accent); font-weight: 500; margin: 44px 0 12px; }
+h3 { font-size: 19px; margin: 0 0 6px; font-weight: 600; }
+.lead { color: var(--dim); font-size: 18px; }
+.card { background: rgba(31, 37, 32, 0.8); border: 1px solid var(--card-edge); border-radius: 14px; padding: 18px 22px; margin: 12px 0; }
+.card.accent { border-color: rgba(185, 167, 230, 0.4); background: rgba(37, 36, 48, 0.8); }
+.card.gold { border-color: rgba(214, 197, 143, 0.4); }
+.meta { font-family: var(--sans); font-size: 12.5px; color: var(--faint); display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; }
+.tag { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 6px; }
+.tag.look { background: var(--accent-soft); color: var(--accent); }
+.tag.data { background: var(--blue-soft); color: var(--blue); }
+.tag.click { background: var(--gold-soft); color: var(--gold); }
+.tag.base { background: var(--sage-soft); color: var(--sage); }
+.id { font-family: var(--sans); font-weight: 700; color: var(--accent); margin-right: 8px; }
+ul, ol { padding-left: 22px; margin: 6px 0; }
+li { margin: 3px 0; }
+code { font-family: var(--mono); font-size: 13.5px; background: #141814; border: 1px solid #2a322b; padding: 1px 6px; border-radius: 6px; }
+.small { font-size: 15px; color: var(--dim); }
+table { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 13.5px; margin: 8px 0; }
+th { text-align: left; color: var(--faint); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--card-edge); }
+td { padding: 8px 10px; border-bottom: 1px solid #252c26; vertical-align: top; }
+.stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; font-family: var(--sans); }
+.stage { border: 1px solid var(--card-edge); border-radius: 12px; padding: 12px 14px; background: rgba(31, 37, 32, 0.8); }
+.stage b { display: block; color: var(--accent); font-size: 13px; margin-bottom: 4px; }
+.stage span { font-size: 12.5px; color: var(--dim); }
+.decision { display: grid; grid-template-columns: 34px 1fr; gap: 10px; }
+.decision .number { font-family: var(--sans); font-weight: 700; color: var(--gold); font-size: 20px; }
+.recommend { font-family: var(--sans); font-size: 13px; color: var(--sage); margin-top: 4px; }
+@media (max-width: 720px) { .stages { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Projects w Claudingu — plan wdrożenia</h1>
+<p class="lead">Trzecia zakładka obok Sessions i Agents. Wybrany projekt zamienia terminal w środku na widok projektu; prawy panel zostaje. Najpierw widok, który <b>tylko pokazuje prawdziwe dane</b> — klikanie dochodzi w drugim etapie.</p>
+
+<div class="stages">
+  <div class="stage"><b>Etap 0 · fundament</b><span>skąd dane: ClickUp, git, GitHub, sesje — bez żadnego UI</span></div>
+  <div class="stage"><b>Etap 1 · patrzenie</b><span>zakładka, przegląd, deadline'y, statystyki, karty tasków, tablica speców</span></div>
+  <div class="stage"><b>Etap 2 · klikanie</b><span>ClickUp w panelu, skok do sesji, rozwijanie, Up next, ustawienia</span></div>
+  <div class="stage"><b>Etap 3 · domknięcie</b><span>4 języki, testy, README, specyfikacje CL-26+, wiki</span></div>
+</div>
+
+<h2>Jak pracuję</h2>
+<div class="card">
+<ol>
+  <li><b>Makiety każdej funkcji w 2–3 wariantach</b> (osobna strona) → wybierasz → dopiero wtedy kod tej funkcji.</li>
+  <li>Kod etapami, na gałęzi <code>claude/clouding-project-management-view-uu34tq</code>. Każdy etap: <code>npm test</code> + <code>npm run check</code> zielone, screenshot z prawdziwego okna (na danych testowych) położony obok zatwierdzonej makiety.</li>
+  <li><b>Tylko odczyt</b>: ClickUp, GitHub i Twoje repo są czytane, nigdy zapisywane. Żadnego <code>git merge</code>, <code>checkout</code> ani przełączania gałęzi w Twoich checkoutach.</li>
+  <li>Styl domu: czysty JavaScript, żadnych jednoliterowych nazw ani skrótów, UI po angielsku (+ pl / es / zh-CN), nowe funkcje w pasku menu, nie nowe przyciski w oknie terminala.</li>
+</ol>
+</div>
+
+<!-- ================= ETAP 0 ================= -->
+<h2>Etap 0 — fundament danych</h2>
+<p class="small">Nic tu jeszcze nie widać. To warstwa, która z czterech źródeł składa jeden obraz projektu. Każdy kawałek to czysta funkcja z testami <code>node:test</code> na zapisanych danych — bez sieci, bez prawdziwego ClickUpa.</p>
+
+<div class="card">
+  <div class="meta"><span class="tag base">FUNDAMENT</span><span>electron/projectBoards.js · &lt;userData&gt;/project-boards.json</span></div>
+  <h3><span class="id">0.1</span>Magazyn projektów</h3>
+  <ul>
+    <li>Plik <code>project-boards.json</code> obok <code>groups.json</code> i <code>agents.json</code>. Nazwa w kodzie to „board”, bo słowo „projects” już w Claudingu znaczy <i>foldery robocze</i> (<code>electron/projects.js</code>) — w UI dalej „Projects”.</li>
+    <li>Projekt: nazwa, kolor, grupa (Work / Private), lista buildowa ClickUpa, lista speców, repozytoria (nazwa + folder lokalny + gałąź stagingu, domyślnie <code>docker-staging</code>, baza <code>docker-deploy</code>), Ty w ClickUpie (user id), deadline'y, reguły „My focus”, przypięte „Up next”, ręczne powiązania task ↔ sesja / gałąź.</li>
+    <li>Zapis z opóźnieniem jak w <code>panelTabs.js</code>, odporność na uszkodzony plik (start od pustego, stary plik zostaje jako <code>.bak</code>).</li>
+    <li>Testy: wczytanie, zapis, migracja pustego, uszkodzony JSON.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag data">DANE</span><span>electron/lib/clickupClient.js · electron/clickupCache.js</span></div>
+  <h3><span class="id">0.2</span>ClickUp — klient tylko do odczytu</h3>
+  <ul>
+    <li>Token z Keychaina tą samą komendą co w wiki (<code>security find-generic-password -a clickup-api -s clickup-api-token -w</code>), nagłówek z surowym tokenem, nigdy nie zapisywany na dysk ani do logów. Brak tokena → czytelny komunikat w widoku, nie błąd.</li>
+    <li>Wyłącznie GET: zadania listy z paginacją i zamkniętymi (<code>/list/&lt;id&gt;/task?include_closed=true&amp;subtasks=true&amp;page=N</code>), statusy listy, jeden task, komentarze, a w ustawieniach przeglądanie spaces → folders → lists.</li>
+    <li>Z taska bierzemy: id, custom id, nazwę, status + jego kolor, przypisanych, due date, <code>date_closed</code>/<code>date_done</code>, custom fields (w tym Spec URL), linki do innych tasków, URL.</li>
+    <li>Cache na dysku per lista → widok otwiera się od razu, także offline, z napisem „refreshed 12 min ago”. Odświeżanie: przy wejściu w projekt, co 5 min gdy widok jest otwarty, ręcznie ↻. Limit ClickUpa (100 zapytań/min) pilnowany kolejką.</li>
+    <li>Testy: paginacja, mapowanie pól na zapisanych odpowiedziach API, zachowanie bez tokena, błąd sieci → zostaje cache.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag data">DANE</span><span>electron/lib/statusBuckets.js</span></div>
+  <h3><span class="id">0.3</span>Statusy ClickUpa → kubełki</h3>
+  <ul>
+    <li>Każdy status listy trafia do jednego z kubełków: <b>Open (no dev)</b>, <b>In progress</b>, <b>Feedback</b>, <b>Issues found</b>, <b>In staging</b>, <b>Ready / closed</b>. Domyślna mapa według kolejności z Walktober Web (pending review → Open → in progress → feedback → issues found → in staging → ready for prod → … → Closed); nieznany status dopasowany po nazwie, a jeśli się nie da — widoczny jako „other” zamiast cichego zgadywania.</li>
+    <li>Dla listy speców osobna mapa na etapy speca (patrz 0.7).</li>
+    <li>Mapa do poprawienia w ustawieniach projektu (2.7).</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag data">DANE</span><span>electron/lib/gitInspector.js</span></div>
+  <h3><span class="id">0.4</span>Git — gałęzie i staging, lokalnie</h3>
+  <ul>
+    <li>W każdym skonfigurowanym repo (blueprint, prime) szukamy gałęzi <code>CU-&lt;task id&gt;</code> (też z sufiksami typu <code>-1</code>, <code>-WAL</code>) lokalnie i na <code>origin</code>, oraz worktree'ów (<code>git worktree list --porcelain</code>).</li>
+    <li>Dla gałęzi: ile commitów przed <code>origin/docker-deploy</code>, czy jest już w <code>origin/docker-staging</code> (<code>merge-base --is-ancestor</code>), czy jest wypchnięta, czy worktree ma niezacommitowane zmiany.</li>
+    <li>Tylko komendy czytające; <code>git fetch</code> nie odpala się sam (decyzja nr 4 niżej).</li>
+    <li>Testy na tymczasowym repo tworzonym w teście (gałęzie, worktree, merge do stagingu).</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag data">DANE</span><span>electron/lib/pullRequests.js</span></div>
+  <h3><span class="id">0.5</span>GitHub — PR-y i CI</h3>
+  <ul>
+    <li>Przez <code>gh pr list --repo hesdevs/&lt;repo&gt; --state all --json number,headRefName,baseRefName,state,url,statusCheckRollup</code> — jedno zapytanie na repo, dopasowanie po nazwie gałęzi. Wynik: numer, stan (open / merged / closed), dokąd (staging / deploy), CI zielone / czerwone / w toku.</li>
+    <li>Gdy <code>gh</code> nie jest zalogowane → na kartach „PR: gh not signed in”, reszta działa. Logowanie robisz Ty.</li>
+    <li>Testy na zapisanym JSON-ie z <code>gh</code>.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag data">DANE</span><span>electron/lib/taskLinker.js</span></div>
+  <h3><span class="id">0.6</span>Łączenie sesji z taskami</h3>
+  <ul>
+    <li>Kolejność reguł, pierwsza wygrywa: <b>ręczne powiązanie</b> → <b>gałąź sesji</b> (<code>gitBranch</code>, które Claude Code już zapisuje) albo folder roboczy zawierający <code>CU-&lt;id&gt;</code> → <b>pierwszy prompt / tytuł</b> z linkiem <code>app.clickup.com/t/&lt;id&gt;</code> albo <code>CU-&lt;id&gt;</code> → <b>transkrypt</b> (skan pierwszych wiadomości, zapamiętany po dacie pliku, żeby nie czytać w kółko).</li>
+    <li>Rola sesji z agenta, z którego się urodziła (<code>agents.json</code>): Spec Writer → ✍️ spec, Feature Builder → 🔨 builder, inny agent / bez agenta → „other”. Mapa agent → rola w ustawieniach.</li>
+    <li>Stan sesji (working / needs answer / idle N dni) z istniejącego <code>liveStatus</code>.</li>
+    <li>Testy: każda reguła osobno, konflikty (dwie sesje, jeden task; jedna sesja, dwa taski), wydajność na ~500 sesjach.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag data">DANE</span><span>electron/lib/pipelineStage.js</span></div>
+  <h3><span class="id">0.7</span>Gdzie jest task w Twoim pipelinie</h3>
+  <ul>
+    <li><b>Spec:</b> no spec → session (jest sesja Spec Writera) → draft → review / approval → approved. Z etapu na liście speców + obecności sesji.</li>
+    <li><b>Build:</b> open → builder (jest sesja buildera) → branch → PR → staging (gałąź w <code>docker-staging</code>) → QA (status „in staging” / „issues found”) → prod.</li>
+    <li>Łączenie taska speca z taskiem buildowym: pole Spec URL → link między taskami w ClickUpie → identyczna nazwa → ręcznie (decyzja nr 5).</li>
+    <li>„Czeka na mnie”: needs answer w sesji, status feedback przypisany do Ciebie, review speca, niewypchnięta gałąź z gotowym builderem, czerwone CI.</li>
+    <li>Testy tabelaryczne: każda kombinacja statusu / gałęzi / PR-a → oczekiwany etap.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag data">DANE</span><span>electron/lib/projectStats.js</span></div>
+  <h3><span class="id">0.8</span>Statystyki i tempo</h3>
+  <ul>
+    <li>Liczby w kubełkach, per osoba (Ty / każdy przypisany / nikt), ile speców do napisania i w review, ile PR-ów z czerwonym CI.</li>
+    <li>„Left to close”, tempo z ostatnich 2 tygodni (z <code>date_closed</code>), tempo potrzebne do ostatniego deadline'u; historia do burn-downu odtwarzana z dat zamknięcia.</li>
+    <li>Oś czasu: procent upływu czasu między startem a ostatnim deadlinem, najbliższy deadline, dni do niego.</li>
+    <li>Testy na stałej dacie „dziś”.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="meta"><span class="tag base">FUNDAMENT</span><span>electron/main.js · channels.cjs · preload.cjs</span></div>
+  <h3><span class="id">0.9</span>Most do okna</h3>
+  <ul>
+    <li>Kanały: lista projektów, zapis projektu, <b>snapshot projektu</b> (gotowy model widoku: deadline'y, statystyki, karty, tablica), odśwież, zdarzenie „projekt się zmienił”, przeglądanie ClickUpa w ustawieniach.</li>
+    <li>Całe liczenie w procesie głównym; okno dostaje gotowe dane i tylko rysuje.</li>
+    <li>Tryb danych testowych (<code>CLAUDING_PROJECTS_FIXTURE</code>): snapshot z pliku — do screenshotów i testów bez Twojego ClickUpa.</li>
+  </ul>
+</div>
+
+<!-- ================= ETAP 1 ================= -->
+<h2>Etap 1 — widok do patrzenia</h2>
+<p class="small">Każda funkcja poniżej ma swoją stronę z wariantami do wyboru. Kod funkcji dopiero po Twoim wyborze.</p>
+
+<table>
+  <tr><th style="width:52px">#</th><th>Funkcja</th><th>Co robi</th><th style="width:170px">Pliki</th></tr>
+  <tr><td class="id">1.1</td><td><b>Zakładka Projects + lista projektów</b></td><td>Trzecia zakładka po lewej. Lista projektów w grupach (Work / Private), przy każdym postęp i „N left”, wyszukiwarka po projektach i taskach, „+ Add project”. Terminale w tle <b>dalej działają</b> — przełączenie na Projects ich nie zamyka.</td><td>SessionsColumn.jsx, nowy ProjectsList.jsx</td></tr>
+  <tr><td class="id">1.2</td><td><b>Środek zamiast terminala</b></td><td>Wybrany projekt → środkowa kolumna rysuje ProjectView. Powrót do Sessions przywraca terminal ze scrollbackiem. Prawy panel dostaje klucz <code>project:&lt;id&gt;</code>: zakładki pamiętane per projekt.</td><td>App.jsx, MiddleColumn.jsx, nowy ProjectView.jsx</td></tr>
+  <tr><td class="id">1.3</td><td><b>Nagłówek projektu</b></td><td>Nazwa, źródła (listy ClickUpa, repo), „refreshed N min ago ↻”, stan błędu (brak tokena, brak <code>gh</code>, repo nieznalezione).</td><td>ProjectHeader.jsx</td></tr>
+  <tr><td class="id">1.4</td><td><b>Oś deadline'ów</b></td><td>Deadline'y na osi, „Today”, pasek upływu czasu, najbliższy deadline z liczbą dni. Brak deadline'ów → zaproszenie „Add deadlines”.</td><td>DeadlineTimeline.jsx</td></tr>
+  <tr><td class="id">1.5</td><td><b>Gdzie są taski</b></td><td>Rozkład na kubełki statusów z liczbami.</td><td>StatusBreakdown.jsx</td></tr>
+  <tr><td class="id">1.6</td><td><b>Kto ma co</b></td><td>Ty / inni / nikt, z kolorami kubełków; liczniki speców i czerwonego CI.</td><td>PeopleBreakdown.jsx</td></tr>
+  <tr><td class="id">1.7</td><td><b>Burn-down / tempo</b></td><td>Ile zostało, linia faktyczna vs potrzebna, tempo z 2 tygodni.</td><td>BurnDown.jsx</td></tr>
+  <tr><td class="id">1.8</td><td><b>Filtry listy</b></td><td>My focus · Up next · Specs pipeline · Build · Everything, z licznikami; sortowanie „needs me first”. My focus domyślnie; taski niezaczęte schowane za jedną linijką.</td><td>ProjectFilters.jsx</td></tr>
+  <tr><td class="id">1.9</td><td><b>Karta taska</b></td><td>Rodzaj (BUILD / SPEC), nazwa, status ClickUpa, „czeka na Ciebie”, oba pipeline'y, chipy: task, spec, sesja speca, sesja buildera, gałąź(ie), PR. Brakujące rzeczy jako przerywane chipy.</td><td>TaskCard.jsx, TaskPipeline.jsx</td></tr>
+  <tr><td class="id">1.10</td><td><b>Tablica speców</b></td><td>Lista speców w pięciu kolumnach etapów; zatwierdzony spec widać jako przejście do Build.</td><td>SpecBoard.jsx</td></tr>
+  <tr><td class="id">1.11</td><td><b>Stany: ładowanie, puste, błędy</b></td><td>Pierwsze ładowanie (szkielet), projekt bez tasków, brak tokena, brak internetu (dane z cache + data).</td><td>w komponentach powyżej</td></tr>
+</table>
+
+<div class="card accent">
+  <b>Koniec etapu 1:</b> widzisz w Claudingu prawdziwy Groove z ClickUpa, gałęzie z Twoich repo, PR-y i przypięte sesje. Nic jeszcze nie jest klikalne poza przełączaniem filtrów i projektów. Projekt dodaję wtedy ręcznie wpisem w pliku (ustawienia przychodzą w 2.7).
+</div>
+
+<!-- ================= ETAP 2 ================= -->
+<h2>Etap 2 — klikanie</h2>
+<table>
+  <tr><th style="width:52px">#</th><th>Funkcja</th><th>Co robi</th></tr>
+  <tr><td class="id">2.1</td><td><b>Task z ClickUpa w prawym panelu</b></td><td>Klik w chip taska / speca → nowa zakładka panelu. Wariant do wyboru: własny widok z API (status, pola, opis, komentarze, „Open in ClickUp”) albo prawdziwa strona ClickUpa w webview (wymaga jednorazowego zalogowania w panelu). Strony speców (Docs) tak samo.</td></tr>
+  <tr><td class="id">2.2</td><td><b>Skok do sesji</b></td><td>Klik w chip sesji → zakładka Sessions + terminal tej sesji (<code>claude --resume</code>), jak klik w wiersz.</td></tr>
+  <tr><td class="id">2.3</td><td><b>Rozwinięcie karty</b></td><td>Szczegóły: wszystkie sesje z rolą i stanem, gałęzie w każdym repo (ahead, worktree, niezacommitowane, w stagingu), PR z CI.</td></tr>
+  <tr><td class="id">2.4</td><td><b>Up next</b></td><td>Przypinanie / odpinanie taska z menu „…” karty, kolejność przeciąganiem; zapis lokalny, ClickUp nietknięty.</td></tr>
+  <tr><td class="id">2.5</td><td><b>Ręczne powiązania</b></td><td>„Link session…”, „Link branch…”, „Unlink” w menu karty — gdy reguły z 0.6 się pomylą.</td></tr>
+  <tr><td class="id">2.6</td><td><b>Start sesji dla taska</b></td><td>„+ Start Spec Writer / Feature Builder for this task” → okno New session z wybranym agentem i gotową pierwszą wiadomością z linkiem do taska (Builder zaczyna od linku, jak w jego checkliście). Sesja od razu powiązana.</td></tr>
+  <tr><td class="id">2.7</td><td><b>Ustawienia projektu</b></td><td>Arkusz: listy ClickUpa (przeglądarka space → folder → list), repo (folder lokalny), Ty w ClickUpie, mapa statusów, mapa agent → rola, reguły My focus. Menu Clauding → „Projects → Project settings…” i „Add project…”.</td></tr>
+  <tr><td class="id">2.8</td><td><b>Deadline'y</b></td><td>Dodawanie / edycja / usuwanie (usuwanie z potwierdzeniem, jak każda akcja destrukcyjna); źródło: ręcznie albo due date wskazanego taska ClickUpa (przesuwa się razem z nim).</td></tr>
+  <tr><td class="id">2.9</td><td><b>Kliknięcia w statystykach</b></td><td>Klik w kubełek / osobę → lista przefiltrowana do tych tasków.</td></tr>
+</table>
+
+<!-- ================= ETAP 3 ================= -->
+<h2>Etap 3 — domknięcie</h2>
+<div class="card">
+<ul>
+  <li><b>Języki:</b> wszystkie nowe napisy w <code>en.json</code>, <code>pl.json</code>, <code>es.json</code>, <code>zh-CN.json</code> (test i18n pilnuje kompletności). Nazwy statusów z ClickUpa zostają oryginalne.</li>
+  <li><b>Testy:</b> <code>npm test</code> dla całej warstwy danych; hook screenshotu na danych testowych dla każdego widoku (przegląd, rozwinięta karta, tablica speców, ustawienia, stany błędów).</li>
+  <li><b>Windows:</b> Keychain tylko na Macu — na Windows token z ustawienia, reszta bez zmian (CI na windows-latest musi zostać zielone).</li>
+  <li><b>Dokumentacja:</b> README (sekcja Projects + screenshot), specyfikacje testowe <code>docs/specs/CL-26…</code> w formacie istniejących, strona <code>personal/clauding.md</code> w wiki.</li>
+  <li><b>Wersja:</b> 0.5.0.</li>
+</ul>
+</div>
+
+<!-- ================= DECYZJE ================= -->
+<h2>Decyzje, które są Twoje</h2>
+<p class="small">Nie blokują makiet. Część blokuje kod etapu 0 — zaznaczone.</p>
+
+<div class="card gold decision"><span class="number">1</span><div><b>Skąd deadline'y Groove?</b> Due date konkretnych tasków / milestone'ów w ClickUpie, jakaś strona, czy wpiszesz ręcznie? <div class="recommend">Propozycja: oba źródła naraz (tak jest w planie); blokuje tylko prawdziwe daty, nie kod.</div></div></div>
+<div class="card gold decision"><span class="number">2</span><div><b>Linki do dwóch list Groove</b> — buildowej i speców. <div class="recommend">Blokuje 0.3 i 0.7: bez nich zgaduję statusy.</div></div></div>
+<div class="card gold decision"><span class="number">3</span><div><b>Nazwa zakładki.</b> <div class="recommend">Propozycja: „Projects”.</div></div></div>
+<div class="card gold decision"><span class="number">4</span><div><b>Czy Clauding może sam robić <code>git fetch</code></b> w blueprint i prime (tylko pobiera, nie zmienia Twoich gałęzi ani plików)? Bez tego „w stagingu” i PR-y są tak świeże jak Twój ostatni pull. <div class="recommend">Propozycja: tak, ale tylko po kliknięciu ↻ — nigdy w tle.</div></div></div>
+<div class="card gold decision"><span class="number">5</span><div><b>Jak task speca łączy się z taskiem buildowym?</b> Pole „Spec URL”, link między taskami, ta sama nazwa? <div class="recommend">Sprawdzę na Twoich listach w ClickUpie, gdy dostanę linki (nr 2), i przyjdę z jednym zdaniem.</div></div></div>
+<div class="card gold decision"><span class="number">6</span><div><b><code>gh</code> zalogowane jako ula-k na tym Macu?</b> Bez tego nie ma PR-ów ani CI; reszta działa. <div class="recommend">Logowanie robisz Ty (żelazna zasada nr 3).</div></div></div>
+
+</main>
+</body>
+</html>

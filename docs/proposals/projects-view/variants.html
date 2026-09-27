@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Projects — variants</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+body { background: #0e100f; padding: 0; }
+.feature { width: 1600px; padding: 34px 36px 40px; background: #121513; border-bottom: 1px solid #222823; }
+.feature-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+.feature-head .number { font-weight: 800; color: var(--accent); font-size: 20px; }
+.feature-head h2 { margin: 0; font-size: 22px; font-weight: 650; }
+.question { color: var(--text-dim); font-size: 14px; margin-bottom: 20px; font-family: var(--font-serif); font-size: 16px; }
+.variants { display: grid; gap: 22px; }
+.variants.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.variants.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.variants.one { grid-template-columns: 1fr; }
+.variant-label { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.letter { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 800; font-size: 15px; flex: none; }
+.variant-label b { font-size: 15px; }
+.note { color: var(--text-dim); font-size: 13.5px; font-family: var(--font-serif); font-size: 15px; line-height: 1.45; margin-top: 10px; }
+.note .plus { color: var(--sage); }
+.note .minus { color: var(--coral); }
+.frame { background: var(--background-gradient); border: 1px solid var(--border-soft); border-radius: 14px; overflow: hidden; position: relative; }
+.frame.pad { padding: 16px 18px; }
+.frame.left { width: 272px; background: linear-gradient(180deg, #1a1f1b, #1c1b22); padding: 18px 14px; }
+
+/* 1.1 B */
+.project-line { padding: 10px 10px; border-radius: 10px; margin-bottom: 4px; }
+.project-line.is-selected { background: var(--surface-lavender); border: 1px solid var(--border-lavender); }
+.project-line .top { display: flex; align-items: center; gap: 8px; }
+.project-line .top .name { flex: 1; font-size: 13.5px; }
+.thin-bar { height: 4px; border-radius: 3px; background: var(--surface-hover); margin: 7px 0 5px; overflow: hidden; display: flex; }
+.thin-bar div { height: 100%; }
+.project-line .under { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-faint); }
+/* 1.1 C */
+.project-card { border: 1px solid var(--border-soft); border-radius: 12px; padding: 11px 12px; margin-bottom: 8px; background: rgba(31,37,32,0.6); }
+.project-card.is-selected { border-color: var(--border-lavender); background: var(--surface-lavender); }
+.project-card .name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.project-card .meta { white-space: nowrap; }
+.project-card .mini { display: flex; height: 7px; border-radius: 4px; overflow: hidden; gap: 1px; margin: 9px 0 8px; }
+.project-card .row2 { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* 1.4 B */
+.dual { display: grid; grid-template-columns: 70px 1fr 64px; gap: 10px 14px; align-items: center; }
+.dual .lbl { color: var(--text-dim); font-size: 12px; font-weight: 600; }
+.dual .bar { height: 12px; border-radius: 7px; background: var(--surface-hover); position: relative; overflow: visible; }
+.dual .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; }
+.dual .val { font-weight: 700; font-size: 15px; }
+.ticks { position: relative; height: 34px; margin-left: 84px; margin-right: 78px; }
+.tick { position: absolute; top: 0; transform: translateX(-50%); text-align: center; font-size: 10.5px; color: var(--text-dim); white-space: nowrap; }
+.tick::before { content: ""; display: block; width: 2px; height: 10px; background: var(--border); margin: 0 auto 4px; }
+.tick.next::before { background: var(--gold); }
+.tick b { color: var(--text); }
+/* 1.4 C */
+.countdowns { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 10px; }
+.countdown { border: 1px solid var(--border-soft); border-radius: 12px; padding: 12px 14px; background: rgba(0,0,0,0.12); }
+.countdown.next { border-color: rgba(214,197,143,0.5); background: rgba(214,197,143,0.07); }
+.countdown .days { font-size: 30px; font-weight: 750; line-height: 1.1; }
+.countdown.next .days { color: var(--gold); font-size: 40px; }
+.countdown .what { font-size: 12.5px; color: var(--text-dim); }
+.countdown.done { opacity: 0.55; }
+
+/* stats B */
+.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.tile { border-radius: 11px; padding: 10px 11px; border: 1px solid var(--border-soft); background: rgba(0,0,0,0.14); }
+.tile .n { font-size: 24px; font-weight: 750; line-height: 1.1; }
+.tile .t { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.chips-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+.person-chip { display: inline-flex; gap: 7px; align-items: center; border: 1px solid var(--border-soft); border-radius: 999px; padding: 3px 10px 3px 3px; font-size: 12px; }
+/* stats C */
+.stats-c { display: grid; grid-template-columns: 170px 1fr 1fr; gap: 18px; align-items: center; }
+.people-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.people-table td, .people-table th { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--border-soft); }
+.people-table th { color: var(--text-faint); font-weight: 600; font-size: 10.5px; }
+.people-table td:first-child, .people-table th:first-child { text-align: left; }
+
+/* card B: table rows */
+.task-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.task-table th { text-align: left; color: var(--text-faint); font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; padding: 6px 8px; border-bottom: 1px solid var(--border-soft); }
+.task-table td { padding: 9px 8px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; white-space: nowrap; }
+.task-table td.title { font-weight: 600; font-size: 13px; white-space: normal; }
+.stage-pill { display: inline-flex; gap: 5px; align-items: center; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface-raised); color: var(--text-dim); }
+.icon-dots { display: inline-flex; gap: 5px; align-items: center; }
+.ic { width: 22px; height: 22px; border-radius: 6px; display: inline-grid; place-items: center; font-size: 11px; background: var(--surface-raised); border: 1px solid var(--border-soft); }
+.ic.off { opacity: 0.35; border-style: dashed; }
+/* card C: one line stepper */
+.stepper { display: flex; align-items: center; }
+.stepper .seg { height: 8px; width: 34px; border-radius: 4px; background: var(--surface-hover); margin-right: 3px; }
+.stepper .seg.done { background: var(--sage); }
+.stepper .seg.now { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.stepper .seg.wait { background: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
+.stepper .gap { width: 10px; }
+.stepper-caption { font-size: 11px; color: var(--text-dim); margin-top: 5px; }
+
+/* spec board B */
+.stage-group { margin-bottom: 12px; }
+.stage-group h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.05em; color: var(--text-faint); text-transform: uppercase; display: flex; gap: 8px; align-items: center; }
+.list-row { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border: 1px solid var(--border-soft); border-radius: 9px; margin-bottom: 5px; font-size: 13px; background: rgba(0,0,0,0.12); }
+.list-row .t { flex: 1; font-weight: 600; }
+/* spec board C */
+.funnel { display: flex; gap: 4px; margin-bottom: 14px; }
+.funnel div { flex: 1; text-align: center; padding: 9px 4px; font-size: 11.5px; color: var(--text-dim); background: var(--surface-raised); position: relative; }
+.funnel div b { display: block; font-size: 20px; color: var(--text); }
+.funnel div:first-child { border-radius: 10px 0 0 10px; }
+.funnel div:last-child { border-radius: 0 10px 10px 0; }
+.funnel div.is-active { background: var(--accent-soft); color: var(--accent); }
+
+/* panel variants */
+.panel-frame { width: 100%; height: 560px; display: flex; flex-direction: column; background: rgba(0,0,0,0.2); }
+.clickup-light { background: #ffffff; color: #292d34; flex: 1; font-family: var(--font-ui); padding: 0; }
+.clickup-light .cu-top { height: 38px; background: #f7f8f9; border-bottom: 1px solid #e8eaed; display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 12px; color: #646464; }
+.clickup-light .cu-status { background: #7b68ee; color: #fff; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
+.clickup-light h3 { font-size: 22px; margin: 16px 18px 12px; }
+.clickup-light .cu-fields { display: grid; grid-template-columns: 100px 1fr; gap: 8px; font-size: 12.5px; margin: 0 18px 14px; color: #292d34; }
+.clickup-light .cu-fields span:nth-child(odd) { color: #87909e; }
+.clickup-light p { margin: 0 18px 10px; font-size: 13.5px; line-height: 1.5; }
+.summary-card { margin: 16px; border: 1px solid var(--border-lavender); border-radius: 12px; padding: 14px 16px; background: var(--surface-lavender); }
+
+/* expanded C */
+.split { display: grid; grid-template-columns: 330px 1fr; gap: 12px; }
+.mini-row { padding: 9px 11px; border: 1px solid var(--border-soft); border-radius: 10px; margin-bottom: 6px; font-size: 12.5px; display: flex; gap: 8px; align-items: center; }
+.mini-row.is-selected { border-color: var(--border-lavender); background: var(--surface-lavender); }
+.mini-row .t { flex: 1; font-weight: 600; }
+
+/* states */
+.state-box { height: 250px; display: grid; place-items: center; text-align: center; padding: 20px; }
+.state-box .icon { font-size: 30px; margin-bottom: 8px; }
+.state-box h4 { margin: 0 0 6px; font-size: 15px; }
+.state-box p { margin: 0 auto; color: var(--text-dim); font-size: 12.5px; max-width: 300px; }
+.skeleton { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #252c26, #2e362f, #252c26); margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ======================= 1.1 ======================= -->
+<section class="feature" id="v-list">
+  <div class="feature-head"><span class="number">1.1</span><h2>Lista projektów po lewej</h2></div>
+  <div class="question">Co widać przy projekcie, zanim go klikniesz?</div>
+  <div class="variants three">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Kółko postępu + „N left”</b></div>
+      <div class="frame left" data-list="A"></div>
+      <div class="note"><span class="plus">+</span> najspokojniej, jak dzisiejsza lista sesji.<br><span class="minus">−</span> nie widać deadline'u ani tego, co czeka na Ciebie.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Pasek statusów + najbliższy deadline</b></div>
+      <div class="frame left" data-list="B"></div>
+      <div class="note"><span class="plus">+</span> od razu widać, gdzie się pali („freeze in 18 d”).<br><span class="minus">−</span> dwa razy wyższe wiersze.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">C</span><b>Karty z „czeka na Ciebie”</b></div>
+      <div class="frame left" data-list="C"></div>
+      <div class="note"><span class="plus">+</span> najwięcej informacji: rozkład statusów i ile rzeczy stoi na Tobie.<br><span class="minus">−</span> najcięższe wizualnie; przy 5+ projektach trzeba scrollować.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 1.4 ======================= -->
+<section class="feature" id="v-deadlines">
+  <div class="feature-head"><span class="number">1.4</span><h2>Deadline'y</h2></div>
+  <div class="question">Jak ma wyglądać „ile nam zostało” i ten pasek, który się przesuwa?</div>
+  <div class="variants one">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Oś z kamieniami milowymi</b></div>
+      <div class="frame pad" style="width:1060px" data-deadlines="A"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> klasyczna oś, wszystkie deadline'y w jednym rzucie oka. <span class="minus">−</span> pokazuje tylko upływ czasu, nie postęp pracy.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Czas vs praca — dwa paski</b></div>
+      <div class="frame pad" style="width:1060px" data-deadlines="B"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> od razu widać, czy nadążamy: minęło 34% czasu, zamknięte 22% pracy → jesteśmy do tyłu. <span class="minus">−</span> deadline'y są tylko kreskami pod spodem.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">C</span><b>Odliczanie w kafelkach</b></div>
+      <div class="frame pad" style="width:1060px" data-deadlines="C"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> najbliższy deadline krzyczy liczbą dni. <span class="minus">−</span> brak jednego paska, który się przesuwa.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 1.5–1.7 ======================= -->
+<section class="feature" id="v-stats">
+  <div class="feature-head"><span class="number">1.5–1.7</span><h2>Statystyki: gdzie są taski · kto ma co · tempo</h2></div>
+  <div class="question">Jak gęsto mają być podane liczby?</div>
+  <div class="variants one">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Pasek + legenda, osoby jako paski, burn-down pod spodem</b></div>
+      <div style="width:1060px" data-stats="A"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> to, co już widziałaś; wszystko w dwóch kartach. <span class="minus">−</span> liczby osób bez podziału na statusy.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Sześć kafli z liczbami + osoby jako chipy + mały wykres</b></div>
+      <div class="frame pad" style="width:1060px" data-stats="B"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> najniższe, zostawia najwięcej miejsca na taski. <span class="minus">−</span> mniej „wykresowe”.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">C</span><b>Donut + tabela ludzi × statusy + duży burn-down</b></div>
+      <div class="frame pad" style="width:1060px" data-stats="C"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> najdokładniejsze: kto ma ile w którym statusie. <span class="minus">−</span> najwięcej do czytania.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 1.8 ======================= -->
+<section class="feature" id="v-filters">
+  <div class="feature-head"><span class="number">1.8</span><h2>Filtry listy tasków</h2></div>
+  <div class="question">Gdzie przełączasz My focus / Up next / Specs / Build / Everything?</div>
+  <div class="variants three">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Chipy nad listą</b></div>
+      <div class="frame pad">
+        <div class="filters" style="flex-wrap:wrap"><span class="chip is-active">My focus<span class="count">6</span></span><span class="chip">Up next<span class="count">4</span></span><span class="chip">Specs<span class="count">12</span></span><span class="chip">Build<span class="count">30</span></span><span class="chip">Everything<span class="count">64</span></span></div>
+      </div>
+      <div class="note"><span class="plus">+</span> jak w pierwszej makiecie; liczniki widoczne.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Przełącznik segmentowy</b></div>
+      <div class="frame pad">
+        <div class="tabs" style="max-width:100%"><span class="tab is-active">My focus</span><span class="tab">Up next</span><span class="tab">Specs</span><span class="tab">Build</span><span class="tab">All</span></div>
+      </div>
+      <div class="note"><span class="plus">+</span> ten sam kształt co zakładki Sessions / Agents / Projects. <span class="minus">−</span> bez liczników.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">C</span><b>Pod projektem w lewej kolumnie</b></div>
+      <div class="frame left" style="width:100%">
+        <div class="project-row is-selected">${ring}<span class="name">Groove</span><span class="meta">50 left</span></div>
+        <div style="padding-left:34px;display:flex;flex-direction:column;gap:2px;margin:4px 0 10px">
+          <div class="project-row" style="padding:5px 10px;color:var(--accent)"><span class="name" style="font-size:12.5px">My focus</span><span class="meta">6</span></div>
+          <div class="project-row" style="padding:5px 10px"><span class="name" style="font-size:12.5px">Up next</span><span class="meta">4</span></div>
+          <div class="project-row" style="padding:5px 10px"><span class="name" style="font-size:12.5px">Specs pipeline</span><span class="meta">12</span></div>
+          <div class="project-row" style="padding:5px 10px"><span class="name" style="font-size:12.5px">Build</span><span class="meta">30</span></div>
+        </div>
+      </div>
+      <div class="note"><span class="plus">+</span> środek zostaje w całości na taski. <span class="minus">−</span> lista projektów rośnie w dół.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 1.9 ======================= -->
+<section class="feature" id="v-card">
+  <div class="feature-head"><span class="number">1.9</span><h2>Karta taska</h2></div>
+  <div class="question">Ile ma zajmować jeden task i jak pokazać, gdzie jest w pipelinie?</div>
+  <div class="variants one">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Bogata karta: dwa pipeline'y z kropkami + chipy z linkami</b></div>
+      <div style="width:1060px;display:flex;flex-direction:column;gap:10px" data-cards="A"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> wszystko widać bez klikania, podpisane słowami. <span class="minus">−</span> ~3 taski na ekran.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Tabela: jeden wiersz na task, ikony zamiast chipów</b></div>
+      <div class="frame pad" style="width:1060px" data-cards="B"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> ~15 tasków na ekran, dobre do „Everything”. <span class="minus">−</span> szczegóły dopiero po najechaniu / kliknięciu.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">C</span><b>Średnia: jeden pasek pipeline'u + chipy w jednej linii</b></div>
+      <div style="width:1060px;display:flex;flex-direction:column;gap:8px" data-cards="C"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> ~6 tasków na ekran, dalej z nazwanymi sesjami i gałęzią. <span class="minus">−</span> etap speca i buildu na jednym pasku (spec | build).</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 1.10 ======================= -->
+<section class="feature" id="v-specs">
+  <div class="feature-head"><span class="number">1.10</span><h2>Pipeline speców</h2></div>
+  <div class="question">Tablica czy lista?</div>
+  <div class="variants one">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Tablica w kolumnach</b></div>
+      <div class="frame pad" style="width:1060px;height:330px" data-specs="A"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> przepływ widać od lewej do prawej. <span class="minus">−</span> długie nazwy się łamią.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Lista pogrupowana po etapach</b></div>
+      <div class="frame pad" style="width:1060px" data-specs="B"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> czyta się jak to-do, pełne nazwy. <span class="minus">−</span> mniej widać „przesuwanie się”.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">C</span><b>Lejek z licznikami + lista wybranego etapu</b></div>
+      <div class="frame pad" style="width:1060px" data-specs="C"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> liczby etapów zawsze na górze, lista krótka. <span class="minus">−</span> jeden etap naraz.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 2.1 ======================= -->
+<section class="feature" id="v-panel">
+  <div class="feature-head"><span class="number">2.1</span><h2>Task z ClickUpa w prawym panelu</h2></div>
+  <div class="question">Własny widok z API czy prawdziwa strona ClickUpa?</div>
+  <div class="variants three">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Własny widok, w stylu panelu</b></div>
+      <div class="frame"><div class="panel-frame" data-panel-variant="A"></div></div>
+      <div class="note"><span class="plus">+</span> ciemny, Twoją czcionką, szybki, bez logowania. <span class="minus">−</span> tylko do czytania; edycja przez „Open in ClickUp”.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Prawdziwy ClickUp w panelu</b></div>
+      <div class="frame"><div class="panel-frame" data-panel-variant="B"></div></div>
+      <div class="note"><span class="plus">+</span> pełny ClickUp: zmienisz status, dopiszesz komentarz. <span class="minus">−</span> jasny, ciężki, trzeba się raz zalogować w panelu.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">C</span><b>A domyślnie, z przełącznikiem na B</b></div>
+      <div class="frame"><div class="panel-frame" data-panel-variant="C"></div></div>
+      <div class="note"><span class="plus">+</span> czytasz u siebie, a gdy chcesz coś zmienić — „Edit in ClickUp” podmienia zakładkę na prawdziwy ClickUp.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 2.3 ======================= -->
+<section class="feature" id="v-detail">
+  <div class="feature-head"><span class="number">2.3</span><h2>Szczegóły taska</h2></div>
+  <div class="question">Gdzie otwiera się komplet: sesje, gałęzie w obu repo, PR?</div>
+  <div class="variants one">
+    <div>
+      <div class="variant-label"><span class="letter">A</span><b>Karta rozwija się w miejscu</b></div>
+      <div style="width:1060px" data-detail="A"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> kontekst listy zostaje, panel dalej wolny na ClickUpa. <span class="minus">−</span> rozwinięta karta spycha resztę w dół.</div>
+    </div>
+    <div>
+      <div class="variant-label"><span class="letter">B</span><b>Lista po lewej, szczegóły po prawej w środkowej kolumnie</b></div>
+      <div class="frame pad" style="width:1060px" data-detail="C"></div>
+      <div class="note" style="max-width:1060px"><span class="plus">+</span> jak poczta: klikasz, szczegóły obok, lista się nie rusza. <span class="minus">−</span> statystyki i deadline'y chowają się w tym trybie.</div>
+    </div>
+  </div>
+  <div class="note" style="max-width:1060px;margin-top:14px">Wariant „szczegóły w prawym panelu” odrzuciłem sam: panel ma zostać na ClickUpa i Twoje strony, a zabierałby go każdy klik.</div>
+</section>
+
+<!-- ======================= 1.11 ======================= -->
+<section class="feature" id="v-states">
+  <div class="feature-head"><span class="number">1.11</span><h2>Stany: ładowanie, brak tokena, offline</h2></div>
+  <div class="question">Jeden projekt, bez wariantów — do sprawdzenia, czy teksty są jasne.</div>
+  <div class="variants three">
+    <div class="frame"><div class="state-box"><div style="width:100%"><div class="skeleton" style="width:40%"></div><div class="skeleton" style="width:90%;height:40px"></div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:85%;height:60px"></div><div class="subtle">Loading Groove from ClickUp…</div></div></div></div>
+    <div class="frame"><div class="state-box"><div><div class="icon">🔑</div><h4>No ClickUp token on this Mac</h4><p>Clauding reads it from the Keychain item <span style="font-family:var(--font-mono)">clickup-api-token</span>. Branches and sessions still show below.</p><div style="margin-top:12px"><span class="btn">How to add it</span></div></div></div></div>
+    <div class="frame"><div class="state-box"><div><div class="icon">☁️</div><h4>Offline — showing ClickUp as of 9:42</h4><p>Nothing is lost; the view refreshes by itself when the connection is back.</p><div style="margin-top:12px"><span class="pill gold">last refreshed 38 min ago</span></div></div></div></div>
+  </div>
+</section>
+
+<script>
+function ring(fraction, color) {
+  const circumference = 2 * Math.PI * 10;
+  return `<svg class="ring" viewBox="0 0 26 26"><circle cx="13" cy="13" r="10" fill="none" stroke="#2b332c" stroke-width="4"/><circle cx="13" cy="13" r="10" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${circumference * fraction} ${circumference}" transform="rotate(-90 13 13)"/></svg>`;
+}
+document.body.innerHTML = document.body.innerHTML.replace("${ring}", ring(0.22, "#b9a7e6"));
+
+const projects = [
+  { name: "Groove", fraction: 0.22, color: "#b9a7e6", left: 50, next: "Freeze in 18 d", needs: 3, buckets: [21, 9, 5, 4, 11, 14], group: "Work" },
+  { name: "Walktober 2026", fraction: 0.81, color: "#a9c7a4", left: 6, next: "Closes in 5 d", needs: 1, buckets: [1, 2, 1, 0, 2, 26], group: "Work" },
+  { name: "QA tests program", fraction: 0.4, color: "#8fa9c9", left: 18, next: "no deadline", needs: 0, buckets: [8, 4, 2, 1, 3, 12], group: "Work" },
+  { name: "Clauding", fraction: 0.63, color: "#c49bb8", left: 4, next: "no deadline", needs: 2, buckets: [2, 1, 1, 0, 0, 7], group: "Private" },
+  { name: "KLOT", fraction: 0.3, color: "#d3bd97", left: 12, next: "no deadline", needs: 0, buckets: [7, 3, 1, 1, 0, 5], group: "Private" },
+];
+const bucketColors = ["#4b564d", "var(--accent)", "var(--gold)", "var(--coral)", "var(--teal)", "var(--sage)"];
+const bucketNames = ["Open · no dev", "In progress", "Feedback", "Issues found", "In staging", "Ready / closed"];
+
+function segments(buckets, gap) {
+  return buckets.map((count, index) => count ? `<div style="flex:${count};background:${bucketColors[index]}"></div>` : "").join("");
+}
+
+function listVariant(letter) {
+  let html = `<div class="tabs" style="margin-bottom:12px"><span class="tab">Sessions</span><span class="tab">Agents</span><span class="tab is-active">Projects</span></div>`;
+  let currentGroup = "";
+  projects.forEach((project, index) => {
+    if (project.group !== currentGroup) {
+      currentGroup = project.group;
+      html += `<div class="group-title">${currentGroup}</div>`;
+    }
+    const selected = index === 0 ? "is-selected" : "";
+    if (letter === "A") {
+      html += `<div class="project-row ${selected}">${ring(project.fraction, project.color)}<span class="name">${project.name}</span><span class="meta">${project.left} left</span></div>`;
+    } else if (letter === "B") {
+      const nextColor = project.next.includes("in") && !project.next.startsWith("no") ? "var(--gold)" : "var(--text-faint)";
+      html += `<div class="project-line ${selected}"><div class="top"><span class="dot" style="background:${project.color}"></span><span class="name">${project.name}</span><span class="meta">${project.left} left</span></div><div class="thin-bar">${segments(project.buckets)}</div><div class="under"><span style="color:${nextColor}">${project.next}</span><span>${Math.round(project.fraction * 100)}% closed</span></div></div>`;
+    } else {
+      const needs = project.needs ? `<span class="pill gold" style="padding:1px 8px">● ${project.needs} need you</span>` : `<span class="pill" style="padding:1px 8px">nothing on you</span>`;
+      html += `<div class="project-card ${selected}"><div class="name"><span class="dot" style="background:${project.color}"></span>${project.name}<span class="spacer"></span><span class="meta" style="font-weight:400">${project.left} left</span></div><div class="mini">${segments(project.buckets)}</div><div class="row2">${needs}${project.next.startsWith("no") ? "" : `<span class="pill" style="padding:1px 8px">${project.next}</span>`}</div></div>`;
+    }
+  });
+  return html;
+}
+document.querySelectorAll("[data-list]").forEach((node) => { node.innerHTML = listVariant(node.dataset.list); });
+
+const milestones = [
+  { label: "Specs v1", date: "Sep 5", at: 4, state: "done" },
+  { label: "Onboarding live", date: "Sep 17", at: 22, state: "done" },
+  { label: "Feature freeze", date: "Oct 15", at: 57, state: "next", days: 18 },
+  { label: "QA done", date: "Nov 1", at: 78, state: "", days: 35 },
+  { label: "Launch", date: "Nov 17", at: 96, state: "", days: 51 },
+];
+function deadlinesVariant(letter) {
+  const head = `<div class="deadlines-head" style="display:flex;gap:10px;align-items:baseline;margin-bottom:14px"><b>Deadlines</b><span class="subtle">Sep 1 → Nov 17 · 51 days left</span><span class="spacer"></span><span class="pill gold">Next: Feature freeze in 18 days</span></div>`;
+  if (letter === "A") {
+    return head + `<div class="timeline"><div class="track"></div><div class="elapsed" style="width:34%"></div>${milestones.map((milestone) => `<div class="milestone ${milestone.state}" style="left:${milestone.at}%"><div class="diamond"></div><div class="label">${milestone.label} · <b>${milestone.date}</b></div></div>`).join("")}<div class="today" style="left:34%"><span>Today</span></div></div>`;
+  }
+  if (letter === "B") {
+    return head + `<div class="dual">
+      <span class="lbl">TIME</span><div class="bar"><div class="fill" style="width:34%;background:linear-gradient(90deg,#8fbcb4,#b9a7e6)"></div></div><span class="val">34%</span>
+      <span class="lbl">WORK DONE</span><div class="bar"><div class="fill" style="width:22%;background:var(--sage)"></div><div style="position:absolute;left:22%;top:-5px;bottom:-5px;width:12%;border:1.5px dashed var(--gold);border-left:none;border-radius:0 7px 7px 0"></div></div><span class="val" style="color:var(--gold)">22%</span>
+    </div>
+    <div class="ticks" style="margin-top:10px">${milestones.map((milestone) => `<div class="tick ${milestone.state}" style="left:${milestone.at}%">${milestone.label}<br><b>${milestone.date}</b></div>`).join("")}</div>
+    <div class="subtle" style="margin-top:22px;color:var(--gold)">12 points behind the calendar: at this pace the last task closes ~Dec 2, two weeks after Launch.</div>`;
+  }
+  return `<div class="countdowns">${milestones.slice(2).map((milestone) => `<div class="countdown ${milestone.state}"><div class="what">${milestone.state === "next" ? "NEXT · " : ""}${milestone.label}</div><div class="days">${milestone.days}<span style="font-size:14px;font-weight:500;color:var(--text-dim)"> days</span></div><div class="what">${milestone.date}${milestone.state === "next" ? " · 17 tasks must close before it" : ""}</div></div>`).join("")}<div class="countdown done"><div class="what">DONE</div><div style="font-size:13px;margin-top:6px">✓ Specs v1 · Sep 5<br>✓ Onboarding live · Sep 17</div></div></div>`;
+}
+document.querySelectorAll("[data-deadlines]").forEach((node) => { node.innerHTML = deadlinesVariant(node.dataset.deadlines); });
+
+const statsA = document.querySelector("#screen-dummy");
+function statsVariant(letter) {
+  if (letter === "A") {
+    return `<div class="stats" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+      <div class="card stat-block"><h3>WHERE THE 64 TASKS ARE</h3><div class="stack-bar">${segments([21, 9, 5, 4, 11, 14])}</div>
+      <div class="legend" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${[21, 9, 5, 4, 11, 14].map((count, index) => `<div class="item"><span class="dot" style="background:${bucketColors[index]}"></span><span class="num">${count}</span><span class="lbl" style="white-space:nowrap">${bucketNames[index]}</span></div>`).join("")}</div>
+      <div class="burn"><div><div class="big">50</div><div class="subtle">left to close</div></div><svg width="150" height="46" viewBox="0 0 300 46" preserveAspectRatio="none"><line x1="0" y1="4" x2="300" y2="44" stroke="#4b564d" stroke-dasharray="4 4" stroke-width="1.5"/><polyline fill="none" stroke="#b9a7e6" stroke-width="2.2" points="0,4 20,6 40,6 60,9 80,12 100,13 110,15"/></svg><div class="subtle" style="white-space:nowrap">On pace: 3.1 closed / week<br><span style="color:var(--gold)">last 2 weeks: 2.5 / week</span></div></div></div>
+      <div class="card stat-block"><h3>WHO HAS WHAT (not closed)</h3><div class="people">${people().map((person) => `<div class="person"><span class="avatar" style="background:${person.color}">${person.initial}</span><span style="width:60px">${person.name}</span><div class="bar">${person.parts.map((part, index) => part ? `<div style="width:${part * 2.4}%;background:${bucketColors[index]}"></div>` : "").join("")}</div><span class="count">${person.total}</span></div>`).join("")}</div>
+      <div class="burn" style="gap:18px"><div><div class="big" style="font-size:20px">7</div><div class="subtle">specs to write</div></div><div><div class="big" style="font-size:20px;color:var(--gold)">3</div><div class="subtle">specs in review</div></div><div><div class="big" style="font-size:20px;color:var(--coral)">2</div><div class="subtle">PRs red CI</div></div></div></div></div>`;
+  }
+  if (letter === "B") {
+    return `<div class="tiles">${[21, 9, 5, 4, 11, 14].map((count, index) => `<div class="tile" style="border-top:3px solid ${bucketColors[index]}"><div class="n">${count}</div><div class="t">${bucketNames[index]}</div></div>`).join("")}</div>
+      <div class="chips-row">${people().map((person) => `<span class="person-chip"><span class="avatar" style="background:${person.color};width:20px;height:20px">${person.initial}</span>${person.name} <b>${person.total}</b></span>`).join("")}
+      <span class="spacer"></span><span class="pill mauve">7 specs to write</span><span class="pill gold">3 in review</span><span class="pill coral">2 red CI</span>
+      <span class="person-chip" style="padding:3px 12px"><b>50</b>&nbsp;left <svg width="70" height="18" viewBox="0 0 300 46" preserveAspectRatio="none"><line x1="0" y1="4" x2="300" y2="44" stroke="#4b564d" stroke-dasharray="6 6" stroke-width="3"/><polyline fill="none" stroke="#b9a7e6" stroke-width="5" points="0,4 40,6 80,12 110,15"/></svg><span style="color:var(--gold)">2.5/wk</span></span></div>`;
+  }
+  const total = 64;
+  let offset = 0;
+  const arcs = [21, 9, 5, 4, 11, 14].map((count, index) => {
+    const circumference = 2 * Math.PI * 58;
+    const length = circumference * count / total;
+    const arc = `<circle cx="80" cy="80" r="58" fill="none" stroke="${bucketColors[index].startsWith("var") ? getComputedStyle(document.documentElement).getPropertyValue(bucketColors[index].slice(4, -1)) : bucketColors[index]}" stroke-width="22" stroke-dasharray="${length - 2} ${circumference}" stroke-dashoffset="${-offset}" transform="rotate(-90 80 80)"/>`;
+    offset += length;
+    return arc;
+  }).join("");
+  return `<div class="stats-c">
+    <svg width="160" height="160" viewBox="0 0 160 160">${arcs}<text x="80" y="78" text-anchor="middle" fill="#e6ebe4" font-size="28" font-weight="700">50</text><text x="80" y="98" text-anchor="middle" fill="#a0aa9e" font-size="11">of 64 open</text></svg>
+    <table class="people-table"><tr><th></th>${["Open", "Prog.", "Feedb.", "Issues", "Stag."].map((name) => `<th>${name}</th>`).join("")}<th>Total</th></tr>
+    ${people().map((person) => `<tr><td><span class="avatar" style="background:${person.color};width:18px;height:18px;display:inline-grid;font-size:9px;margin-right:6px">${person.initial}</span>${person.name}</td>${person.parts.slice(0, 5).map((part) => `<td style="color:${part ? "var(--text)" : "var(--text-faint)"}">${part || "–"}</td>`).join("")}<td><b>${person.total}</b></td></tr>`).join("")}</table>
+    <div><div class="subtle" style="margin-bottom:4px">Left to close — actual vs needed</div><svg width="100%" height="120" viewBox="0 0 300 120" preserveAspectRatio="none"><line x1="0" y1="10" x2="300" y2="115" stroke="#6f7a6f" stroke-dasharray="5 5" stroke-width="1.5"/><polyline fill="none" stroke="#b9a7e6" stroke-width="2.5" points="0,10 15,12 30,13 45,18 60,21 75,24 90,26 102,29"/><line x1="102" y1="0" x2="102" y2="120" stroke="#e6ebe4" stroke-width="1"/><text x="106" y="12" fill="#e6ebe4" font-size="10">today</text></svg><div class="subtle"><span style="color:var(--gold)">2.5 / week</span> now · 3.1 / week needed</div></div>
+  </div>`;
+}
+function people() {
+  return [
+    { name: "Me", initial: "U", color: "var(--accent)", parts: [0, 8, 4, 0, 7], total: 19 },
+    { name: "Roger", initial: "R", color: "var(--blue)", parts: [0, 4, 0, 3, 4], total: 11 },
+    { name: "Amber", initial: "A", color: "var(--mauve)", parts: [0, 0, 3, 0, 2], total: 5 },
+    { name: "Nobody", initial: "–", color: "var(--text-faint)", parts: [15, 0, 0, 0, 0], total: 15 },
+  ];
+}
+document.querySelectorAll("[data-stats]").forEach((node) => { node.innerHTML = statsVariant(node.dataset.stats); });
+
+/* ---------- cards ---------- */
+const specSteps = ["no spec", "session", "draft", "review", "approved"];
+const buildSteps = ["open", "builder", "branch", "PR", "staging", "QA", "prod"];
+function pipe(label, steps, doneCount, state) {
+  return `<div class="pipe"><span class="pipe-label">${label}</span>${steps.map((step, index) => {
+    let className = "";
+    if (index < doneCount) className = "done";
+    else if (index === doneCount) className = state || "now";
+    return `<div class="step ${className}"><div class="node"></div><div class="cap">${step}</div></div>`;
+  }).join("")}</div>`;
+}
+const items = [
+  { kind: "build", title: "Friends + User Modal", status: "in progress", statusClass: "lav", needs: "", specDone: 5, buildDone: 2, buildState: "now", spec: "✍️ spec-friends", specState: "idle 3 d", builder: "🔨 Friends builder", builderState: "working", branch: "CU-86ak7brvp", branchNote: "blueprint +7", pr: "" },
+  { kind: "build", title: "Recipes", status: "feedback", statusClass: "gold", needs: "waiting for your diff OK", specDone: 5, buildDone: 3, buildState: "wait", spec: "", builder: "🔨 recipes", builderState: "needs answer", branch: "CU-86ak7bx9h", branchNote: "blueprint +14", pr: "not pushed" },
+  { kind: "spec", title: "Progress Status — technical spec", status: "spec review", statusClass: "gold", needs: "your approval", specDone: 3, specStateStep: "wait", buildDone: -1, spec: "✍️ spec-progress-status", specState: "idle", builder: "", branch: "", pr: "" },
+  { kind: "build", title: "Leaderboards", status: "in staging", statusClass: "teal", needs: "QA on staging", specDone: 5, buildDone: 5, buildState: "wait", spec: "", builder: "🔨 leaderboards", builderState: "idle 6 d", branch: "CU-86ak7bh2e", branchNote: "in docker-staging ✓", pr: "#4812 merged" },
+];
+function sessionChip(name, state) {
+  if (!name) return "";
+  const color = state === "working" ? "var(--secondary)" : state === "needs answer" ? "var(--gold)" : "var(--text-faint)";
+  return `<span class="link"><span class="dot" style="background:${color}"></span><b>${name}</b><span>${state}</span></span>`;
+}
+function cardA(item) {
+  const pipes = `<div style="display:flex;flex-direction:column;gap:6px">${pipe("Spec", specSteps, item.specDone, item.specStateStep)}${item.buildDone < 0 ? `<div class="pipe"><span class="pipe-label">Build</span><span class="subtle">starts when the spec is approved</span></div>` : pipe("Build", buildSteps, item.buildDone, item.buildState)}</div>`;
+  return `<div class="card item" style="grid-template-columns:minmax(0,1fr) 482px"><div><div class="item-title" style="flex-wrap:wrap"><span class="kind ${item.kind}">${item.kind.toUpperCase()}</span>${item.title}<span class="pill ${item.statusClass}">${item.status}</span>${item.needs ? `<span class="pill gold">● ${item.needs}</span>` : ""}</div></div><div style="grid-row:span 2">${pipes}</div>
+    <div class="links"><span class="link"><span class="cu-icon"></span><b>task</b></span>${item.kind === "build" ? `<span class="link"><span class="cu-icon"></span>spec</span>` : ""}${sessionChip(item.spec, item.specState)}${sessionChip(item.builder, item.builderState)}${item.branch ? `<span class="link">⎇ <span class="mono">${item.branch}</span><span>${item.branchNote}</span></span>` : ""}${item.pr ? `<span class="link"><span class="gh-icon"></span><b>PR</b><span>${item.pr}</span></span>` : ""}</div></div>`;
+}
+function stagePill(item, track) {
+  if (track === "spec") {
+    const step = item.specDone >= 5 ? "approved" : specSteps[item.specDone];
+    const color = item.specDone >= 5 ? "var(--sage)" : item.specStateStep === "wait" ? "var(--gold)" : "var(--accent)";
+    return `<span class="stage-pill"><span class="dot" style="background:${color}"></span>${step}</span>`;
+  }
+  if (item.buildDone < 0) return `<span class="subtle">—</span>`;
+  const color = item.buildState === "wait" ? "var(--gold)" : "var(--accent)";
+  return `<span class="stage-pill"><span class="dot" style="background:${color}"></span>${buildSteps[item.buildDone]}</span>`;
+}
+function cardsB() {
+  const extra = [
+    { kind: "build", title: "Daily Tips", status: "in progress", statusClass: "lav", specDone: 5, buildDone: 2, buildState: "now", spec: "", builder: "🔨 tips", builderState: "working", branch: "CU-86ak7bghr", pr: "" },
+    { kind: "spec", title: "Login page", status: "writing spec", statusClass: "mauve", specDone: 1, buildDone: -1, spec: "✍️ spec-login", specState: "idle 2 d" },
+    { kind: "build", title: "Menu & Header", status: "in staging", statusClass: "teal", specDone: 5, buildDone: 4, buildState: "now", builder: "🔨 menu", builderState: "idle", branch: "CU-86ak7bgn3", pr: "#4790" },
+    { kind: "build", title: "Toast alerts", status: "open", statusClass: "", specDone: 5, buildDone: 0, buildState: "now" },
+  ];
+  const rows = items.concat(extra).map((item) => `<tr><td><span class="kind ${item.kind}">${item.kind.toUpperCase()}</span></td><td class="title">${item.title}</td><td><span class="pill ${item.statusClass}">${item.status}</span></td><td>${stagePill(item, "spec")}</td><td>${stagePill(item, "build")}</td>
+    <td><span class="icon-dots"><span class="ic" title="task">📋</span><span class="ic ${item.spec ? "" : "off"}">✍️</span><span class="ic ${item.builder ? "" : "off"}" style="${item.builderState === "working" ? "border-color:var(--secondary)" : item.builderState === "needs answer" ? "border-color:var(--gold)" : ""}">🔨</span><span class="ic ${item.branch ? "" : "off"}">⎇</span><span class="ic ${item.pr ? "" : "off"}">PR</span></span></td>
+    <td>${item.needs ? `<span class="pill gold">● ${item.needs}</span>` : ""}</td></tr>`).join("");
+  return `<table class="task-table"><tr><th></th><th>TASK</th><th>CLICKUP</th><th>SPEC</th><th>BUILD</th><th>LINKS</th><th>NEEDS YOU</th></tr>${rows}</table>`;
+}
+function cardC(item) {
+  const specSegs = specSteps.map((step, index) => `<div class="seg ${index < item.specDone ? "done" : index === item.specDone ? (item.specStateStep || "now") : ""}"></div>`).join("");
+  const buildSegs = buildSteps.map((step, index) => `<div class="seg ${item.buildDone < 0 ? "" : index < item.buildDone ? "done" : index === item.buildDone ? item.buildState : ""}"></div>`).join("");
+  const where = item.buildDone < 0 ? `spec · <b style="color:var(--text)">${specSteps[item.specDone]}</b>` : `build · <b style="color:var(--text)">${buildSteps[item.buildDone]}</b>`;
+  return `<div class="card" style="padding:11px 16px;display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:6px 16px;align-items:center">
+    <div class="item-title" style="font-size:13.5px"><span class="kind ${item.kind}">${item.kind.toUpperCase()}</span>${item.title}<span class="pill ${item.statusClass}">${item.status}</span>${item.needs ? `<span class="pill gold">● ${item.needs}</span>` : ""}</div>
+    <div><div class="stepper">${specSegs}<div class="gap"></div>${buildSegs}</div><div class="stepper-caption">${where}</div></div>
+    <div class="links" style="grid-column:1/-1;flex-wrap:nowrap;overflow:hidden">${sessionChip(item.spec, item.specState)}${sessionChip(item.builder, item.builderState)}${item.branch ? `<span class="link">⎇ <span class="mono">${item.branch}</span></span>` : ""}${item.pr ? `<span class="link"><span class="gh-icon"></span>PR ${item.pr}</span>` : ""}<span class="link"><span class="cu-icon"></span>task</span></div></div>`;
+}
+document.querySelector('[data-cards="A"]').innerHTML = items.slice(0, 3).map(cardA).join("");
+document.querySelector('[data-cards="B"]').innerHTML = cardsB();
+document.querySelector('[data-cards="C"]').innerHTML = items.map(cardC).join("");
+
+/* ---------- spec board ---------- */
+const lanes = [
+  ["No spec yet", [["Song links", ""], ["Encore modal copy", ""], ["Badges", ""]]],
+  ["Spec session", [["Forgot Password + ELEvate", "✍️ working"], ["Login page", "✍️ idle 2 d"], ["Welcome page", "✍️ needs answer"]]],
+  ["Draft", [["Countdown", "4 drift flags"], ["Theme modes", "draft"]]],
+  ["Review", [["Progress Status", "your approval"], ["Timeline Editor", "Design"]]],
+  ["Approved", [["Timeline", "→ Open"], ["Toast alerts", "→ Open, no dev"]]],
+];
+function noteClass(note) {
+  if (note.includes("working")) return "lav";
+  if (note.includes("needs") || note.includes("your")) return "gold";
+  if (note.includes("flags")) return "coral";
+  if (note.startsWith("→")) return "teal";
+  return "";
+}
+document.querySelector('[data-specs="A"]').innerHTML = `<div class="kanban" style="grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;height:100%">${lanes.map(([title, tickets]) => `<div class="lane" style="padding:9px"><h4><span>${title}</span><span>${tickets.length}</span></h4>${tickets.map(([name, note]) => `<div class="ticket" style="padding:8px 10px;font-size:12px"><div class="t">${name}</div>${note ? `<span class="pill ${noteClass(note)}" style="font-size:10px;padding:1px 6px">${note}</span>` : `<span class="subtle" style="font-size:10.5px">＋ Spec Writer</span>`}</div>`).join("")}</div>`).join("")}</div>`;
+document.querySelector('[data-specs="B"]').innerHTML = lanes.map(([title, tickets], index) => `<div class="stage-group"><h4><span class="dot" style="background:${["#4b564d", "var(--accent)", "var(--mauve)", "var(--gold)", "var(--sage)"][index]}"></span>${title} · ${tickets.length}</h4>${tickets.map(([name, note]) => `<div class="list-row"><span class="cu-icon"></span><span class="t">${name}</span>${note ? `<span class="pill ${noteClass(note)}">${note}</span>` : `<span class="subtle">＋ Spec Writer</span>`}</div>`).join("")}</div>`).join("");
+document.querySelector('[data-specs="C"]').innerHTML = `<div class="funnel">${lanes.map(([title, tickets], index) => `<div class="${index === 3 ? "is-active" : ""}"><b>${tickets.length}</b>${title}</div>`).join("")}</div>
+  <div class="stage-group"><h4>Review · waiting</h4>${[["Progress Status", "your approval", "✍️ spec-progress-status"], ["Timeline Editor", "Design", "✍️ spec-timeline"], ["Eligibility", "Product", "✍️ spec-eligibility"]].map(([name, note, session]) => `<div class="list-row" style="flex-wrap:wrap"><span class="cu-icon"></span><span class="t">${name}</span><span class="pill ${noteClass(note)}">${note}</span><div style="width:100%;padding-left:22px">${sessionChip(session, "idle")}</div></div>`).join("")}</div>`;
+
+/* ---------- panel ---------- */
+const panelTabs = (active) => `<div class="panel-tabs"><span class="panel-tab"><span class="cu-icon"></span>Spec · Friends</span><span class="panel-tab is-active"><span class="cu-icon"></span>${active}</span></div>`;
+const nativeBody = `<div class="panel-body cu" style="padding:16px 20px"><span class="pill lav">in progress</span> <span class="pill">Groove Web 2026</span><h2 style="font-size:21px">Friends + User Modal</h2>
+  <div class="fields"><span class="key">Assignee</span><span>Ula Kuczyńska</span><span class="key">Due</span><span>Oct 10, 2026</span><span class="key">Spec URL</span><span style="color:var(--accent)">Groove Specs › Friends</span></div>
+  <h4>Description</h4><p style="font-size:14px">Friends page and the user modal for the Groove flavor, per the approved spec.</p><h4>Comments · 3</h4><div class="comment"><b>Amber</b> · Sep 22 — reuse the new tile from Figma.</div></div>`;
+document.querySelector('[data-panel-variant="A"]').innerHTML = panelTabs("CU-86ak7brvp") + `<div class="panel-bar"><span class="addr">clickup · 86ak7brvp</span>↻<span>Open in ClickUp</span></div>` + nativeBody;
+document.querySelector('[data-panel-variant="B"]').innerHTML = panelTabs("CU-86ak7brvp") + `<div class="panel-bar"><span class="addr">app.clickup.com/t/86ak7brvp</span>↻<span>Open in browser</span></div>
+  <div class="clickup-light"><div class="cu-top"><span class="cu-status">in progress</span><span>▸</span><span>Groove Web 2026</span><span class="spacer"></span><span>⋯</span></div><h3>Friends + User Modal</h3>
+  <div class="cu-fields"><span>Assignees</span><span>● Ula Kuczyńska</span><span>Dates</span><span>→ Oct 10</span><span>Spec URL</span><span style="color:#7b68ee">Groove Specs › Friends</span><span>Priority</span><span>🚩 High</span></div>
+  <p>Friends page and the user modal for the Groove flavor, per the approved spec.</p><div style="margin:14px 18px;border-top:1px solid #e8eaed;padding-top:10px;font-size:12px;color:#646464">Activity · 3 comments</div></div>`;
+document.querySelector('[data-panel-variant="C"]').innerHTML = panelTabs("CU-86ak7brvp") + `<div class="panel-bar"><span class="addr">clickup · 86ak7brvp</span>↻<span style="background:var(--accent);color:var(--on-accent);padding:3px 9px;border-radius:7px;font-weight:600">Edit in ClickUp</span></div>` + nativeBody;
+
+/* ---------- detail ---------- */
+const detailBoxes = `<div class="detail" style="grid-template-columns:1fr 1fr">
+  <div class="box"><h5>Sessions</h5><div class="srow"><span class="st" style="background:var(--text-faint)"></span>✍️ <b>spec-friends</b> <span class="subtle">Spec Writer</span><span class="when">spec published Sep 19</span></div><div class="srow"><span class="st" style="background:var(--secondary)"></span>🔨 <b>Friends builder</b> <span class="subtle">Feature Builder</span><span class="when">working now</span></div><div class="srow" style="color:var(--text-faint)">＋ Start a builder session for this task…</div></div>
+  <div class="box"><h5>Code</h5><div class="srow">⎇ <span style="font-family:var(--font-mono);font-size:11.5px">blueprint · CU-86ak7brvp</span><span class="when">7 ahead · worktree</span></div><div class="srow">⎇ <span style="font-family:var(--font-mono);font-size:11.5px">prime · CU-86ak7brvp</span><span class="when">not created</span></div><div class="srow"><span class="gh-icon"></span>&nbsp;no PR · not in docker-staging</div></div></div>`;
+document.querySelector('[data-detail="A"]').innerHTML = cardA(items[0]).replace(/<\/div>$/, detailBoxes + "</div>").replace('class="card item"', 'class="card item is-open"') + `<div style="margin-top:10px">${cardA(items[1])}</div>`;
+document.querySelector('[data-detail="C"]').innerHTML = `<div class="split"><div>${items.concat([{ title: "Daily Tips", kind: "build" }, { title: "Menu & Header", kind: "build" }]).map((item, index) => `<div class="mini-row ${index === 0 ? "is-selected" : ""}"><span class="kind ${item.kind}">${item.kind.toUpperCase()}</span><span class="t">${item.title}</span>${item.needs ? `<span class="dot" style="background:var(--gold)"></span>` : ""}</div>`).join("")}</div>
+  <div class="card" style="padding:14px 18px"><div class="item-title" style="margin-bottom:12px"><span class="kind build">BUILD</span>Friends + User Modal<span class="pill lav">in progress</span></div><div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">${pipe("Spec", specSteps, 5)}${pipe("Build", buildSteps, 2, "now")}</div>${detailBoxes.replace('grid-template-columns:1fr 1fr', 'grid-template-columns:1fr')}</div></div>`;
+</script>
+</body>
+</html>
