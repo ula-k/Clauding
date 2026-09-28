@@ -367,11 +367,11 @@ test("agent add takes the flags over its own suggestions", async () => {
 test("agent add refuses a folder twice, a folder that is not there and one without a definition", async () => {
   const agents = fakeAgentList();
   const { handler, folder } = appWithAgents(agents);
-  const definitionFolder = definitionFolderIn(folder, "spec-writer", "# Agent: Spec Writer 📐\n");
+  const definitionFolder = definitionFolderIn(folder, "spec-writer", "# Agent: Spec Author 📐\n");
   await handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder, cwd: folder });
   await assert.rejects(
     handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder, cwd: folder }),
-    /already registered as "Spec Writer"/
+    /already registered as "Spec Author"/
   );
   await assert.rejects(
     handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder: path.join(folder, "nowhere"), cwd: folder }),
@@ -392,11 +392,11 @@ test("agent list prints one line per agent, and says so when there are none", as
     await handler.handleCommandRequest({ command: "agent", action: "list" }),
     "No agents are registered in Clauding yet."
   );
-  const definitionFolder = definitionFolderIn(folder, "spec-writer", "# Agent: Spec Writer 📐\n");
+  const definitionFolder = definitionFolderIn(folder, "spec-writer", "# Agent: Spec Author 📐\n");
   await handler.handleCommandRequest({ command: "agent", action: "add", definitionFolder, cwd: folder });
   assert.equal(
     await handler.handleCommandRequest({ command: "agent", action: "list" }),
-    `📐 Spec Writer — ${definitionFolder}`
+    `📐 Spec Author — ${definitionFolder}`
   );
 });
 

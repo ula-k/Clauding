@@ -64,8 +64,8 @@ import {
   splitAddress
 } from "../src/renderer/paths.js";
 
-const WINDOWS_HOME = "C:\\Users\\ula";
-const MACOS_HOME = "/Users/ula";
+const WINDOWS_HOME = "C:\\Users\\someone";
+const MACOS_HOME = "/Users/someone";
 const WINDOWS = { platform: "win32", homeDirectory: WINDOWS_HOME };
 const MACOS = { platform: "darwin", homeDirectory: MACOS_HOME };
 
@@ -77,16 +77,16 @@ function scratchFolder() {
 
 test("the Claude Code registries are the same folders under a Windows home", () => {
   const onWindows = claudeRegistryPaths(WINDOWS);
-  assert.equal(onWindows.claudeHome, "C:\\Users\\ula\\.claude");
-  assert.equal(onWindows.sessionsRegistryDirectory, "C:\\Users\\ula\\.claude\\sessions");
-  assert.equal(onWindows.jobsRegistryDirectory, "C:\\Users\\ula\\.claude\\jobs");
-  assert.equal(onWindows.projectsDirectory, "C:\\Users\\ula\\.claude\\projects");
-  assert.equal(onWindows.skillsDirectory, "C:\\Users\\ula\\.claude\\skills");
-  assert.equal(onWindows.configurationFile, "C:\\Users\\ula\\.claude.json");
+  assert.equal(onWindows.claudeHome, "C:\\Users\\someone\\.claude");
+  assert.equal(onWindows.sessionsRegistryDirectory, "C:\\Users\\someone\\.claude\\sessions");
+  assert.equal(onWindows.jobsRegistryDirectory, "C:\\Users\\someone\\.claude\\jobs");
+  assert.equal(onWindows.projectsDirectory, "C:\\Users\\someone\\.claude\\projects");
+  assert.equal(onWindows.skillsDirectory, "C:\\Users\\someone\\.claude\\skills");
+  assert.equal(onWindows.configurationFile, "C:\\Users\\someone\\.claude.json");
 
   const onMac = claudeRegistryPaths(MACOS);
-  assert.equal(onMac.sessionsRegistryDirectory, "/Users/ula/.claude/sessions");
-  assert.equal(onMac.configurationFile, "/Users/ula/.claude.json");
+  assert.equal(onMac.sessionsRegistryDirectory, "/Users/someone/.claude/sessions");
+  assert.equal(onMac.configurationFile, "/Users/someone/.claude.json");
 });
 
 test("path.win32 is used for Windows paths even while the test runs on a Mac", () => {
@@ -98,31 +98,31 @@ test("path.win32 is used for Windows paths even while the test runs on a Mac", (
 
 test("the app's data folder follows each system's own convention", () => {
   assert.equal(
-    defaultUserDataDirectory({ ...WINDOWS, environment: { APPDATA: "C:\\Users\\ula\\AppData\\Roaming" } }),
-    "C:\\Users\\ula\\AppData\\Roaming\\Clauding"
+    defaultUserDataDirectory({ ...WINDOWS, environment: { APPDATA: "C:\\Users\\someone\\AppData\\Roaming" } }),
+    "C:\\Users\\someone\\AppData\\Roaming\\Clauding"
   );
   assert.equal(
     defaultUserDataDirectory({ ...WINDOWS, environment: {} }),
-    "C:\\Users\\ula\\AppData\\Roaming\\Clauding",
+    "C:\\Users\\someone\\AppData\\Roaming\\Clauding",
     "a missing APPDATA falls back to where it normally is"
   );
   assert.equal(
     defaultUserDataDirectory({ ...MACOS, environment: {} }),
-    "/Users/ula/Library/Application Support/Clauding"
+    "/Users/someone/Library/Application Support/Clauding"
   );
 });
 
 test("a home path is shortened with the separator its own system uses", () => {
-  assert.equal(shortenHomePath("C:\\Users\\ula\\Documents\\projects", WINDOWS), "~\\Documents\\projects");
-  assert.equal(shortenHomePath("C:\\USERS\\ULA\\Documents", WINDOWS), "~\\Documents", "Windows ignores case");
+  assert.equal(shortenHomePath("C:\\Users\\someone\\Documents\\projects", WINDOWS), "~\\Documents\\projects");
+  assert.equal(shortenHomePath("C:\\USERS\\SOMEONE\\Documents", WINDOWS), "~\\Documents", "Windows ignores case");
   assert.equal(shortenHomePath("D:\\work\\thing", WINDOWS), "D:\\work\\thing", "another drive is left alone");
-  assert.equal(shortenHomePath("/Users/ula/Documents", MACOS), "~/Documents");
-  assert.equal(shortenHomePath("/USERS/ULA/Documents", MACOS), "/USERS/ULA/Documents", "macOS does not");
+  assert.equal(shortenHomePath("/Users/someone/Documents", MACOS), "~/Documents");
+  assert.equal(shortenHomePath("/USERS/SOMEONE/Documents", MACOS), "/USERS/SOMEONE/Documents", "macOS does not");
 });
 
 test("folders are split on either separator, and a drive letter is not a folder", () => {
-  assert.deepEqual(folderSegments("C:\\Users\\ula\\projects\\site"), ["Users", "ula", "projects", "site"]);
-  assert.deepEqual(folderSegments("/Users/ula/projects/site"), ["Users", "ula", "projects", "site"]);
+  assert.deepEqual(folderSegments("C:\\Users\\someone\\projects\\site"), ["Users", "someone", "projects", "site"]);
+  assert.deepEqual(folderSegments("/Users/someone/projects/site"), ["Users", "someone", "projects", "site"]);
   assert.deepEqual(folderSegments(""), []);
 });
 
@@ -142,60 +142,60 @@ test("the /private fix-up stays macOS-only", () => {
 
 test("a tilde expands on both, and a Windows path without one is untouched", () => {
   assert.equal(expandHomeFolder("~", WINDOWS), WINDOWS_HOME);
-  assert.equal(expandHomeFolder("~\\notes", WINDOWS), "C:\\Users\\ula\\notes");
-  assert.equal(expandHomeFolder("~/notes", WINDOWS), "C:\\Users\\ula\\notes");
+  assert.equal(expandHomeFolder("~\\notes", WINDOWS), "C:\\Users\\someone\\notes");
+  assert.equal(expandHomeFolder("~/notes", WINDOWS), "C:\\Users\\someone\\notes");
   assert.equal(expandHomeFolder("C:\\other\\notes", WINDOWS), "C:\\other\\notes");
-  assert.equal(expandHomeFolder("~/notes", MACOS), "/Users/ula/notes");
+  assert.equal(expandHomeFolder("~/notes", MACOS), "/Users/someone/notes");
 });
 
 test("a Windows working directory gets the same kind of folder label as a Mac one", () => {
   const options = { platform: "win32", homeDirectory: WINDOWS_HOME };
-  assert.equal(projectShortName("C:\\Users\\ula\\Documents\\projects\\website"), "website");
-  assert.equal(projectFolderLabel("C:\\Users\\ula\\Documents\\projects\\website", options), "…\\projects\\website");
-  assert.equal(projectFolderLabel("C:\\Users\\ula\\Desktop\\notes", options), "~\\Desktop\\notes");
+  assert.equal(projectShortName("C:\\Users\\someone\\Documents\\projects\\website"), "website");
+  assert.equal(projectFolderLabel("C:\\Users\\someone\\Documents\\projects\\website", options), "…\\projects\\website");
+  assert.equal(projectFolderLabel("C:\\Users\\someone\\Desktop\\notes", options), "~\\Desktop\\notes");
   assert.equal(
-    projectShortName("C:\\Users\\ula\\projects\\notes\\.claude\\worktrees\\fix-7"),
+    projectShortName("C:\\Users\\someone\\projects\\notes\\.claude\\worktrees\\fix-7"),
     "notes › fix-7",
     "the worktree shape is recognized with backslashes too"
   );
   assert.equal(
-    projectFolderLabel("C:\\Users\\ula\\projects\\notes\\.claude\\worktrees\\fix-7", options),
+    projectFolderLabel("C:\\Users\\someone\\projects\\notes\\.claude\\worktrees\\fix-7", options),
     "…\\notes › fix-7"
   );
 });
 
 test("the renderer's own folder label reads a Windows home too", () => {
-  assert.equal(folderLabel("C:\\Users\\ula\\Documents\\projects\\website"), "…\\projects\\website");
-  assert.equal(folderLabel("C:\\Users\\ula\\Desktop\\notes"), "~\\Desktop\\notes");
-  assert.equal(folderLabel("C:\\Users\\ula"), "~");
-  assert.equal(folderLabel("/Users/ula/Desktop/notes"), "~/Desktop/notes", "the macOS shape still works");
+  assert.equal(folderLabel("C:\\Users\\someone\\Documents\\projects\\website"), "…\\projects\\website");
+  assert.equal(folderLabel("C:\\Users\\someone\\Desktop\\notes"), "~\\Desktop\\notes");
+  assert.equal(folderLabel("C:\\Users\\someone"), "~");
+  assert.equal(folderLabel("/Users/someone/Desktop/notes"), "~/Desktop/notes", "the macOS shape still works");
   assert.equal(folderLabel(""), "");
 });
 
 test("the panel builds a file URL a Windows webview can open", () => {
-  assert.equal(fileUrlFor("C:\\Users\\ula\\page.html"), "file:///C:/Users/ula/page.html");
-  assert.equal(fileUrlFor("C:\\Users\\ula\\a page.html"), "file:///C:/Users/ula/a%20page.html");
-  assert.equal(fileUrlFor("/Users/ula/page.html"), "file:///Users/ula/page.html");
+  assert.equal(fileUrlFor("C:\\Users\\someone\\page.html"), "file:///C:/Users/someone/page.html");
+  assert.equal(fileUrlFor("C:\\Users\\someone\\a page.html"), "file:///C:/Users/someone/a%20page.html");
+  assert.equal(fileUrlFor("/Users/someone/page.html"), "file:///Users/someone/page.html");
 });
 
 test("an agent's definition folder reads the same with backslashes", () => {
-  assert.equal(definitionFolderLabel("C:\\Users\\ula\\wiki\\agenci\\spec-writer"), "…\\agenci\\spec-writer");
-  assert.equal(definitionFolderLabel("/Users/ula/wiki/agenci/spec-writer"), "…/agenci/spec-writer");
+  assert.equal(definitionFolderLabel("C:\\Users\\someone\\wiki\\agenci\\spec-writer"), "…\\agenci\\spec-writer");
+  assert.equal(definitionFolderLabel("/Users/someone/wiki/agenci/spec-writer"), "…/agenci/spec-writer");
   assert.equal(definitionFolderLabel(""), "");
-  assert.equal(fileNameOf("C:\\Users\\ula\\agenci\\spec-writer\\spec-writer.md"), "spec-writer.md");
-  assert.equal(fileNameOf("/Users/ula/agenci/spec-writer/spec-writer.md"), "spec-writer.md");
+  assert.equal(fileNameOf("C:\\Users\\someone\\agenci\\spec-writer\\spec-writer.md"), "spec-writer.md");
+  assert.equal(fileNameOf("/Users/someone/agenci/spec-writer/spec-writer.md"), "spec-writer.md");
 });
 
 test("the reader and the address line split a path on either separator", () => {
-  assert.equal(parentFolderOf("C:\\Users\\ula\\skills\\one\\SKILL.md"), "C:\\Users\\ula\\skills\\one");
-  assert.equal(parentFolderOf("/Users/ula/skills/one/SKILL.md"), "/Users/ula/skills/one");
-  assert.equal(shortenHomeFolder("C:\\Users\\ula\\.claude\\skills"), "~\\.claude\\skills");
-  assert.equal(shortenHomeFolder("/Users/ula/.claude/skills"), "~/.claude/skills");
-  assert.deepEqual(splitAddress("C:\\Users\\ula\\page.html"), {
-    folder: "C:\\Users\\ula\\",
+  assert.equal(parentFolderOf("C:\\Users\\someone\\skills\\one\\SKILL.md"), "C:\\Users\\someone\\skills\\one");
+  assert.equal(parentFolderOf("/Users/someone/skills/one/SKILL.md"), "/Users/someone/skills/one");
+  assert.equal(shortenHomeFolder("C:\\Users\\someone\\.claude\\skills"), "~\\.claude\\skills");
+  assert.equal(shortenHomeFolder("/Users/someone/.claude/skills"), "~/.claude/skills");
+  assert.deepEqual(splitAddress("C:\\Users\\someone\\page.html"), {
+    folder: "C:\\Users\\someone\\",
     name: "page.html"
   });
-  assert.deepEqual(splitAddress("/Users/ula/page.html"), { folder: "/Users/ula/", name: "page.html" });
+  assert.deepEqual(splitAddress("/Users/someone/page.html"), { folder: "/Users/someone/", name: "page.html" });
   assert.deepEqual(splitAddress("https://example.com"), { folder: "", name: "https://example.com" });
 });
 
@@ -203,20 +203,20 @@ test("a background job's scratch folder is hidden on either system", () => {
   // The scratch folder's three-letter name is spelled out of letters
   // because `npm run check` bans that abbreviation in a line of code.
   const scratchName = ["t", "m", "p"].join("");
-  assert.equal(isScratchWorkingDirectory(`/Users/ula/.claude/jobs/ab12/${scratchName}/work`), true);
-  assert.equal(isScratchWorkingDirectory(`C:\\Users\\ula\\.claude\\jobs\\ab12\\${scratchName}\\work`), true);
-  assert.equal(isScratchWorkingDirectory("C:\\Users\\ula\\projects\\site"), false);
+  assert.equal(isScratchWorkingDirectory(`/Users/someone/.claude/jobs/ab12/${scratchName}/work`), true);
+  assert.equal(isScratchWorkingDirectory(`C:\\Users\\someone\\.claude\\jobs\\ab12\\${scratchName}\\work`), true);
+  assert.equal(isScratchWorkingDirectory("C:\\Users\\someone\\projects\\site"), false);
 });
 
 // ------------------------------------------------------------ CLI lookup ---
 
 test("on Windows the CLI is looked for as an .exe, then a .cmd, then on PATH", () => {
   assert.deepEqual(claudeBinaryCandidates(WINDOWS), [
-    "C:\\Users\\ula\\.local\\bin\\claude.exe",
-    "C:\\Users\\ula\\.local\\bin\\claude.cmd"
+    "C:\\Users\\someone\\.local\\bin\\claude.exe",
+    "C:\\Users\\someone\\.local\\bin\\claude.cmd"
   ]);
   assert.deepEqual(claudeBinaryNamesOnPath("win32"), ["claude.exe", "claude.cmd"]);
-  assert.deepEqual(claudeBinaryCandidates(MACOS), ["/Users/ula/.local/bin/claude"]);
+  assert.deepEqual(claudeBinaryCandidates(MACOS), ["/Users/someone/.local/bin/claude"]);
   assert.deepEqual(claudeBinaryNamesOnPath("darwin"), ["claude"]);
 });
 
@@ -239,18 +239,18 @@ test("the Windows lookup order, one step at a time", () => {
   const exeInLocalBin = claudeExecutablePath({
     ...WINDOWS,
     environment: {},
-    fileExists: (candidate) => candidate === "C:\\Users\\ula\\.local\\bin\\claude.exe",
+    fileExists: (candidate) => candidate === "C:\\Users\\someone\\.local\\bin\\claude.exe",
     findOnPath: () => ""
   });
-  assert.equal(exeInLocalBin, "C:\\Users\\ula\\.local\\bin\\claude.exe");
+  assert.equal(exeInLocalBin, "C:\\Users\\someone\\.local\\bin\\claude.exe");
 
   const cmdInLocalBin = claudeExecutablePath({
     ...WINDOWS,
     environment: {},
-    fileExists: (candidate) => candidate === "C:\\Users\\ula\\.local\\bin\\claude.cmd",
+    fileExists: (candidate) => candidate === "C:\\Users\\someone\\.local\\bin\\claude.cmd",
     findOnPath: () => ""
   });
-  assert.equal(cmdInLocalBin, "C:\\Users\\ula\\.local\\bin\\claude.cmd");
+  assert.equal(cmdInLocalBin, "C:\\Users\\someone\\.local\\bin\\claude.cmd");
 
   const fromPath = claudeExecutablePath({
     ...WINDOWS,
@@ -278,23 +278,23 @@ test("the Windows lookup order, one step at a time", () => {
 });
 
 test("a .cmd is spawned through the command interpreter, an .exe is not", () => {
-  const throughInterpreter = spawnPlanFor("C:\\Users\\ula\\.local\\bin\\claude.cmd", ["--resume", "one"], "win32");
+  const throughInterpreter = spawnPlanFor("C:\\Users\\someone\\.local\\bin\\claude.cmd", ["--resume", "one"], "win32");
   assert.equal(/cmd\.exe$/i.test(throughInterpreter.file), true);
   assert.deepEqual(throughInterpreter.commandArguments, [
     "/c",
-    "C:\\Users\\ula\\.local\\bin\\claude.cmd",
+    "C:\\Users\\someone\\.local\\bin\\claude.cmd",
     "--resume",
     "one"
   ]);
   assert.equal(throughInterpreter.throughCommandInterpreter, true);
 
-  const direct = spawnPlanFor("C:\\Users\\ula\\.local\\bin\\claude.exe", ["--resume", "one"], "win32");
-  assert.equal(direct.file, "C:\\Users\\ula\\.local\\bin\\claude.exe");
+  const direct = spawnPlanFor("C:\\Users\\someone\\.local\\bin\\claude.exe", ["--resume", "one"], "win32");
+  assert.equal(direct.file, "C:\\Users\\someone\\.local\\bin\\claude.exe");
   assert.deepEqual(direct.commandArguments, ["--resume", "one"]);
   assert.equal(direct.throughCommandInterpreter, false);
 
-  const onMac = spawnPlanFor("/Users/ula/.local/bin/claude", ["--resume", "one"], "darwin");
-  assert.equal(onMac.file, "/Users/ula/.local/bin/claude");
+  const onMac = spawnPlanFor("/Users/someone/.local/bin/claude", ["--resume", "one"], "darwin");
+  assert.equal(onMac.file, "/Users/someone/.local/bin/claude");
   assert.deepEqual(onMac.commandArguments, ["--resume", "one"]);
 });
 
@@ -304,24 +304,24 @@ test("a Windows pty asks for ConPTY and a macOS one asks for nothing", () => {
 });
 
 test("PATH gets the folders that exist on that system, and no others", () => {
-  assert.deepEqual(shellPathFolders(WINDOWS), ["C:\\Users\\ula\\.local\\bin"]);
+  assert.deepEqual(shellPathFolders(WINDOWS), ["C:\\Users\\someone\\.local\\bin"]);
   assert.deepEqual(shellPathFolders(MACOS), [
-    "/Users/ula/.local/bin",
+    "/Users/someone/.local/bin",
     "/opt/homebrew/bin",
     "/usr/local/bin"
   ]);
 
   const windowsEnvironment = { PATH: "C:\\Windows\\System32;C:\\Windows" };
   ensureShellPath({ ...WINDOWS, environment: windowsEnvironment });
-  assert.equal(windowsEnvironment.PATH, "C:\\Users\\ula\\.local\\bin;C:\\Windows\\System32;C:\\Windows");
+  assert.equal(windowsEnvironment.PATH, "C:\\Users\\someone\\.local\\bin;C:\\Windows\\System32;C:\\Windows");
 
-  const alreadyThere = { PATH: "c:\\users\\ula\\.local\\bin;C:\\Windows" };
+  const alreadyThere = { PATH: "c:\\users\\someone\\.local\\bin;C:\\Windows" };
   ensureShellPath({ ...WINDOWS, environment: alreadyThere });
-  assert.equal(alreadyThere.PATH, "c:\\users\\ula\\.local\\bin;C:\\Windows", "case-insensitive, so nothing is doubled");
+  assert.equal(alreadyThere.PATH, "c:\\users\\someone\\.local\\bin;C:\\Windows", "case-insensitive, so nothing is doubled");
 
   const macEnvironment = { PATH: "/usr/bin:/bin" };
   ensureShellPath({ ...MACOS, environment: macEnvironment });
-  assert.equal(macEnvironment.PATH, "/Users/ula/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin");
+  assert.equal(macEnvironment.PATH, "/Users/someone/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin");
 });
 
 test("the terminal environment is the same on both: colors in, nesting markers out", () => {
@@ -336,15 +336,15 @@ test("the terminal environment is the same on both: colors in, nesting markers o
 // ---------------------------------------------------- the clauding channel ---
 
 test("Windows gets a named pipe, macOS a socket file", () => {
-  const pipe = commandChannelPath({ platform: "win32", userDataDirectory: "C:\\Users\\ula\\AppData\\Roaming\\Clauding" });
+  const pipe = commandChannelPath({ platform: "win32", userDataDirectory: "C:\\Users\\someone\\AppData\\Roaming\\Clauding" });
   assert.match(pipe, /^\\\\\.\\pipe\\clauding-[0-9a-f]{16}$/);
   assert.equal(commandChannelIsFile(pipe), false, "a pipe is never unlinked or chmod-ed");
 
   const socket = commandChannelPath({
     platform: "darwin",
-    userDataDirectory: "/Users/ula/Library/Application Support/Clauding"
+    userDataDirectory: "/Users/someone/Library/Application Support/Clauding"
   });
-  assert.equal(socket, "/Users/ula/Library/Application Support/Clauding/clauding.sock");
+  assert.equal(socket, "/Users/someone/Library/Application Support/Clauding/clauding.sock");
   assert.equal(commandChannelIsFile(socket), true);
 });
 
@@ -369,9 +369,9 @@ test("a user id, when there is one, names the pipe instead of a hash", () => {
 });
 
 test("a Windows file URL keeps its drive", () => {
-  assert.equal(filePathFromUrl("file:///C:/Users/ula/page.html", "win32"), "C:\\Users\\ula\\page.html");
-  assert.equal(filePathFromUrl("file:///C:/Users/ula/a%20page.html", "win32"), "C:\\Users\\ula\\a page.html");
-  assert.equal(filePathFromUrl("file:///Users/ula/page.html", "darwin"), "/Users/ula/page.html");
+  assert.equal(filePathFromUrl("file:///C:/Users/someone/page.html", "win32"), "C:\\Users\\someone\\page.html");
+  assert.equal(filePathFromUrl("file:///C:/Users/someone/a%20page.html", "win32"), "C:\\Users\\someone\\a page.html");
+  assert.equal(filePathFromUrl("file:///Users/someone/page.html", "darwin"), "/Users/someone/page.html");
   assert.equal(expandHomePath("~/page.html", "win32"), path.win32.join(os.homedir(), "page.html"));
 });
 
@@ -414,9 +414,9 @@ test("Ctrl+C stays the interrupt on Windows, while ⌘C is the menu's copy on ma
 
 test("a Windows path printed by the CLI is a clickable page link", () => {
   const found = (line) => line.match(localPagePattern());
-  assert.deepEqual(found("wrote C:\\Users\\ula\\plan.md just now"), ["C:\\Users\\ula\\plan.md"]);
-  assert.deepEqual(found("open file:///C:/Users/ula/page.html"), ["file:///C:/Users/ula/page.html"]);
-  assert.deepEqual(found("see /Users/ula/plan.md"), ["/Users/ula/plan.md"]);
+  assert.deepEqual(found("wrote C:\\Users\\someone\\plan.md just now"), ["C:\\Users\\someone\\plan.md"]);
+  assert.deepEqual(found("open file:///C:/Users/someone/page.html"), ["file:///C:/Users/someone/page.html"]);
+  assert.deepEqual(found("see /Users/someone/plan.md"), ["/Users/someone/plan.md"]);
   assert.deepEqual(found("see ~/notes/a.html"), ["~/notes/a.html"]);
   assert.equal(found("https://example.com/page.html"), null, "a web address is the link addon's job");
 });
@@ -492,12 +492,12 @@ test("the skills scanner looks in Windows places on Windows and macOS places on 
   const onWindows = scanRootFolders({
     homeDirectory: WINDOWS_HOME,
     platform: "win32",
-    environment: { APPDATA: "C:\\Users\\ula\\AppData\\Roaming" }
+    environment: { APPDATA: "C:\\Users\\someone\\AppData\\Roaming" }
   }).map((root) => root.folder);
-  assert.ok(onWindows.includes("C:\\Users\\ula\\.claude\\plugins"));
-  assert.ok(onWindows.includes("C:\\Users\\ula\\AppData\\Roaming\\Claude"));
-  assert.ok(onWindows.includes("C:\\Users\\ula\\.hermes\\skills"));
-  assert.ok(onWindows.includes("C:\\Users\\ula\\Documents"));
+  assert.ok(onWindows.includes("C:\\Users\\someone\\.claude\\plugins"));
+  assert.ok(onWindows.includes("C:\\Users\\someone\\AppData\\Roaming\\Claude"));
+  assert.ok(onWindows.includes("C:\\Users\\someone\\.hermes\\skills"));
+  assert.ok(onWindows.includes("C:\\Users\\someone\\Documents"));
   assert.equal(
     onWindows.some((folder) => folder.includes("Library")),
     false,
@@ -507,8 +507,8 @@ test("the skills scanner looks in Windows places on Windows and macOS places on 
   const onMac = scanRootFolders({ homeDirectory: MACOS_HOME, platform: "darwin", environment: {} }).map(
     (root) => root.folder
   );
-  assert.ok(onMac.includes("/Users/ula/Library/Application Support/Claude"));
-  assert.ok(onMac.includes("/Users/ula/.claude/plugins"));
+  assert.ok(onMac.includes("/Users/someone/Library/Application Support/Claude"));
+  assert.ok(onMac.includes("/Users/someone/.claude/plugins"));
   assert.equal(
     onMac.some((folder) => folder.includes("AppData")),
     false
@@ -519,20 +519,20 @@ test("the skills scanner looks in Windows places on Windows and macOS places on 
 
 test("the Windows install plan names every file it would write", () => {
   const plan = windowsInstallPlan({
-    projectRoot: "C:\\Users\\ula\\projects\\clauding",
+    projectRoot: "C:\\Users\\someone\\projects\\clauding",
     version: "0.3.0",
-    environment: { LOCALAPPDATA: "C:\\Users\\ula\\AppData\\Local", APPDATA: "C:\\Users\\ula\\AppData\\Roaming" },
+    environment: { LOCALAPPDATA: "C:\\Users\\someone\\AppData\\Local", APPDATA: "C:\\Users\\someone\\AppData\\Roaming" },
     homeDirectory: WINDOWS_HOME
   });
-  assert.equal(plan.installFolder, "C:\\Users\\ula\\AppData\\Local\\Programs\\Clauding");
-  assert.equal(plan.iconPath, "C:\\Users\\ula\\AppData\\Local\\Programs\\Clauding\\Clauding.ico");
+  assert.equal(plan.installFolder, "C:\\Users\\someone\\AppData\\Local\\Programs\\Clauding");
+  assert.equal(plan.iconPath, "C:\\Users\\someone\\AppData\\Local\\Programs\\Clauding\\Clauding.ico");
   assert.equal(
     plan.shortcutPath,
-    "C:\\Users\\ula\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Clauding.lnk"
+    "C:\\Users\\someone\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Clauding.lnk"
   );
   assert.equal(
     plan.electronExecutablePath,
-    "C:\\Users\\ula\\projects\\clauding\\node_modules\\electron\\dist\\electron.exe"
+    "C:\\Users\\someone\\projects\\clauding\\node_modules\\electron\\dist\\electron.exe"
   );
   assert.deepEqual(
     plan.files.map((file) => path.win32.basename(file.path)),
@@ -540,8 +540,8 @@ test("the Windows install plan names every file it would write", () => {
   );
   assert.deepEqual(
     windowsUninstallPlan({
-      projectRoot: "C:\\Users\\ula\\projects\\clauding",
-      environment: { LOCALAPPDATA: "C:\\Users\\ula\\AppData\\Local", APPDATA: "C:\\Users\\ula\\AppData\\Roaming" },
+      projectRoot: "C:\\Users\\someone\\projects\\clauding",
+      environment: { LOCALAPPDATA: "C:\\Users\\someone\\AppData\\Local", APPDATA: "C:\\Users\\someone\\AppData\\Roaming" },
       homeDirectory: WINDOWS_HOME
     }),
     { installFolder: plan.installFolder, shortcutPath: plan.shortcutPath, markerPath: plan.markerPath }
@@ -550,13 +550,13 @@ test("the Windows install plan names every file it would write", () => {
 
 test("the launcher runs the checkout, and carries no code of the app", () => {
   const plan = windowsInstallPlan({
-    projectRoot: "C:\\Users\\ula\\projects\\clauding",
+    projectRoot: "C:\\Users\\someone\\projects\\clauding",
     environment: { LOCALAPPDATA: "C:\\L", APPDATA: "C:\\R" },
     homeDirectory: WINDOWS_HOME
   });
   const [visualBasic, batch] = plan.files;
   assert.ok(visualBasic.contents.includes("electron.exe"));
-  assert.ok(visualBasic.contents.includes("C:\\Users\\ula\\projects\\clauding"));
+  assert.ok(visualBasic.contents.includes("C:\\Users\\someone\\projects\\clauding"));
   assert.ok(visualBasic.contents.includes("WScript.Shell"), "wscript runs it, so no console window appears");
   assert.ok(visualBasic.contents.includes(", 1, False"), "and it does not wait for Electron to finish");
   assert.ok(batch.contents.startsWith("@echo off"));
@@ -570,7 +570,7 @@ test("the launcher runs the checkout, and carries no code of the app", () => {
 
 test("the Start Menu shortcut is made by PowerShell, with our icon and a quoted path", () => {
   const plan = windowsInstallPlan({
-    projectRoot: "C:\\Users\\ula\\it's here\\clauding",
+    projectRoot: "C:\\Users\\someone\\it's here\\clauding",
     environment: { LOCALAPPDATA: "C:\\L", APPDATA: "C:\\R" },
     homeDirectory: WINDOWS_HOME
   });

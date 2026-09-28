@@ -335,6 +335,11 @@ contextBridge.exposeInMainWorld("clauding", {
   openPanelSkillsTab(sessionKey) {
     return ipcRenderer.invoke(CHANNELS.panelOpenSkills, { sessionKey });
   },
+  // A ClickUp task, read by the app itself (never a webview), as a tab of
+  // the panel of the project on screen.
+  openPanelTaskTab(sessionKey, taskId, title) {
+    return ipcRenderer.invoke(CHANNELS.panelOpenTask, { sessionKey, taskId, title });
+  },
   closePanelTab(sessionKey, tabId) {
     return ipcRenderer.invoke(CHANNELS.panelClose, { sessionKey, tabId });
   },

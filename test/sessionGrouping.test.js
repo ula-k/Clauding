@@ -104,8 +104,8 @@ test("a bucket reports what its rows would show, so a folded group stays honest"
 
 test("search matches the title, the agent, the folder and the first prompt", () => {
   const rows = [
-    session({ sessionId: "by-title", title: "Blueprint onboarding" }),
-    session({ sessionId: "by-agent", agent: { id: "agent-one", name: "Spec Writer" } }),
+    session({ sessionId: "by-title", title: "Website onboarding" }),
+    session({ sessionId: "by-agent", agent: { id: "agent-one", name: "Spec Author" } }),
     session({
       sessionId: "by-folder",
       projectLabel: "…/projects/langtrainer",
@@ -117,8 +117,8 @@ test("search matches the title, the agent, the folder and the first prompt", () 
   ];
   const found = (query) =>
     rows.filter((entry) => matchesSearch(entry, query)).map((entry) => entry.sessionId);
-  assert.deepEqual(found("blueprint"), ["by-title"]);
-  assert.deepEqual(found("spec writer"), ["by-agent"]);
+  assert.deepEqual(found("website"), ["by-title"]);
+  assert.deepEqual(found("spec author"), ["by-agent"]);
   assert.deepEqual(found("langtrainer"), ["by-folder"]);
   assert.deepEqual(found("example sentences"), ["by-prompt"]);
   assert.deepEqual(found("panel handle"), ["by-summary"]);
@@ -127,10 +127,10 @@ test("search matches the title, the agent, the folder and the first prompt", () 
 
 test("a match inside a folded group is shown: every group opens while searching", () => {
   const result = build({
-    sessions: [session({ sessionId: "secret", title: "Blueprint onboarding" })],
+    sessions: [session({ sessionId: "secret", title: "Website onboarding" })],
     membership: { secret: "private" },
     collapsed: ["private"],
-    searchText: "blueprint"
+    searchText: "website"
   });
   assert.equal(result.buckets[1].collapsed, false, "the chevron is ignored while a query is typed");
   assert.deepEqual(result.buckets[1].sessions.map((entry) => entry.sessionId), ["secret"]);
@@ -138,16 +138,16 @@ test("a match inside a folded group is shown: every group opens while searching"
 });
 
 test("search is case-insensitive and ignores the spaces around the query", () => {
-  const rows = [session({ sessionId: "one", title: "Blueprint Onboarding" })];
-  assert.equal(build({ sessions: rows, searchText: "  BLUEPRINT " }).visibleCount, 1);
+  const rows = [session({ sessionId: "one", title: "Website Onboarding" })];
+  assert.equal(build({ sessions: rows, searchText: "  WEBSITE " }).visibleCount, 1);
   assert.equal(build({ sessions: rows, searchText: "nothing here" }).visibleCount, 0);
 });
 
 test("a hidden session stays hidden while searching", () => {
   const result = build({
-    sessions: [session({ sessionId: "secret", title: "Blueprint" })],
+    sessions: [session({ sessionId: "secret", title: "Website" })],
     hidden: ["secret"],
-    searchText: "blueprint"
+    searchText: "website"
   });
   assert.equal(result.visibleCount, 0);
   assert.deepEqual(result.hiddenSessions.map((entry) => entry.sessionId), ["secret"]);
@@ -156,7 +156,7 @@ test("a hidden session stays hidden while searching", () => {
 test("an agent's own list counts the hidden ones apart", () => {
   const rows = [
     session({ sessionId: "linked-by-store" }),
-    session({ sessionId: "linked-by-terminal", agent: { id: "agent-one", name: "Spec Writer" } }),
+    session({ sessionId: "linked-by-terminal", agent: { id: "agent-one", name: "Spec Author" } }),
     session({ sessionId: "linked-but-hidden" }),
     session({ sessionId: "someone-else" })
   ];

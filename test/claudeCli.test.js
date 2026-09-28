@@ -15,7 +15,7 @@ import {
 import { claudeExecutablePath, spawnPlanFor, terminalEnvironment } from "../electron/claudeCli.js";
 import { forkDisplayName, FORK_NAME_MAX_LENGTH, FORK_NAME_SUFFIX } from "../src/renderer/forkName.js";
 
-const AGENT = { id: "agent-one", name: "Spec Writer", emoji: "📐" };
+const AGENT = { id: "agent-one", name: "Spec Author", emoji: "📐" };
 
 function valueAfter(commandArguments, flag) {
   const position = commandArguments.indexOf(flag);
@@ -83,7 +83,7 @@ test("with nothing to append there is no snapshot flag either", () => {
 
 test("a name the user typed wins over the agent's own", () => {
   assert.equal(valueAfter(buildClaudeArguments({ sessionName: "My name", agent: AGENT }).commandArguments, "--name"), "My name");
-  assert.equal(valueAfter(buildClaudeArguments({ agent: AGENT }).commandArguments, "--name"), "📐 Spec Writer");
+  assert.equal(valueAfter(buildClaudeArguments({ agent: AGENT }).commandArguments, "--name"), "📐 Spec Author");
   assert.equal(buildClaudeArguments({}).commandArguments.includes("--name"), false);
   assert.equal(buildClaudeArguments({ sessionName: "   " }).commandArguments.includes("--name"), false);
 });

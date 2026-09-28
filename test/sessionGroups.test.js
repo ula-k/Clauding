@@ -46,10 +46,10 @@ test("a fresh store has only Default, unnamed and last", () => {
 
 test("a new group opens at the top and Default stays pinned at the bottom", () => {
   const { store } = storeIn(scratchFolder());
-  store.createGroup("Blueprint");
+  store.createGroup("Website");
   store.createGroup("Clauding");
   const state = store.get();
-  assert.deepEqual(groupNames(state), ["Clauding", "Blueprint", null]);
+  assert.deepEqual(groupNames(state), ["Clauding", "Website", null]);
   assert.equal(state.groups[state.groups.length - 1].id, DEFAULT_GROUP_ID);
   assert.deepEqual(state.groups.map((group) => group.order), [0, 1, 2]);
 });
@@ -81,7 +81,7 @@ test("move up and down swap neighbours and never move Default", () => {
 
 test("deleting a group sends its sessions back to Default and cannot touch Default", () => {
   const { store } = storeIn(scratchFolder());
-  const group = store.createGroup("Blueprint");
+  const group = store.createGroup("Website");
   store.assignSession("session-one", group.id);
   store.setCollapsed(group.id, true);
   assert.equal(store.get().membership["session-one"], group.id);
@@ -98,7 +98,7 @@ test("deleting a group sends its sessions back to Default and cannot touch Defau
 
 test("assigning a session to Default or to an unknown group clears its membership", () => {
   const { store } = storeIn(scratchFolder());
-  const group = store.createGroup("Blueprint");
+  const group = store.createGroup("Website");
   store.assignSession("session-one", group.id);
   store.assignSession("session-one", DEFAULT_GROUP_ID);
   assert.equal(store.get().membership["session-one"], undefined);
@@ -108,7 +108,7 @@ test("assigning a session to Default or to an unknown group clears its membershi
 
 test("hiding keeps the session's group, so unhiding puts it back where it was", () => {
   const { store } = storeIn(scratchFolder());
-  const group = store.createGroup("Blueprint");
+  const group = store.createGroup("Website");
   store.assignSession("session-one", group.id);
   store.setHidden("session-one", true);
   assert.deepEqual(store.get().hidden, ["session-one"]);
@@ -194,7 +194,7 @@ test("unhiding by hand forgets the note, so hiding again starts from scratch", (
 
 test("a deleted session is forgotten by the groups, the hidden list and the notes", () => {
   const { store } = storeIn(scratchFolder());
-  const group = store.createGroup("Blueprint");
+  const group = store.createGroup("Website");
   store.assignSession("session-one", group.id);
   store.setHidden("session-one", true, true);
   assert.equal(store.forgetSession("session-two").hidden.length, 1, "an unknown session changes nothing");
@@ -255,7 +255,7 @@ test("a renamed Default keeps its id and its place at the bottom", () => {
 test("everything survives a round trip through the file", async () => {
   const folder = scratchFolder();
   const first = storeIn(folder);
-  const group = first.store.createGroup("Blueprint");
+  const group = first.store.createGroup("Website");
   first.store.assignSession("session-one", group.id);
   first.store.setHidden("session-two", true);
   first.store.setCollapsed(group.id, true);
@@ -266,7 +266,7 @@ test("everything survives a round trip through the file", async () => {
 
   const reopened = createSessionGroupStore({ storagePath: first.storagePath });
   const state = reopened.get();
-  assert.deepEqual(groupNames(state), ["Blueprint", null]);
+  assert.deepEqual(groupNames(state), ["Website", null]);
   assert.equal(state.membership["session-one"], group.id);
   assert.deepEqual(state.hidden, ["session-two"]);
   assert.deepEqual(state.collapsed, [group.id]);

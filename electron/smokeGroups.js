@@ -5,7 +5,7 @@
 // It never spawns a `claude` process and never writes anywhere except
 // <userData>/groups.json (through the real store, the same calls the
 // renderer's IPC makes), and it puts back what it borrowed at the end: the
-// two sessions it hid are unhidden again, the "Blueprint" group stays.
+// two sessions it hid are unhidden again, the "Website" group stays.
 //
 // Screenshots go to CLAUDING_SMOKE_FOLDER.
 import fs from "node:fs";
@@ -13,7 +13,7 @@ import path from "node:path";
 import { smokeFolderPath } from "./smokeFolder.js";
 
 const SMOKE_DIRECTORY = smokeFolderPath();
-const GROUP_NAME = process.env.CLAUDING_SMOKE_GROUP_NAME || "Blueprint";
+const GROUP_NAME = process.env.CLAUDING_SMOKE_GROUP_NAME || "Website";
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));

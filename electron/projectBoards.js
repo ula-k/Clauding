@@ -9,19 +9,20 @@
 //     "boards": [
 //       {
 //         "id": "<uuid>",
-//         "name": "Groove",
+//         "name": "Website",
 //         "color": "--project-color-0",
 //         "group": "Work",
 //         "clickup": {
-//           "buildListId": "901…", "buildListName": "Initial Build Web",
+//           "buildListId": "901…", "buildListName": "Web build list",
 //           "planningListId": "901…", "planningListName": "…",
-//           "seedTaskId": "86ak7bh2e"        // how the lists were found
+//           "seedTaskId": "abc123aa1"        // how the lists were found
 //         },
 //         "clickupUserId": "123456",
+//         "specUrlFieldName": "Spec URL",   // the custom field holding the spec link
 //         "repositories": [
-//           { "name": "blueprint", "localPath": "/Users/…/blueprint",
-//             "githubSlug": "hesdevs/blueprint",
-//             "baseBranch": "docker-deploy", "stagingBranch": "docker-staging" }
+//           { "name": "website", "localPath": "/Users/…/website",
+//             "githubSlug": "acme/website",
+//             "baseBranch": "main", "stagingBranch": "staging" }
 //         ],
 //         "deadlines": [
 //           { "id": "<uuid>", "label": "Feature freeze", "date": 1760486400000,
@@ -49,6 +50,9 @@ const SAVE_DEBOUNCE_MILLISECONDS = 200;
 const MAXIMUM_NAME_LENGTH = 60;
 const MAXIMUM_UP_NEXT = 50;
 const ROLES = ["spec", "builder", "other"];
+export const DEFAULT_BASE_BRANCH = "main";
+export const DEFAULT_STAGING_BRANCH = "staging";
+export const DEFAULT_SPEC_URL_FIELD_NAME = "Spec URL";
 
 function cleanText(value, maximumLength = 200) {
   return String(value === undefined || value === null ? "" : value).replace(/\s+/g, " ").trim().slice(0, maximumLength);
@@ -86,8 +90,8 @@ function cleanRepository(raw) {
     localPath: raw.localPath ? String(raw.localPath) : null,
     githubSlug: raw.githubSlug ? cleanText(raw.githubSlug, 120) : null,
     remoteName: cleanText(raw.remoteName, 40) || "origin",
-    baseBranch: cleanText(raw.baseBranch, 120) || "docker-deploy",
-    stagingBranch: cleanText(raw.stagingBranch, 120) || "docker-staging"
+    baseBranch: cleanText(raw.baseBranch, 120) || DEFAULT_BASE_BRANCH,
+    stagingBranch: cleanText(raw.stagingBranch, 120) || DEFAULT_STAGING_BRANCH
   };
 }
 
@@ -163,6 +167,7 @@ export function cleanBoard(raw) {
       seedTaskId: cleanId(clickup.seedTaskId)
     },
     clickupUserId: cleanId(raw.clickupUserId),
+    specUrlFieldName: cleanText(raw.specUrlFieldName, 120) || DEFAULT_SPEC_URL_FIELD_NAME,
     repositories: (Array.isArray(raw.repositories) ? raw.repositories : []).map(cleanRepository).filter(Boolean),
     deadlines: (Array.isArray(raw.deadlines) ? raw.deadlines : []).map(cleanDeadline).filter(Boolean),
     startDate: Number.isFinite(Number(raw.startDate)) && raw.startDate !== null ? Number(raw.startDate) : null,

@@ -213,8 +213,8 @@ test("the Windows install is a different thing entirely, and never names /Applic
   // a shortcut instead (scripts/lib/windowsLauncher.js, and the whole plan
   // is read back in test/platform.test.js).
   const plan = windowsInstallPlan({
-    projectRoot: "C:\\Users\\ula\\clauding",
-    environment: { LOCALAPPDATA: "C:\\Users\\ula\\AppData\\Local", APPDATA: "C:\\Users\\ula\\AppData\\Roaming" }
+    projectRoot: "C:\\Users\\someone\\clauding",
+    environment: { LOCALAPPDATA: "C:\\Users\\someone\\AppData\\Local", APPDATA: "C:\\Users\\someone\\AppData\\Roaming" }
   });
   const everything = [plan.installFolder, plan.shortcutPath, plan.shortcutScript]
     .concat(plan.files.map((file) => `${file.path}${file.contents}`))

@@ -1,0 +1,1448 @@
+{
+  "boards": {
+    "website": {
+      "board": {
+        "name": "Website",
+        "group": "Work",
+        "color": "--project-color-0",
+        "clickupUserId": "1001",
+        "clickup": {
+          "buildListId": "900000000001",
+          "buildListName": "Web build list",
+          "planningListId": "900000000002",
+          "planningListName": "Web planning"
+        },
+        "repositories": [
+          {
+            "name": "website",
+            "githubSlug": "acme/website"
+          },
+          {
+            "name": "mobile",
+            "githubSlug": "acme/mobile"
+          }
+        ],
+        "startDate": 1788278400000,
+        "deadlines": [
+          {
+            "id": "d1",
+            "label": "Specs v1",
+            "date": 1788624000000
+          },
+          {
+            "id": "d2",
+            "label": "Content ready",
+            "date": 1789660800000
+          },
+          {
+            "id": "d3",
+            "label": "Feature freeze",
+            "date": 1792166400000
+          },
+          {
+            "id": "d4",
+            "label": "QA done",
+            "date": 1793638800000
+          },
+          {
+            "id": "d5",
+            "label": "Launch",
+            "date": 1794934800000
+          }
+        ],
+        "upNext": [
+          "web0008",
+          "web0007",
+          "web0010"
+        ]
+      },
+      "now": 1790611200000,
+      "buildTasks": [
+        {
+          "id": "web0001",
+          "name": "User profile + edit modal",
+          "url": "https://app.clickup.com/t/web0001",
+          "status": {
+            "status": "in progress",
+            "type": "custom",
+            "color": "#b9a7e6"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1788883200000",
+          "date_updated": "1790607600000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [
+            {
+              "task_id": "web0001",
+              "depends_on": "pln0002"
+            }
+          ],
+          "custom_fields": [
+            {
+              "name": "Design link",
+              "type": "url",
+              "value": "https://example.com/design/profile"
+            },
+            {
+              "name": "Estimate",
+              "type": "short_text",
+              "value": "3 days"
+            }
+          ],
+          "description": "Profile page and the edit modal, per the approved spec. The avatar upload reuses the existing image service; the display name is validated on the client and again on the server.",
+          "comments": [
+            {
+              "id": "web0001-c0",
+              "user": {
+                "username": "Sam Lee"
+              },
+              "comment_text": "The modal should reuse the new card component, not the old one.",
+              "date": "1790092800000"
+            },
+            {
+              "id": "web0001-c1",
+              "user": {
+                "username": "Alex Doe"
+              },
+              "comment_text": "Agreed, the builder is on it.",
+              "date": "1790179200000"
+            }
+          ]
+        },
+        {
+          "id": "web0002",
+          "name": "Checkout",
+          "url": "https://app.clickup.com/t/web0002",
+          "status": {
+            "status": "feedback",
+            "type": "custom",
+            "color": "#d6c58f"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1788451200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [
+            {
+              "task_id": "web0002",
+              "depends_on": "pln0003"
+            }
+          ],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0003",
+          "name": "Search page",
+          "url": "https://app.clickup.com/t/web0003",
+          "status": {
+            "status": "in staging",
+            "type": "custom",
+            "color": "#8fbcb4"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            },
+            {
+              "id": 1002,
+              "username": "Sam Lee",
+              "color": "#8fa9c9"
+            }
+          ],
+          "date_created": "1788192000000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [
+            {
+              "task_id": "web0003",
+              "depends_on": "pln0004"
+            }
+          ],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0004",
+          "name": "Home page",
+          "url": "https://app.clickup.com/t/web0004",
+          "status": {
+            "status": "in progress",
+            "type": "custom",
+            "color": "#b9a7e6"
+          },
+          "assignees": [
+            {
+              "id": 1002,
+              "username": "Sam Lee",
+              "color": "#8fa9c9"
+            }
+          ],
+          "date_created": "1789056000000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [
+            {
+              "task_id": "web0004",
+              "depends_on": "pln0001"
+            }
+          ],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0005",
+          "name": "Footer links",
+          "url": "https://app.clickup.com/t/web0005",
+          "status": {
+            "status": "issues found",
+            "type": "custom",
+            "color": "#d9968a"
+          },
+          "assignees": [
+            {
+              "id": 1002,
+              "username": "Sam Lee",
+              "color": "#8fa9c9"
+            }
+          ],
+          "date_created": "1788710400000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0006",
+          "name": "Cookie banner",
+          "url": "https://app.clickup.com/t/web0006",
+          "status": {
+            "status": "in staging",
+            "type": "custom",
+            "color": "#8fbcb4"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1788537600000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0007",
+          "name": "Order history",
+          "url": "https://app.clickup.com/t/web0007",
+          "status": {
+            "status": "Open",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [],
+          "date_created": "1789833600000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [
+            {
+              "task_id": "web0007",
+              "depends_on": "pln0005"
+            }
+          ],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0008",
+          "name": "Password reset",
+          "url": "https://app.clickup.com/t/web0008",
+          "status": {
+            "status": "Open",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1789920000000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [
+            {
+              "task_id": "web0008",
+              "depends_on": "pln0007"
+            }
+          ],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0009",
+          "name": "Language switcher",
+          "url": "https://app.clickup.com/t/web0009",
+          "status": {
+            "status": "Open",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [],
+          "date_created": "1789574400000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0010",
+          "name": "Contact form",
+          "url": "https://app.clickup.com/t/web0010",
+          "status": {
+            "status": "Open",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [
+            {
+              "id": 1002,
+              "username": "Sam Lee",
+              "color": "#8fa9c9"
+            }
+          ],
+          "date_created": "1789574400000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0011",
+          "name": "404 page",
+          "url": "https://app.clickup.com/t/web0011",
+          "status": {
+            "status": "Open",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [],
+          "date_created": "1789660800000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0012",
+          "name": "Sitemap",
+          "url": "https://app.clickup.com/t/web0012",
+          "status": {
+            "status": "Open",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [],
+          "date_created": "1789660800000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0013",
+          "name": "Blog list",
+          "url": "https://app.clickup.com/t/web0013",
+          "status": {
+            "status": "in progress",
+            "type": "custom",
+            "color": "#b9a7e6"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1789315200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0014",
+          "name": "Header navigation",
+          "url": "https://app.clickup.com/t/web0014",
+          "status": {
+            "status": "ready for prod",
+            "type": "custom",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1002,
+              "username": "Sam Lee",
+              "color": "#8fa9c9"
+            }
+          ],
+          "date_created": "1787155200000",
+          "date_updated": "1790438400000",
+          "date_closed": "1790352000000",
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0015",
+          "name": "Design tokens",
+          "url": "https://app.clickup.com/t/web0015",
+          "status": {
+            "status": "Closed",
+            "type": "closed",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1786723200000",
+          "date_updated": "1790438400000",
+          "date_closed": "1789833600000",
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0016",
+          "name": "Login page",
+          "url": "https://app.clickup.com/t/web0016",
+          "status": {
+            "status": "Closed",
+            "type": "closed",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1002,
+              "username": "Sam Lee",
+              "color": "#8fa9c9"
+            }
+          ],
+          "date_created": "1786982400000",
+          "date_updated": "1790438400000",
+          "date_closed": "1790179200000",
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0017",
+          "name": "Analytics events",
+          "url": "https://app.clickup.com/t/web0017",
+          "status": {
+            "status": "ready for prod",
+            "type": "custom",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1787587200000",
+          "date_updated": "1790438400000",
+          "date_closed": "1790600400000",
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0018",
+          "name": "Favicons",
+          "url": "https://app.clickup.com/t/web0018",
+          "status": {
+            "status": "Closed",
+            "type": "closed",
+            "color": "#a9c7a4"
+          },
+          "assignees": [],
+          "date_created": "1786291200000",
+          "date_updated": "1790438400000",
+          "date_closed": "1788883200000",
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0019",
+          "name": "Pricing table",
+          "url": "https://app.clickup.com/t/web0019",
+          "status": {
+            "status": "feedback",
+            "type": "custom",
+            "color": "#d6c58f"
+          },
+          "assignees": [
+            {
+              "id": 1002,
+              "username": "Sam Lee",
+              "color": "#8fa9c9"
+            }
+          ],
+          "date_created": "1789228800000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "web0001a",
+          "name": "Edit modal validation",
+          "url": "https://app.clickup.com/t/web0001a",
+          "status": {
+            "status": "in progress",
+            "type": "custom",
+            "color": "#b9a7e6"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1789747200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": "web0001",
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        }
+      ],
+      "planningTasks": [
+        {
+          "id": "pln0001",
+          "name": "Home page",
+          "url": "https://app.clickup.com/t/pln0001",
+          "status": {
+            "status": "approved",
+            "type": "custom",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [
+            {
+              "name": "Spec URL",
+              "type": "url",
+              "value": "https://app.clickup.com/999999/v/dc/doc-1/page-1"
+            }
+          ],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0002",
+          "name": "User profile",
+          "url": "https://app.clickup.com/t/pln0002",
+          "status": {
+            "status": "approved",
+            "type": "custom",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [
+            {
+              "name": "Spec URL",
+              "type": "url",
+              "value": "https://app.clickup.com/999999/v/dc/doc-1/page-2"
+            }
+          ],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0003",
+          "name": "Checkout",
+          "url": "https://app.clickup.com/t/pln0003",
+          "status": {
+            "status": "approved",
+            "type": "custom",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [
+            {
+              "name": "Spec URL",
+              "type": "url",
+              "value": "https://app.clickup.com/999999/v/dc/doc-1/page-3"
+            }
+          ],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0004",
+          "name": "Search page",
+          "url": "https://app.clickup.com/t/pln0004",
+          "status": {
+            "status": "approved",
+            "type": "custom",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [
+            {
+              "name": "Spec URL",
+              "type": "url",
+              "value": "https://app.clickup.com/999999/v/dc/doc-1/page-4"
+            }
+          ],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0005",
+          "name": "Order history",
+          "url": "https://app.clickup.com/t/pln0005",
+          "status": {
+            "status": "in review",
+            "type": "custom",
+            "color": "#d6c58f"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [
+            {
+              "name": "Spec URL",
+              "type": "url",
+              "value": "https://app.clickup.com/999999/v/dc/doc-1/page-5"
+            }
+          ],
+          "description": "Technical half of the order history spec: which endpoint lists the orders, the fields each row needs, and what the client stores.",
+          "comments": []
+        },
+        {
+          "id": "pln0006",
+          "name": "Newsletter sign-up",
+          "url": "https://app.clickup.com/t/pln0006",
+          "status": {
+            "status": "in review",
+            "type": "custom",
+            "color": "#d6c58f"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [
+            {
+              "name": "Spec URL",
+              "type": "url",
+              "value": "https://app.clickup.com/999999/v/dc/doc-1/page-6"
+            }
+          ],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0007",
+          "name": "Password reset",
+          "url": "https://app.clickup.com/t/pln0007",
+          "status": {
+            "status": "writing spec",
+            "type": "custom",
+            "color": "#b9a7e6"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [
+            {
+              "name": "Spec URL",
+              "type": "url",
+              "value": "https://app.clickup.com/999999/v/dc/doc-1/page-7"
+            }
+          ],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0008",
+          "name": "Notifications",
+          "url": "https://app.clickup.com/t/pln0008",
+          "status": {
+            "status": "to do",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0009",
+          "name": "Accessibility pass",
+          "url": "https://app.clickup.com/t/pln0009",
+          "status": {
+            "status": "to do",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "pln0010",
+          "name": "Help center",
+          "url": "https://app.clickup.com/t/pln0010",
+          "status": {
+            "status": "to do",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [
+            {
+              "id": 1003,
+              "username": "Rita Ortiz",
+              "color": "#c49bb8"
+            }
+          ],
+          "date_created": "1788019200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000002",
+            "name": "Web planning"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        }
+      ],
+      "sessions": [
+        {
+          "sessionId": "s-profile-build",
+          "title": "profile builder",
+          "lastModified": 1790611080000,
+          "statusGroup": "running",
+          "gitBranch": "CU-web0001",
+          "workingDirectory": "/Users/someone/projects/website-CU-web0001"
+        },
+        {
+          "sessionId": "s-profile-spec",
+          "title": "spec-profile",
+          "lastModified": 1790352000000,
+          "statusGroup": "recent",
+          "firstPrompt": "Write the spec: https://app.clickup.com/t/pln0002"
+        },
+        {
+          "sessionId": "s-checkout",
+          "title": "checkout",
+          "lastModified": 1790608500000,
+          "statusGroup": "waiting",
+          "firstPrompt": "Build https://app.clickup.com/t/web0002",
+          "needsAnswer": true
+        },
+        {
+          "sessionId": "s-search",
+          "title": "search",
+          "lastModified": 1790438400000,
+          "statusGroup": "recent",
+          "gitBranch": "CU-web0003"
+        },
+        {
+          "sessionId": "s-home",
+          "title": "home builder",
+          "lastModified": 1790610000000,
+          "statusGroup": "running",
+          "gitBranch": "CU-web0004"
+        },
+        {
+          "sessionId": "s-orders-spec",
+          "title": "spec-order-history",
+          "lastModified": 1790593200000,
+          "statusGroup": "recent",
+          "firstPrompt": "Planning task https://app.clickup.com/t/pln0005"
+        },
+        {
+          "sessionId": "s-newsletter-spec",
+          "title": "spec-newsletter",
+          "lastModified": 1790265600000,
+          "statusGroup": "recent",
+          "firstPrompt": "https://app.clickup.com/t/pln0006"
+        },
+        {
+          "sessionId": "s-reset-spec",
+          "title": "spec-password-reset",
+          "lastModified": 1790524800000,
+          "statusGroup": "recent",
+          "firstPrompt": "https://app.clickup.com/t/pln0007",
+          "needsAnswer": true
+        }
+      ],
+      "sessionAgents": {
+        "s-profile-build": "agent-builder",
+        "s-profile-spec": "agent-spec",
+        "s-checkout": "agent-builder",
+        "s-search": "agent-builder",
+        "s-home": "agent-builder",
+        "s-orders-spec": "agent-spec",
+        "s-newsletter-spec": "agent-spec",
+        "s-reset-spec": "agent-spec"
+      },
+      "agents": [
+        {
+          "id": "agent-spec",
+          "name": "Spec author",
+          "emoji": "✍️"
+        },
+        {
+          "id": "agent-builder",
+          "name": "Builder",
+          "emoji": "🔨"
+        }
+      ],
+      "repositoryResults": [
+        {
+          "repository": "website",
+          "available": true,
+          "branchesByTask": {
+            "web0001": [
+              {
+                "repository": "website",
+                "name": "CU-web0001",
+                "local": true,
+                "remote": false,
+                "pushed": false,
+                "aheadOfBase": 7,
+                "inStaging": false,
+                "worktreePath": "/Users/someone/projects/website-CU-web0001",
+                "checkedOutInMain": false,
+                "uncommitted": true
+              }
+            ],
+            "web0002": [
+              {
+                "repository": "website",
+                "name": "CU-web0002",
+                "local": true,
+                "remote": true,
+                "pushed": true,
+                "aheadOfBase": 14,
+                "inStaging": false,
+                "worktreePath": null,
+                "checkedOutInMain": false,
+                "uncommitted": null
+              }
+            ],
+            "web0003": [
+              {
+                "repository": "website",
+                "name": "CU-web0003",
+                "local": true,
+                "remote": true,
+                "pushed": true,
+                "aheadOfBase": 9,
+                "inStaging": true,
+                "worktreePath": null,
+                "checkedOutInMain": false,
+                "uncommitted": null
+              }
+            ],
+            "web0004": [
+              {
+                "repository": "website",
+                "name": "CU-web0004",
+                "local": true,
+                "remote": true,
+                "pushed": true,
+                "aheadOfBase": 3,
+                "inStaging": false,
+                "worktreePath": null,
+                "checkedOutInMain": false,
+                "uncommitted": null
+              }
+            ],
+            "web0005": [
+              {
+                "repository": "website",
+                "name": "CU-web0005",
+                "local": true,
+                "remote": true,
+                "pushed": true,
+                "aheadOfBase": 2,
+                "inStaging": true,
+                "worktreePath": null,
+                "checkedOutInMain": false,
+                "uncommitted": null
+              }
+            ],
+            "web0006": [
+              {
+                "repository": "website",
+                "name": "CU-web0006",
+                "local": true,
+                "remote": true,
+                "pushed": true,
+                "aheadOfBase": 4,
+                "inStaging": true,
+                "worktreePath": null,
+                "checkedOutInMain": false,
+                "uncommitted": null
+              }
+            ]
+          }
+        },
+        {
+          "repository": "mobile",
+          "available": true,
+          "branchesByTask": {
+            "web0004": [
+              {
+                "repository": "mobile",
+                "name": "CU-web0004",
+                "local": true,
+                "remote": false,
+                "pushed": false,
+                "aheadOfBase": 1,
+                "inStaging": false,
+                "worktreePath": null,
+                "checkedOutInMain": false,
+                "uncommitted": true
+              }
+            ]
+          }
+        }
+      ],
+      "pullRequestResults": [
+        {
+          "available": true,
+          "byTask": {
+            "web0002": [
+              {
+                "repository": "website",
+                "number": 412,
+                "state": "open",
+                "ci": "failing",
+                "url": "https://github.com/acme/website/pull/412",
+                "branch": "CU-web0002"
+              }
+            ],
+            "web0003": [
+              {
+                "repository": "website",
+                "number": 405,
+                "state": "merged",
+                "ci": "passing",
+                "url": "https://github.com/acme/website/pull/405",
+                "branch": "CU-web0003"
+              }
+            ],
+            "web0004": [
+              {
+                "repository": "website",
+                "number": 418,
+                "state": "open",
+                "ci": "pending",
+                "url": "https://github.com/acme/website/pull/418",
+                "branch": "CU-web0004"
+              }
+            ],
+            "web0005": [
+              {
+                "repository": "website",
+                "number": 399,
+                "state": "merged",
+                "ci": "passing",
+                "url": "https://github.com/acme/website/pull/399",
+                "branch": "CU-web0005"
+              }
+            ],
+            "web0006": [
+              {
+                "repository": "website",
+                "number": 401,
+                "state": "merged",
+                "ci": "passing",
+                "url": "https://github.com/acme/website/pull/401",
+                "branch": "CU-web0006"
+              }
+            ]
+          }
+        },
+        {
+          "available": true,
+          "byTask": {}
+        }
+      ]
+    },
+    "mobile-app": {
+      "board": {
+        "name": "Mobile app",
+        "group": "Work",
+        "color": "--project-color-2",
+        "clickup": {
+          "seedTaskId": "mob0001"
+        },
+        "repositories": [
+          {
+            "name": "mobile"
+          }
+        ]
+      },
+      "clickup": {
+        "ok": false,
+        "error": "no-token",
+        "message": "No ClickUp token on this Mac.",
+        "call": "GET /v2/task/mob0001",
+        "refreshedAt": null,
+        "fromCache": true
+      },
+      "buildTasks": [],
+      "planningTasks": []
+    },
+    "docs-site": {
+      "board": {
+        "name": "Docs site",
+        "group": "Private",
+        "color": "--project-color-1",
+        "clickup": {
+          "buildListName": "Docs"
+        },
+        "deadlines": [
+          {
+            "id": "d1",
+            "label": "Publish",
+            "date": 1791043200000
+          }
+        ]
+      },
+      "now": 1790611200000,
+      "buildTasks": [
+        {
+          "id": "doc0001",
+          "name": "Getting started",
+          "url": "https://app.clickup.com/t/doc0001",
+          "status": {
+            "status": "Closed",
+            "type": "closed",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1788883200000",
+          "date_updated": "1790438400000",
+          "date_closed": "1790265600000",
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "doc0002",
+          "name": "API reference",
+          "url": "https://app.clickup.com/t/doc0002",
+          "status": {
+            "status": "in progress",
+            "type": "custom",
+            "color": "#b9a7e6"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1789315200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "doc0003",
+          "name": "Examples",
+          "url": "https://app.clickup.com/t/doc0003",
+          "status": {
+            "status": "Open",
+            "type": "open",
+            "color": "#87909e"
+          },
+          "assignees": [],
+          "date_created": "1789747200000",
+          "date_updated": "1790438400000",
+          "date_closed": null,
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        },
+        {
+          "id": "doc0004",
+          "name": "FAQ",
+          "url": "https://app.clickup.com/t/doc0004",
+          "status": {
+            "status": "Closed",
+            "type": "closed",
+            "color": "#a9c7a4"
+          },
+          "assignees": [
+            {
+              "id": 1001,
+              "username": "Alex Doe",
+              "color": "#b9a7e6"
+            }
+          ],
+          "date_created": "1789574400000",
+          "date_updated": "1790438400000",
+          "date_closed": "1790438400000",
+          "due_date": null,
+          "parent": null,
+          "list": {
+            "id": "900000000001",
+            "name": "Web build list"
+          },
+          "dependencies": [],
+          "custom_fields": [],
+          "description": "",
+          "comments": []
+        }
+      ],
+      "planningTasks": [],
+      "sessions": [],
+      "repositoryResults": [],
+      "pullRequestResults": []
+    }
+  }
+}

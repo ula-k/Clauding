@@ -58,8 +58,8 @@ test("both kickoff messages say where the session is and name the folder they wr
 
   // A session that *starts* as an agent is told the same way who it is:
   // the definition itself is invisible in the system prompt.
-  const agentStart = agentStartKickoffMessage("Spec Writer");
-  assert.match(agentStart, /running as the agent "Spec Writer"/);
+  const agentStart = agentStartKickoffMessage("Spec Author");
+  assert.match(agentStart, /running as the agent "Spec Author"/);
   assert.match(agentStart, /Read your definition/);
   assert.match(agentStart, /two sentences/);
   assert.match(agentStart, /wait for my instructions/);

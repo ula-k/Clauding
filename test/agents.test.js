@@ -47,7 +47,7 @@ function waitForSave() {
 
 test("a definition folder suggests the file named after it, then README, then the only one", () => {
   const byFolderName = definitionFolderWith("spec-writer", {
-    "spec-writer.md": "# Agent: Spec Writer\n",
+    "spec-writer.md": "# Agent: Spec Author\n",
     "README.md": "# Readme\n",
     "notes.md": "# Notes\n"
   });
@@ -82,10 +82,10 @@ test("the folder lists only its own markdown files, sorted", () => {
 
 test("the name comes from the first heading, without the Agent prefix", () => {
   const folder = definitionFolderWith("spec-writer", {
-    "spec-writer.md": "Some preamble\n\n# Agent: Spec Writer\n\nYou write specs.\n"
+    "spec-writer.md": "Some preamble\n\n# Agent: Spec Author\n\nYou write specs.\n"
   });
   const inspected = inspectDefinitionFolder(folder);
-  assert.equal(inspected.name, "Spec Writer");
+  assert.equal(inspected.name, "Spec Author");
 
   const plainHeading = definitionFolderWith("plain", { "plain.md": "# Template Keeper\n" });
   assert.equal(inspectDefinitionFolder(plainHeading).name, "Template Keeper");
@@ -128,7 +128,7 @@ test("the suggested name does not repeat the emoji the heading starts with", () 
 });
 
 test("an agent needs a name, a folder and a file inside that folder", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder());
   assert.throws(
     () => store.addAgent({ name: "", definitionFolder: folder, definitionFile: path.join(folder, "spec-writer.md") }),
@@ -147,10 +147,10 @@ test("an agent needs a name, a folder and a file inside that folder", () => {
 });
 
 test("a definition file given by its bare name is resolved inside the folder", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder());
   const agent = store.addAgent({
-    name: "Spec Writer",
+    name: "Spec Author",
     definitionFolder: folder,
     definitionFile: "spec-writer.md"
   });
@@ -158,9 +158,9 @@ test("a definition file given by its bare name is resolved inside the folder", (
 });
 
 test("the emoji is cut to one whole character, and the color field is always the same", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder());
-  const draft = { name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" };
+  const draft = { name: "Spec Author", definitionFolder: folder, definitionFile: "spec-writer.md" };
 
   assert.equal(store.addAgent({ ...draft, emoji: "✅ Test" }).emoji, "✅");
   assert.equal(store.addAgent({ ...draft, emoji: "  🧑‍💻 dev  " }).emoji, "🧑‍💻");
@@ -172,7 +172,7 @@ test("the emoji is cut to one whole character, and the color field is always the
 });
 
 test("deleting an agent takes every session link with it", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder());
   const first = store.addAgent({ name: "First", definitionFolder: folder, definitionFile: "spec-writer.md" });
   const second = store.addAgent({ name: "Second", definitionFolder: folder, definitionFile: "spec-writer.md" });
@@ -188,9 +188,9 @@ test("deleting an agent takes every session link with it", () => {
 });
 
 test("a deleted session takes its agent link with it, and the agents stay", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder());
-  const agent = store.addAgent({ name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" });
+  const agent = store.addAgent({ name: "Spec Author", definitionFolder: folder, definitionFile: "spec-writer.md" });
   store.linkSession("session-one", agent.id);
   store.linkSession("session-two", agent.id);
 
@@ -203,9 +203,9 @@ test("a deleted session takes its agent link with it, and the agents stay", () =
 });
 
 test("a link to a session with no transcript is kept, not treated as broken", async () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const first = storeIn(scratchFolder());
-  const agent = first.store.addAgent({ name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" });
+  const agent = first.store.addAgent({ name: "Spec Author", definitionFolder: folder, definitionFile: "spec-writer.md" });
   // A terminal closed before its first message leaves a link but no
   // conversation on disk; the store must not mind.
   first.store.linkSession("session-that-never-wrote-anything", agent.id);
@@ -216,7 +216,7 @@ test("a link to a session with no transcript is kept, not treated as broken", as
 });
 
 test("an agents.json full of rubbish still gives a usable Agents tab", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder(), {
     version: 1,
     agents: [
@@ -243,27 +243,27 @@ test("an agents.json that is not even JSON is treated as empty", () => {
 
 test("the appended prompt carries the preamble, who the agent is and the whole definition", () => {
   const folder = definitionFolderWith("spec-writer", {
-    "spec-writer.md": "# Agent: Spec Writer\n\nYou write specs and nothing else.\n"
+    "spec-writer.md": "# Agent: Spec Author\n\nYou write specs and nothing else.\n"
   });
   const agent = {
     id: "agent-one",
-    name: "Spec Writer",
+    name: "Spec Author",
     emoji: "📐",
     definitionFolder: folder,
     definitionFile: path.join(folder, "spec-writer.md")
   };
   const prompt = buildAgentSystemPrompt("PREAMBLE TEXT", agent);
   assert.ok(prompt.startsWith("PREAMBLE TEXT"), "the preamble comes first");
-  assert.ok(prompt.includes('You are running as the agent "Spec Writer"'));
+  assert.ok(prompt.includes('You are running as the agent "Spec Author"'));
   assert.ok(prompt.includes(agent.definitionFile), "the agent is told where its definition lives");
   assert.ok(prompt.includes(folder), "and which folder holds its working files");
   assert.ok(prompt.includes("You write specs and nothing else."), "the definition itself is appended");
 });
 
 test("the working folder of an agent is remembered once, not on every start", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder());
-  const agent = store.addAgent({ name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" });
+  const agent = store.addAgent({ name: "Spec Author", definitionFolder: folder, definitionFile: "spec-writer.md" });
   assert.equal(agent.lastWorkingDirectory, null);
   assert.equal(store.rememberWorkingDirectory(agent.id, "/Users/someone/Documents/projects/website"), true);
   assert.equal(store.rememberWorkingDirectory(agent.id, "/Users/someone/Documents/projects/website"), false);
@@ -329,9 +329,9 @@ test("the menu cap leaves the rest for \"More…\"", () => {
 });
 
 test("using an agent stamps lastUsedAt, so the menus can put it first", () => {
-  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Writer\n" });
+  const folder = definitionFolderWith("spec-writer", { "spec-writer.md": "# Agent: Spec Author\n" });
   const { store } = storeIn(scratchFolder());
-  const agent = store.addAgent({ name: "Spec Writer", definitionFolder: folder, definitionFile: "spec-writer.md" });
+  const agent = store.addAgent({ name: "Spec Author", definitionFolder: folder, definitionFile: "spec-writer.md" });
   assert.equal(store.get().agents[0].lastUsedAt, null);
 
   store.rememberWorkingDirectory(agent.id, folder);
@@ -346,7 +346,7 @@ test("agents.json edited on disk is re-read, and the store's own state is not re
   const folder = scratchFolder();
   const { storagePath, store } = storeIn(folder, { version: 1, agents: [], sessionAgents: {} });
   const added = store.addAgent({
-    name: "Spec Writer",
+    name: "Spec Author",
     emoji: "📝",
     definitionFolder: folder,
     definitionFile: path.join(folder, "spec-writer.md")

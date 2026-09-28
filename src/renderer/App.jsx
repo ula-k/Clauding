@@ -22,6 +22,7 @@ import { rankAgentsByUse } from "./agentConstants.js";
 import SessionsColumn from "./components/SessionsColumn.jsx";
 import MiddleColumn from "./components/MiddleColumn.jsx";
 import SidePanel from "./components/SidePanel.jsx";
+import ProjectView from "./components/ProjectView.jsx";
 import WindowTools from "./components/WindowTools.jsx";
 import SkillsScanSheet from "./components/SkillsScanSheet.jsx";
 import BuiltinSkillSheet from "./components/BuiltinSkillSheet.jsx";
@@ -229,6 +230,14 @@ export default function App() {
   // Which handle is being dragged right now: "left", "panel" or nothing.
   const [draggingHandle, setDraggingHandle] = useState(null);
   const [now, setNow] = useState(Date.now());
+  // The left column's tab ("sessions" | "agents" | "projects"). It lives here
+  // because the Projects tab also decides what the middle column shows.
+  const [leftTab, setLeftTab] = useState("sessions");
+  // The Projects tab: the list on the left (one summary per project, from
+  // the cache) and the project whose view covers the middle column.
+  const [projectSummaries, setProjectSummaries] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [selectedBoardId, setSelectedBoardId] = useState(null);
   const loadedCountRef = useRef(0);
   // terminalId -> groupId for a session opened from a group header's "+":
   // the group is set the moment the CLI registers its session id.
@@ -290,6 +299,45 @@ export default function App() {
       setLanguageState(detectSystemLanguage(systemLanguage));
     });
   }, []);
+
+  // The project list: read once, again whenever project-boards.json changes,
+  // and after a project view got a fresh answer (the cache it reads moved).
+  const loadProjectSummaries = useCallback(() => {
+    window.clauding
+      .getBoardSummaries()
+      .then((summaries) => {
+        setProjectSummaries(Array.isArray(summaries) ? summaries : []);
+        setProjectsLoading(false);
+      })
+      .catch((error) => {
+        console.error("Could not read the projects", error);
+        setProjectsLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    loadProjectSummaries();
+    return window.clauding.onBoardsChanged(() => loadProjectSummaries());
+  }, [loadProjectSummaries]);
+
+  // Entering the Projects tab with nothing picked opens the first project,
+  // the way the mockup shows it; a project that is gone is let go.
+  useEffect(() => {
+    if (leftTab !== "projects") {
+      return;
+    }
+    loadProjectSummaries();
+  }, [leftTab, loadProjectSummaries]);
+
+  useEffect(() => {
+    if (projectsLoading) {
+      return;
+    }
+    const known = projectSummaries.some((summary) => summary.id === selectedBoardId);
+    if (!known) {
+      setSelectedBoardId(leftTab === "projects" && projectSummaries.length > 0 ? projectSummaries[0].id : null);
+    }
+  }, [leftTab, projectSummaries, projectsLoading, selectedBoardId]);
 
   // Relative times ("2 min") tick along without a reload.
   useEffect(() => {
@@ -1426,11 +1474,22 @@ export default function App() {
   const headerSessionId = (activeTerminal && activeTerminal.sessionId) || selectedSessionId;
   const agentDefinitionPending = Boolean(headerSessionId && pendingDefinitionTerminals[headerSessionId]);
 
+  // A project covers the middle column only while its tab is the one shown;
+  // Sessions and Agents bring the terminal back exactly as it was.
+  const projectViewBoardId =
+    leftTab === "projects" && selectedBoardId && projectSummaries.some((summary) => summary.id === selectedBoardId)
+      ? selectedBoardId
+      : null;
+
   // The right panel's tabs belong to the session on screen (a terminal that
-  // has not registered its session yet uses a temporary key, see panelTabs.js).
-  const panelSessionKey = activeTerminal
-    ? activeTerminal.sessionId || `terminal:${activeTerminal.terminalId}`
-    : selectedSessionId;
+  // has not registered its session yet uses a temporary key, see panelTabs.js)
+  // — or, while a project is on screen, to that project ("project:<id>"), so
+  // each project remembers its own tabs.
+  const panelSessionKey = projectViewBoardId
+    ? `project:${projectViewBoardId}`
+    : activeTerminal
+      ? activeTerminal.sessionId || `terminal:${activeTerminal.terminalId}`
+      : selectedSessionId;
   panelSessionKeyRef.current = panelSessionKey;
 
   // The main process follows the selection so `clauding open` run without a
@@ -1497,7 +1556,9 @@ export default function App() {
     };
   }, []);
 
-  const panelBaseDirectory = activeTerminal
+  const panelBaseDirectory = projectViewBoardId
+    ? null
+    : activeTerminal
     ? activeTerminal.workingDirectory
     : selectedSession
       ? selectedSession.workingDirectory
@@ -1737,6 +1798,58 @@ export default function App() {
     [panelActions, language]
   );
 
+  // ------------------------------------------------------ Projects ---
+  //
+  // A task's "CU-…" chip opens the app's own read-only view of the task as
+  // a tab of this project's panel; a session chip is the same as clicking
+  // that session's row: the Sessions tab and its terminal.
+  const openProjectTask = useCallback(
+    (taskId, title) => {
+      const panelKey = panelSessionKeyRef.current;
+      if (!panelKey) {
+        return;
+      }
+      window.clauding
+        .openPanelTaskTab(panelKey, taskId, title)
+        .then(() => setPanelVisible(true))
+        .catch((error) => console.error("Could not open the task", error));
+    },
+    [setPanelVisible]
+  );
+
+  const openExternalLink = useCallback((url) => {
+    if (url) {
+      window.clauding.openExternally(url).catch((error) => console.error("Could not open externally", error));
+    }
+  }, []);
+
+  const selectSessionFromProject = useCallback(
+    (sessionId) => {
+      setLeftTab("sessions");
+      selectSession(sessionId);
+    },
+    [selectSession]
+  );
+
+  const addProject = useCallback(async (draft) => {
+    const board = await window.clauding.addBoard(draft);
+    return board;
+  }, []);
+
+  const windowToolsNode = (
+    <WindowTools
+      settings={settings}
+      settingsOpen={settingsMenuOpen}
+      onSettingsOpenChange={setSettingsMenuOpen}
+      onPickAgentsRoot={() => window.clauding.pickAgentsRoot().then(setSettings)}
+      onSaveExtraFlags={(flags) => window.clauding.updateSettings({ extraClaudeArguments: flags }).then(setSettings)}
+    />
+  );
+
+  const selectedProjectSummary = projectViewBoardId
+    ? projectSummaries.find((summary) => summary.id === projectViewBoardId)
+    : null;
+
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
       <div
@@ -1786,6 +1899,16 @@ export default function App() {
           tagActions={tagActions}
           onClearSelection={clearSelection}
           bulkActions={bulkActions}
+          activeTab={leftTab}
+          onChangeTab={setLeftTab}
+          projects={{
+            summaries: projectSummaries,
+            loading: projectsLoading,
+            selectedBoardId: projectViewBoardId,
+            onSelect: setSelectedBoardId,
+            onAdd: addProject,
+            readOnly: false
+          }}
         />
         <div className="resize-handle" data-resize-handle="left" onPointerDown={(event) => beginDrag(event, "left")} />
         <MiddleColumn
@@ -1808,14 +1931,22 @@ export default function App() {
           onCloseReader={() => setReader(null)}
           onOpenReaderInPanel={openReaderInPanel}
           find={findState}
-          windowTools={
-            <WindowTools
-              settings={settings}
-              settingsOpen={settingsMenuOpen}
-              onSettingsOpenChange={setSettingsMenuOpen}
-              onPickAgentsRoot={() => window.clauding.pickAgentsRoot().then(setSettings)}
-              onSaveExtraFlags={(flags) => window.clauding.updateSettings({ extraClaudeArguments: flags }).then(setSettings)}
-            />
+          windowTools={windowToolsNode}
+          projectPane={
+            projectViewBoardId ? (
+              <ProjectView
+                boardId={projectViewBoardId}
+                boardName={selectedProjectSummary ? selectedProjectSummary.name : ""}
+                now={now}
+                onOpenTask={openProjectTask}
+                onOpenExternal={openExternalLink}
+                onSelectSession={selectSessionFromProject}
+                onLoaded={loadProjectSummaries}
+                panelOpen={panelOpen}
+                onTogglePanel={() => setPanelVisible(!panelOpen)}
+                windowTools={windowToolsNode}
+              />
+            ) : null
           }
         />
         <div

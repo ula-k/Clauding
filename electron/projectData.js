@@ -9,19 +9,24 @@
 // (sources.clickup.ok = false, with the time of the data shown).
 //
 // Finding the lists: a project can be set up from one task link (the seed).
-// The build list is the seed task's list; the planning list is the list of
-// the task the build tasks "depend on". Both are written back to the
-// project once found, so this happens once.
+// The build list is the seed task's list. The planning list (the tasks that
+// carry the spec links) is found through ClickUp's dependencies: the list of
+// the first task a build task "depends on", when that is another list. Both
+// are written back to the project once found, so this happens once.
 //
-// CLAUDING_PROJECTS_FIXTURE=<file.json> replaces ClickUp, git and gh with
-// the file's contents — screenshots and smoke tests never touch the user's
-// ClickUp or repositories.
+// CLAUDING_PROJECTS_FIXTURE=<file.json> replaces ClickUp, git, gh and the
+// project list itself with the file's contents — screenshots and smoke
+// tests never touch the user's ClickUp, repositories or project-boards.json.
+// The file is either one project ({ board, buildTasks, planningTasks, … })
+// or several ({ boards: { "<id>": { board, … } } }); `clickup` in a project
+// replaces the ClickUp state (e.g. { "ok": false, "error": "no-token" }).
 import fs from "node:fs";
 import path from "node:path";
 import { ClickupError, createClickupClient, mapComment, mapTask, readClickupToken } from "./lib/clickupClient.js";
 import { fetchRepository, inspectRepository } from "./lib/gitInspector.js";
 import { listPullRequests } from "./lib/pullRequests.js";
 import { buildProjectSnapshot } from "./lib/projectSnapshot.js";
+import { cleanBoard } from "./projectBoards.js";
 
 const CACHE_FRESH_MILLISECONDS = 5 * 60 * 1000;
 
@@ -146,18 +151,52 @@ export function createProjectDataService({
     }
     return {
       data: cached || { buildTasks: [], planningTasks: [], refreshedAt: null },
-      clickup: { ok: false, error: error.kind || "http", message: error.message, refreshedAt: cached ? cached.refreshedAt : null, fromCache: true }
+      clickup: {
+        ok: false,
+        error: error.kind || "http",
+        message: error.message,
+        call: error.call || null,
+        refreshedAt: cached ? cached.refreshedAt : null,
+        fromCache: true
+      }
     };
   }
 
+  // The fixture's projects, each with an id, a name and the fields the
+  // store would have cleaned.
+  function fixtureInputs() {
+    if (!fixture) {
+      return [];
+    }
+    const entries = fixture.boards ? Object.entries(fixture.boards) : [[(fixture.board && fixture.board.id) || "fixture", fixture]];
+    return entries.map(([boardId, input]) => ({
+      input,
+      board: cleanBoard({ name: "Fixture", ...(input.board || {}), id: boardId })
+    }));
+  }
+
+  function boardFor(boardId) {
+    if (fixture) {
+      const found = fixtureInputs().find((entry) => entry.board.id === boardId);
+      if (!found) {
+        throw new Error(`No project with id ${boardId}.`);
+      }
+      return found;
+    }
+    return { board: boardStore.getBoard(boardId), input: null };
+  }
+
+  function fixtureClickupState(input) {
+    return { ok: true, error: null, refreshedAt: now(), fromCache: false, ...(input.clickup || {}) };
+  }
+
   async function snapshot(boardId, { refresh = false, fetchGit = false } = {}) {
-    const board = boardStore.getBoard(boardId);
+    const { board, input } = boardFor(boardId);
     const agentState = getAgents();
     const sessions = await getSessions();
     if (fixture) {
-      const input = (fixture.boards && fixture.boards[boardId]) || fixture;
       return buildProjectSnapshot({
-        board: { ...board, ...(input.board || {}) },
+        board,
         buildTasks: (input.buildTasks || []).map(mapTask),
         planningTasks: (input.planningTasks || []).map(mapTask),
         sessions: input.sessions || sessions,
@@ -165,7 +204,7 @@ export function createProjectDataService({
         agents: input.agents || agentState.agents,
         repositoryResults: input.repositoryResults || [],
         pullRequestResults: input.pullRequestResults || [],
-        clickup: { ok: true, error: null, refreshedAt: now(), fromCache: false },
+        clickup: fixtureClickupState(input),
         now: input.now || now()
       });
     }
@@ -200,22 +239,25 @@ export function createProjectDataService({
   // For the list on the left: from the cache only, never the network, so
   // the list draws at once. Projects never loaded yet have no summary.
   function summaries() {
+    if (fixture) {
+      return fixtureInputs().map(({ board, input }) => {
+        const hasTasks = (input.buildTasks || []).length > 0 || (input.planningTasks || []).length > 0;
+        const summary = hasTasks
+          ? buildProjectSnapshot({
+              board,
+              buildTasks: (input.buildTasks || []).map(mapTask),
+              planningTasks: (input.planningTasks || []).map(mapTask),
+              now: input.now || now()
+            }).summary
+          : null;
+        return { id: board.id, name: board.name, color: board.color, group: board.group, summary };
+      });
+    }
     return boardStore.getState().boards.map((board) => {
-      const cached = fixture ? null : readCache(board.id);
-      let summary = null;
-      if (fixture) {
-        const input = (fixture.boards && fixture.boards[board.id]) || null;
-        if (input) {
-          summary = buildProjectSnapshot({
-            board: { ...board, ...(input.board || {}) },
-            buildTasks: (input.buildTasks || []).map(mapTask),
-            planningTasks: (input.planningTasks || []).map(mapTask),
-            now: input.now || now()
-          }).summary;
-        }
-      } else if (cached) {
-        summary = buildProjectSnapshot({ board, buildTasks: cached.buildTasks, planningTasks: cached.planningTasks, now: now() }).summary;
-      }
+      const cached = readCache(board.id);
+      const summary = cached
+        ? buildProjectSnapshot({ board, buildTasks: cached.buildTasks, planningTasks: cached.planningTasks, now: now() }).summary
+        : null;
       return { id: board.id, name: board.name, color: board.color, group: board.group, summary };
     });
   }
@@ -240,6 +282,9 @@ export function createProjectDataService({
     snapshot,
     summaries,
     taskDetail,
+    // True while CLAUDING_PROJECTS_FIXTURE is in charge: the window then
+    // draws the fixture's projects and never writes project-boards.json.
+    usesFixture: Boolean(fixture),
     // After the user fixes the Keychain item: read the token again.
     forgetToken() {
       clientPromise = null;

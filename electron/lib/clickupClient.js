@@ -1,9 +1,9 @@
 // Projects view: reading ClickUp. Only ever GET — this module has no way to
 // write, on purpose: the view shows ClickUp, it never changes it.
 //
-// The token is the user's own personal token, read from the macOS Keychain
-// with the same command her agents use (`security find-generic-password -a
-// clickup-api -s clickup-api-token -w`). It is kept in memory only: never
+// The token is the user's own personal token: CLAUDING_CLICKUP_TOKEN when
+// set, else the macOS Keychain item read with `security
+// find-generic-password -a clickup-api -s clickup-api-token -w`. It is kept in memory only: never
 // written to disk, never logged, never sent to the window. ClickUp takes the
 // raw token in the Authorization header, not "Bearer <token>".
 //
@@ -18,12 +18,15 @@ const MINIMUM_GAP_MILLISECONDS = 650;
 const MAXIMUM_TASK_PAGES = 50;
 
 export class ClickupError extends Error {
-  constructor(message, { kind, status } = {}) {
+  constructor(message, { kind, status, call } = {}) {
     super(message);
     this.name = "ClickupError";
     // "no-token" | "unauthorized" | "not-found" | "rate-limited" | "network" | "http"
     this.kind = kind || "http";
     this.status = status || null;
+    // The request that failed ("GET /v2/list/…/task"), for the error state
+    // in the view. Never carries the token.
+    this.call = call || null;
   }
 }
 
@@ -68,9 +71,10 @@ export function createClickupClient({
   let lastRequestAt = 0;
 
   function get(pathAndQuery) {
+    const call = `GET ${String(pathAndQuery).split("?")[0]}`;
     const run = async () => {
       if (!token) {
-        throw new ClickupError("No ClickUp token on this Mac.", { kind: "no-token" });
+        throw new ClickupError("No ClickUp token on this Mac.", { kind: "no-token", call });
       }
       const waitFor = lastRequestAt + minimumGapMilliseconds - now();
       if (waitFor > 0) {
@@ -84,19 +88,19 @@ export function createClickupClient({
           headers: { Authorization: token, Accept: "application/json" }
         });
       } catch (error) {
-        throw new ClickupError(`ClickUp could not be reached: ${error.message}`, { kind: "network" });
+        throw new ClickupError(`ClickUp could not be reached: ${error.message}`, { kind: "network", call });
       }
       if (response.status === 401) {
-        throw new ClickupError("ClickUp refused the token.", { kind: "unauthorized", status: 401 });
+        throw new ClickupError("ClickUp refused the token.", { kind: "unauthorized", status: 401, call });
       }
       if (response.status === 404) {
-        throw new ClickupError("ClickUp says this does not exist.", { kind: "not-found", status: 404 });
+        throw new ClickupError("ClickUp says this does not exist.", { kind: "not-found", status: 404, call });
       }
       if (response.status === 429) {
-        throw new ClickupError("ClickUp asked to slow down.", { kind: "rate-limited", status: 429 });
+        throw new ClickupError("ClickUp asked to slow down.", { kind: "rate-limited", status: 429, call });
       }
       if (!response.ok) {
-        throw new ClickupError(`ClickUp answered ${response.status}.`, { kind: "http", status: response.status });
+        throw new ClickupError(`ClickUp answered ${response.status}.`, { kind: "http", status: response.status, call });
       }
       return response.json();
     };
@@ -194,13 +198,17 @@ export function mapUser(rawUser) {
   };
 }
 
-// The Spec URL field Groove's planning tasks carry. Matched by name, since
-// the field id differs per workspace; any "url" field whose name says spec
-// counts.
-export function specUrlFrom(customFields) {
+// The custom field that holds a planning task's spec link. Matched by its
+// name (a board setting, "Spec URL" unless the project says otherwise),
+// ignoring case, since the field id differs per workspace; only a value
+// that is a link counts.
+export const DEFAULT_SPEC_URL_FIELD = "Spec URL";
+
+export function specUrlFrom(customFields, fieldName = DEFAULT_SPEC_URL_FIELD) {
+  const wanted = String(fieldName || DEFAULT_SPEC_URL_FIELD).trim().toLowerCase();
   for (const field of customFields || []) {
-    const name = String(field.name || "").toLowerCase();
-    if (name.includes("spec") && typeof field.value === "string" && /^https?:\/\//.test(field.value.trim())) {
+    const name = String(field.name || "").trim().toLowerCase();
+    if (name === wanted && typeof field.value === "string" && /^https?:\/\//.test(field.value.trim())) {
       return field.value.trim();
     }
   }
@@ -267,7 +275,7 @@ export function mapComment(raw) {
   };
 }
 
-// "https://app.clickup.com/t/86ak7bh2e" → "86ak7bh2e"; a bare id passes
+// "https://app.clickup.com/t/abc123aa1" → "abc123aa1"; a bare id passes
 // through. Custom ids ("CU-1234") and doc links are not task ids.
 export function taskIdFromLink(link) {
   const text = String(link || "").trim();

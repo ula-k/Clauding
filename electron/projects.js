@@ -3,7 +3,7 @@
 //
 // The path may have been written on either system, so the folders are split
 // on both separators (folderSegments in lib/platformPaths.js) and a Windows
-// drive letter is dropped — "C:\Users\ula\Documents\projects\website" reads
+// drive letter is dropped — "C:\Users\someone\Documents\projects\website" reads
 // as "…\projects\website", the same shape a Mac path gets.
 import os from "node:os";
 import {

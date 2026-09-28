@@ -9,7 +9,7 @@
 //     "agents": [
 //       {
 //         "id": "<uuid>",
-//         "name": "Spec Writer",
+//         "name": "Spec Author",
 //         "emoji": "✦",
 //         "color": "--project-color-0",
 //         "definitionFolder": "/Users/<you>/Documents/agents/spec-writer",
@@ -144,7 +144,7 @@ function sanitizeAgent(entry) {
     builtin: cleanBuiltin(entry.builtin),
     // Extra `claude` flags every session this agent runs gets, on top of
     // the ones in settings.json — "--channels plugin:telegram@…" for an agent
-    // that talks to Ula on Telegram, say. Flags the app sets itself are
+    // that talks to the user on Telegram, say. Flags the app sets itself are
     // dropped here (see mergeExtraArguments).
     extraClaudeArguments: cleanExtraArguments(entry.extraClaudeArguments)
   };
@@ -191,7 +191,7 @@ function sanitize(saved) {
 }
 
 // The heading a definition file starts with, without the "Agent:" prefix
-// definition files often use ("# Agent: Spec Writer" -> "Spec Writer").
+// definition files often use ("# Agent: Spec Author" -> "Spec Author").
 function headingName(definitionText) {
   const headingMatch = String(definitionText || "").match(/^#\s+(.+)$/m);
   if (!headingMatch) {

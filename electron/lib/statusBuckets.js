@@ -107,7 +107,7 @@ const SPEC_STAGE_RULES = [
 
 // What the planning task's own status says about its spec. The session
 // stage is not a ClickUp status: pipelineStage.js raises "noSpec" to
-// "session" when a Spec Writer session is linked to the task.
+// "session" when a spec-role session is linked to the task.
 export function specStageForStatus(statusName, statusType, overrides = {}) {
   const normalized = normalizeStatusName(statusName);
   const override = Object.entries(overrides || {}).find(

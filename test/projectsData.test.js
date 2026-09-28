@@ -1,7 +1,7 @@
 // CL-26 — the Projects view's data layer: ClickUp statuses → buckets, the
 // ClickUp client (fake fetch, never the network), git branches in a
 // throw-away repository, gh's JSON, linking sessions to tasks, the pipeline
-// stages, the numbers on top, one whole Groove snapshot, and the store.
+// stages, the numbers on top, one whole project snapshot, and the store.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -31,7 +31,7 @@ const NOW = new Date(2026, 8, 28, 12, 0, 0).getTime();
 
 // ---- statuses --------------------------------------------------------------
 
-test("Groove's and Walktober's statuses land in the right bucket", () => {
+test("Typical ClickUp statuses land in the right bucket", () => {
   const expected = {
     Open: BUCKETS.open,
     "pending review": BUCKETS.open,
@@ -73,22 +73,22 @@ test("planning statuses map to spec stages, ready for review is review", () => {
 
 function rawTask(overrides = {}) {
   return {
-    id: "86ak7bh2e",
-    name: "Leaderboards",
-    url: "https://app.clickup.com/t/86ak7bh2e",
+    id: "abc123aa1",
+    name: "Search page",
+    url: "https://app.clickup.com/t/abc123aa1",
     status: { status: "in staging", type: "custom", color: "#2ecd6f" },
-    assignees: [{ id: 42, username: "Ula Kuczyńska", color: "#e04f8a" }],
+    assignees: [{ id: 42, username: "Alex Doe", color: "#e04f8a" }],
     date_created: String(NOW - 20 * DAY),
     date_updated: String(NOW - DAY),
     date_closed: null,
     due_date: null,
     parent: null,
-    list: { id: "901300000001", name: "Initial Build Web" },
-    folder: { id: "901300000010", name: "Groove Web Development" },
-    space: { id: "901313890025" },
+    list: { id: "901300000001", name: "Web build list" },
+    folder: { id: "901300000010", name: "Web development" },
+    space: { id: "900000000099" },
     dependencies: [
-      { task_id: "86ak7bh2e", depends_on: "86ajn44t6", type: 1 },
-      { task_id: "86zzzzzzz", depends_on: "86ak7bh2e", type: 1 }
+      { task_id: "abc123aa1", depends_on: "def456aa1", type: 1 },
+      { task_id: "abc999zzz", depends_on: "abc123aa1", type: 1 }
     ],
     custom_fields: [],
     ...overrides
@@ -97,28 +97,28 @@ function rawTask(overrides = {}) {
 
 test("a task keeps what the cards need; dependencies only in the waiting direction", () => {
   const task = mapTask(rawTask());
-  assert.equal(task.id, "86ak7bh2e");
+  assert.equal(task.id, "abc123aa1");
   assert.equal(task.status, "in staging");
-  assert.equal(task.listName, "Initial Build Web");
-  assert.deepEqual(task.dependsOn, ["86ajn44t6"]);
+  assert.equal(task.listName, "Web build list");
+  assert.deepEqual(task.dependsOn, ["def456aa1"]);
   assert.equal(task.assignees[0].id, "42");
-  assert.equal(task.assignees[0].initials, "UK");
+  assert.equal(task.assignees[0].initials, "AD");
   assert.equal(task.createdAt, NOW - 20 * DAY);
   assert.deepEqual(dependsOnFrom("a", [{ task_id: "b", depends_on: "a" }]), []);
 });
 
 test("the Spec URL field is found by name, only when it holds a link", () => {
-  assert.equal(specUrlFrom([{ name: "Spec URL", type: "url", value: " https://app.clickup.com/1281535/v/dc/173fz-212393/173fz-303673 " }]),
-    "https://app.clickup.com/1281535/v/dc/173fz-212393/173fz-303673");
+  assert.equal(specUrlFrom([{ name: "Spec URL", type: "url", value: " https://app.clickup.com/999999/v/dc/doc-1/page-1 " }]),
+    "https://app.clickup.com/999999/v/dc/doc-1/page-1");
   assert.equal(specUrlFrom([{ name: "Spec URL", type: "url", value: "" }]), null);
   assert.equal(specUrlFrom([{ name: "Figma", type: "url", value: "https://figma.com/x" }]), null);
 });
 
 test("task links and bare ids become task ids; doc links do not", () => {
-  assert.equal(taskIdFromLink("https://app.clickup.com/t/86ak7bh2e"), "86ak7bh2e");
-  assert.equal(taskIdFromLink("https://app.clickup.com/t/1281535/86ak7bh2e"), "86ak7bh2e");
-  assert.equal(taskIdFromLink("86ak7bh2e"), "86ak7bh2e");
-  assert.equal(taskIdFromLink("https://app.clickup.com/1281535/v/dc/173fz-212393/173fz-303673"), null);
+  assert.equal(taskIdFromLink("https://app.clickup.com/t/abc123aa1"), "abc123aa1");
+  assert.equal(taskIdFromLink("https://app.clickup.com/t/999999/abc123aa1"), "abc123aa1");
+  assert.equal(taskIdFromLink("abc123aa1"), "abc123aa1");
+  assert.equal(taskIdFromLink("https://app.clickup.com/999999/v/dc/doc-1/page-1"), null);
 });
 
 function fakeFetch(routes, calls = []) {
@@ -141,13 +141,13 @@ test("the client pages through a list, sends the raw token and never writes", as
     fetchImplementation: fakeFetch(
       [
         ["page=0", 200, { tasks: [rawTask()], last_page: false }],
-        ["page=1", 200, { tasks: [rawTask({ id: "86ak7bgn3", name: "Menu", dependencies: [] })], last_page: true }]
+        ["page=1", 200, { tasks: [rawTask({ id: "abc123aa2", name: "Menu", dependencies: [] })], last_page: true }]
       ],
       calls
     )
   });
   const tasks = await client.listTasks("901300000001");
-  assert.deepEqual(tasks.map((task) => task.name), ["Leaderboards", "Menu"]);
+  assert.deepEqual(tasks.map((task) => task.name), ["Search page", "Menu"]);
   assert.equal(calls.length, 2);
   for (const call of calls) {
     assert.equal(call.options.method, "GET");
@@ -176,7 +176,7 @@ test("no token, a refused token and a dead network are told apart", async () => 
     fetchImplementation: fakeFetch([["/task/good", 200, rawTask()]])
   });
   await assert.rejects(recovering.getTask("bad"));
-  assert.equal((await recovering.getTask("good")).name, "Leaderboards");
+  assert.equal((await recovering.getTask("good")).name, "Search page");
 });
 
 test("the token comes from the environment first, the Keychain on a Mac, else nothing", async () => {
@@ -204,24 +204,24 @@ test("the token comes from the environment first, the Keychain on a Mac, else no
 // ---- git -------------------------------------------------------------------
 
 test("CU branch names carry the task id, suffixes and all", () => {
-  assert.equal(taskIdFromBranch("CU-86ak7bh2e"), "86ak7bh2e");
-  assert.equal(taskIdFromBranch("CU-86ak7bh2e-1"), "86ak7bh2e");
-  assert.equal(taskIdFromBranch("CU-86ak7bh2e-WAL"), "86ak7bh2e");
-  assert.equal(taskIdFromBranch("refs/remotes/origin/CU-86ak7bgn3"), "86ak7bgn3");
+  assert.equal(taskIdFromBranch("CU-abc123aa1"), "abc123aa1");
+  assert.equal(taskIdFromBranch("CU-abc123aa1-1"), "abc123aa1");
+  assert.equal(taskIdFromBranch("CU-abc123aa1-fix"), "abc123aa1");
+  assert.equal(taskIdFromBranch("refs/remotes/origin/CU-abc123aa2"), "abc123aa2");
   assert.equal(taskIdFromBranch("favicons"), null);
-  assert.equal(taskIdFromBranch("docker-staging"), null);
+  assert.equal(taskIdFromBranch("staging"), null);
 });
 
 test("refs and worktree lists are parsed", () => {
   const branches = parseBranchRefs(
-    ["refs/heads/CU-86ak7bh2e", "refs/remotes/origin/CU-86ak7bh2e", "refs/remotes/origin/CU-86ak7bgn3", "refs/heads/favicons", "refs/remotes/origin/HEAD"].join("\n")
+    ["refs/heads/CU-abc123aa1", "refs/remotes/origin/CU-abc123aa1", "refs/remotes/origin/CU-abc123aa2", "refs/heads/favicons", "refs/remotes/origin/HEAD"].join("\n")
   );
   assert.deepEqual(
     branches.map((branch) => [branch.name, branch.local, branch.remote]),
-    [["CU-86ak7bh2e", true, true], ["CU-86ak7bgn3", false, true]]
+    [["CU-abc123aa1", true, true], ["CU-abc123aa2", false, true]]
   );
-  const worktrees = parseWorktrees("worktree /repo\nHEAD abc\nbranch refs/heads/docker-deploy\n\nworktree /wt/CU-1\nHEAD def\nbranch refs/heads/CU-86ak7brvp\n");
-  assert.deepEqual(worktrees, [{ path: "/repo", branch: "docker-deploy" }, { path: "/wt/CU-1", branch: "CU-86ak7brvp" }]);
+  const worktrees = parseWorktrees("worktree /repo\nHEAD abc\nbranch refs/heads/main\n\nworktree /wt/CU-1\nHEAD def\nbranch refs/heads/CU-abc123aa3\n");
+  assert.deepEqual(worktrees, [{ path: "/repo", branch: "main" }, { path: "/wt/CU-1", branch: "CU-abc123aa3" }]);
 });
 
 function git(folder, ...gitArguments) {
@@ -240,42 +240,42 @@ function commitFile(folder, name, text) {
 test("a real repository: ahead count, staging, worktree and uncommitted changes", async () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "clauding-test-git-"));
   const origin = path.join(scratch, "origin");
-  const checkout = path.join(scratch, "blueprint");
+  const checkout = path.join(scratch, "website");
   fs.mkdirSync(origin);
-  git(origin, "init", "--quiet", "-b", "docker-deploy");
+  git(origin, "init", "--quiet", "-b", "main");
   commitFile(origin, "base.txt", "base\n");
-  git(origin, "branch", "docker-staging");
+  git(origin, "branch", "staging");
   execFileSync("git", ["clone", "--quiet", origin, checkout]);
-  git(checkout, "checkout", "--quiet", "-b", "CU-86ak7bh2e", "origin/docker-deploy");
+  git(checkout, "checkout", "--quiet", "-b", "CU-abc123aa1", "origin/main");
   commitFile(checkout, "leaderboards.txt", "one\n");
   commitFile(checkout, "leaderboards2.txt", "two\n");
-  git(checkout, "push", "--quiet", "origin", "CU-86ak7bh2e");
-  // Leaderboards reached staging on the origin side.
-  git(origin, "checkout", "--quiet", "docker-staging");
-  git(origin, "merge", "--quiet", "--no-edit", "CU-86ak7bh2e");
-  git(origin, "checkout", "--quiet", "docker-deploy");
+  git(checkout, "push", "--quiet", "origin", "CU-abc123aa1");
+  // Search page reached staging on the origin side.
+  git(origin, "checkout", "--quiet", "staging");
+  git(origin, "merge", "--quiet", "--no-edit", "CU-abc123aa1");
+  git(origin, "checkout", "--quiet", "main");
   git(checkout, "fetch", "--quiet", "origin");
-  // Friends: a local branch in its own worktree, not pushed, with an edit.
-  git(checkout, "checkout", "--quiet", "docker-deploy");
+  // User profile: a local branch in its own worktree, not pushed, with an edit.
+  git(checkout, "checkout", "--quiet", "main");
   const worktree = path.join(scratch, "wt-friends");
-  git(checkout, "worktree", "add", "--quiet", "-b", "CU-86ak7brvp", worktree, "origin/docker-deploy");
+  git(checkout, "worktree", "add", "--quiet", "-b", "CU-abc123aa3", worktree, "origin/main");
   commitFile(worktree, "friends.txt", "friends\n");
   fs.writeFileSync(path.join(worktree, "friends.txt"), "changed\n");
 
-  const result = await inspectRepository({ name: "blueprint", localPath: checkout });
+  const result = await inspectRepository({ name: "website", localPath: checkout });
   assert.equal(result.available, true);
-  const [leaderboards] = result.branchesByTask["86ak7bh2e"];
+  const [leaderboards] = result.branchesByTask["abc123aa1"];
   assert.equal(leaderboards.aheadOfBase, 2);
   assert.equal(leaderboards.inStaging, true);
   assert.equal(leaderboards.pushed, true);
-  const [friends] = result.branchesByTask["86ak7brvp"];
+  const [friends] = result.branchesByTask["abc123aa3"];
   assert.equal(friends.aheadOfBase, 1);
   assert.equal(friends.inStaging, false);
   assert.equal(friends.pushed, false);
   assert.equal(fs.realpathSync(friends.worktreePath), fs.realpathSync(worktree));
   assert.equal(friends.uncommitted, true);
 
-  const missing = await inspectRepository({ name: "prime", localPath: path.join(scratch, "nope") });
+  const missing = await inspectRepository({ name: "mobile", localPath: path.join(scratch, "nope") });
   assert.equal(missing.available, false);
   assert.equal(missing.error, "not-a-repository");
 });
@@ -290,20 +290,20 @@ test("CI state reads check runs and commit statuses", () => {
 });
 
 test("pull requests are grouped by the task in their branch name", () => {
-  const byTask = pullRequestsByTask("blueprint", [
-    { number: 4812, headRefName: "CU-86ak7bh2e", baseRefName: "docker-staging", state: "MERGED", url: "u1", updatedAt: "2026-09-18T10:00:00Z", statusCheckRollup: [] },
-    { number: 4799, headRefName: "CU-86ak7bh2e-1", baseRefName: "docker-staging", state: "CLOSED", url: "u2", updatedAt: "2026-09-10T10:00:00Z", statusCheckRollup: [] },
-    { number: 4700, headRefName: "favicons", baseRefName: "docker-staging", state: "OPEN", url: "u3", updatedAt: "2026-09-21T10:00:00Z" }
+  const byTask = pullRequestsByTask("website", [
+    { number: 4812, headRefName: "CU-abc123aa1", baseRefName: "staging", state: "MERGED", url: "u1", updatedAt: "2026-09-18T10:00:00Z", statusCheckRollup: [] },
+    { number: 4799, headRefName: "CU-abc123aa1-1", baseRefName: "staging", state: "CLOSED", url: "u2", updatedAt: "2026-09-10T10:00:00Z", statusCheckRollup: [] },
+    { number: 4700, headRefName: "favicons", baseRefName: "staging", state: "OPEN", url: "u3", updatedAt: "2026-09-21T10:00:00Z" }
   ]);
-  assert.deepEqual(Object.keys(byTask), ["86ak7bh2e"]);
-  assert.deepEqual(byTask["86ak7bh2e"].map((pull) => [pull.number, pull.state]), [[4812, "merged"], [4799, "closed"]]);
+  assert.deepEqual(Object.keys(byTask), ["abc123aa1"]);
+  assert.deepEqual(byTask["abc123aa1"].map((pull) => [pull.number, pull.state]), [[4812, "merged"], [4799, "closed"]]);
 });
 
 // ---- sessions ↔ tasks --------------------------------------------------------
 
 const AGENTS = [
-  { id: "agent-spec", name: "Spec Writer", emoji: "✍️" },
-  { id: "agent-builder", name: "Feature Builder", emoji: "🔨" },
+  { id: "agent-spec", name: "Spec Author", emoji: "✍️" },
+  { id: "agent-builder", name: "Builder", emoji: "🔨" },
   { id: "agent-todo", name: "TODO", emoji: "✅" }
 ];
 
@@ -317,43 +317,43 @@ test("roles come from the agent, and the user's own mapping wins", () => {
 
 test("mentions are found as ClickUp links and CU ids", () => {
   assert.deepEqual(
-    [...taskIdsMentionedIn("Jesteś builderem, task: https://app.clickup.com/t/86ak7bh2e oraz CU-86ak7bgn3")],
-    ["86ak7bh2e", "86ak7bgn3"]
+    [...taskIdsMentionedIn("You are the builder, task: https://app.clickup.com/t/abc123aa1 and CU-abc123aa2")],
+    ["abc123aa1", "abc123aa2"]
   );
 });
 
 test("sessions link by hand, by branch, by first prompt, by transcript — and can be unlinked", () => {
   const sessions = [
-    { sessionId: "s-branch", title: "Friends builder", gitBranch: "CU-86ak7brvp", workingDirectory: "/wt/CU-86ak7brvp", lastModified: NOW - DAY },
-    { sessionId: "s-prompt", title: "recipes", firstPrompt: "Zrób https://app.clickup.com/t/86ak7bx9h", lastModified: NOW - 2 * DAY },
-    { sessionId: "s-spec", title: "spec-leaderboards", firstPrompt: "spec for leaderboards", lastModified: NOW - 3 * DAY },
-    { sessionId: "s-manual", title: "notes", gitBranch: "CU-86ak7brvp", lastModified: NOW },
-    { sessionId: "s-unrelated", title: "langtrainer", lastModified: NOW }
+    { sessionId: "s-branch", title: "Profile builder", gitBranch: "CU-abc123aa3", workingDirectory: "/wt/CU-abc123aa3", lastModified: NOW - DAY },
+    { sessionId: "s-prompt", title: "checkout", firstPrompt: "Build https://app.clickup.com/t/abc123aa5", lastModified: NOW - 2 * DAY },
+    { sessionId: "s-spec", title: "spec-search", firstPrompt: "spec for search", lastModified: NOW - 3 * DAY },
+    { sessionId: "s-manual", title: "notes", gitBranch: "CU-abc123aa3", lastModified: NOW },
+    { sessionId: "s-unrelated", title: "notes app", lastModified: NOW }
   ];
   const links = linkSessionsToTasks({
     sessions,
-    taskIds: ["86ak7brvp", "86ak7bx9h", "86ajn44t6"],
+    taskIds: ["abc123aa3", "abc123aa5", "def456aa1"],
     sessionAgents: { "s-branch": "agent-builder", "s-spec": "agent-spec" },
     agents: AGENTS,
     manualLinks: {
-      "86ajn44t6": { sessionIds: [] },
-      "86ak7bx9h": { sessionIds: ["s-manual"] },
-      "86ak7brvp": { sessionIds: [], unlinkedSessionIds: ["s-manual"] }
+      "def456aa1": { sessionIds: [] },
+      "abc123aa5": { sessionIds: ["s-manual"] },
+      "abc123aa3": { sessionIds: [], unlinkedSessionIds: ["s-manual"] }
     },
-    transcriptTextBySession: { "s-spec": "…planning task https://app.clickup.com/t/86ajn44t6…" }
+    transcriptTextBySession: { "s-spec": "…planning task https://app.clickup.com/t/def456aa1…" }
   });
-  assert.deepEqual(links.get("86ak7brvp").map((link) => [link.sessionId, link.via, link.role]), [["s-branch", "branch", "builder"]]);
+  assert.deepEqual(links.get("abc123aa3").map((link) => [link.sessionId, link.via, link.role]), [["s-branch", "branch", "builder"]]);
   assert.deepEqual(
-    links.get("86ak7bx9h").map((link) => [link.sessionId, link.via]),
+    links.get("abc123aa5").map((link) => [link.sessionId, link.via]),
     [["s-manual", "manual"], ["s-prompt", "mention"]]
   );
-  assert.deepEqual(links.get("86ajn44t6").map((link) => [link.sessionId, link.via, link.role]), [["s-spec", "transcript", "spec"]]);
+  assert.deepEqual(links.get("def456aa1").map((link) => [link.sessionId, link.via, link.role]), [["s-spec", "transcript", "spec"]]);
   assert.equal([...links.values()].flat().some((link) => link.sessionId === "s-unrelated"), false);
 });
 
 // ---- pipeline --------------------------------------------------------------
 
-test("spec stage: a Spec Writer session lifts no-spec to session; review waits on the user", () => {
+test("spec stage: a spec-role session lifts no-spec to session; review waits on the user", () => {
   const writing = specStage({ planningTask: { status: "to do", statusType: "open" }, specSessions: [{ needsAnswer: false }] });
   assert.equal(writing.steps[writing.index], "session");
   assert.equal(writing.state, "now");
@@ -379,7 +379,7 @@ test("build stage follows builder → branch → PR → staging → QA", () => {
 });
 
 test("what waits on the user: a question first, then red CI, review, feedback, QA", () => {
-  assert.equal(whatNeedsUser({ sessions: [{ needsAnswer: true, title: "recipes", sessionId: "s" }] }).kind, "session-question");
+  assert.equal(whatNeedsUser({ sessions: [{ needsAnswer: true, title: "checkout", sessionId: "s" }] }).kind, "session-question");
   assert.equal(whatNeedsUser({ pullRequests: [{ state: "open", ci: "failing", number: 7 }] }).kind, "red-ci");
   assert.equal(whatNeedsUser({ bucket: BUCKETS.feedback, assignedToUser: true }).kind, "feedback");
   assert.equal(whatNeedsUser({ bucket: BUCKETS.feedback, assignedToUser: false }), null);
@@ -415,9 +415,9 @@ test("pace, people and the daily line", () => {
     { bucket: BUCKETS.done, closedAt: NOW - 3 * DAY, createdAt: NOW - 30 * DAY, assignees: [] },
     { bucket: BUCKETS.done, closedAt: NOW - 10 * DAY, createdAt: NOW - 30 * DAY, assignees: [] },
     { bucket: BUCKETS.done, closedAt: NOW - 2 * 60 * 60 * 1000, createdAt: NOW - 30 * DAY, assignees: [] },
-    { bucket: BUCKETS.inProgress, createdAt: NOW - 20 * DAY, assignees: [{ id: "42", name: "Ula" }] },
-    { bucket: BUCKETS.inStaging, createdAt: NOW - 20 * DAY, assignees: [{ id: "42", name: "Ula" }] },
-    { bucket: BUCKETS.open, createdAt: NOW - 5 * DAY, assignees: [{ id: "7", name: "Roger" }] },
+    { bucket: BUCKETS.inProgress, createdAt: NOW - 20 * DAY, assignees: [{ id: "42", name: "Alex" }] },
+    { bucket: BUCKETS.inStaging, createdAt: NOW - 20 * DAY, assignees: [{ id: "42", name: "Alex" }] },
+    { bucket: BUCKETS.open, createdAt: NOW - 5 * DAY, assignees: [{ id: "7", name: "Sam" }] },
     { bucket: BUCKETS.open, createdAt: NOW - 5 * DAY, assignees: [] }
   ];
   const result = pace(tasks, { now: NOW, lastDeadline: NOW + 28 * DAY });
@@ -425,7 +425,7 @@ test("pace, people and the daily line", () => {
   assert.equal(result.actualPerWeek, 1.5);
   assert.equal(result.neededPerWeek, 1);
   const people = peopleBreakdown(tasks, "42");
-  assert.deepEqual(people.map((person) => [person.name, person.total]), [["Ula", 2], ["Roger", 1], ["Nobody", 1]]);
+  assert.deepEqual(people.map((person) => [person.name, person.total]), [["Alex", 2], ["Sam", 1], ["Nobody", 1]]);
   assert.equal(people[0].isUser, true);
   const daily = dailyPace(tasks, { now: NOW, deadline: { label: "Feature freeze", date: NOW + 7 * DAY } });
   assert.equal(daily.tasks, 4);
@@ -436,7 +436,7 @@ test("pace, people and the daily line", () => {
 
 // ---- one whole project ---------------------------------------------------------
 
-function grooveFixture() {
+function websiteFixture() {
   const build = (id, name, status, extra = {}) =>
     mapTask(rawTask({ id, name, url: `https://app.clickup.com/t/${id}`, status: { status, type: status === "Open" ? "open" : "custom" }, dependencies: [], ...extra }));
   const planning = (id, name, status, specUrl) =>
@@ -445,97 +445,109 @@ function grooveFixture() {
       name,
       status: { status, type: "custom" },
       dependencies: [],
-      list: { id: "901300000002", name: "Groove Planning" },
+      list: { id: "901300000002", name: "Planning list" },
       custom_fields: specUrl ? [{ name: "Spec URL", type: "url", value: specUrl }] : []
     }));
   const dependsOn = (taskId, planningId) => ({ dependencies: [{ task_id: taskId, depends_on: planningId }] });
   const buildTasks = [
-    build("86ak7bh2e", "Leaderboards", "in staging", dependsOn("86ak7bh2e", "86ajn44t6")),
-    build("86ak7brvp", "Friends", "in progress", dependsOn("86ak7brvp", "86ajn44f1")),
-    build("86ak7brv1", "Friends — user modal", "in progress", { parent: "86ak7brvp" }),
-    build("86ak7bx9h", "Recipes", "feedback"),
-    build("86ak7open", "Toast alerts", "Open", { assignees: [] }),
-    build("86ak7done", "Menu", "ready for prod", { date_closed: String(NOW - 4 * DAY) })
+    build("abc123aa1", "Search page", "in staging", dependsOn("abc123aa1", "def456aa1")),
+    build("abc123aa3", "User profile", "in progress", dependsOn("abc123aa3", "def456aa2")),
+    build("abc123aa4", "Profile — edit modal", "in progress", { parent: "abc123aa3" }),
+    build("abc123aa5", "Checkout", "feedback"),
+    build("abc123opn", "Toast alerts", "Open", { assignees: [] }),
+    build("abc123don", "Menu", "ready for prod", { date_closed: String(NOW - 4 * DAY) })
   ];
   const planningTasks = [
-    planning("86ajn44t6", "Leaderboards", "approved", "https://app.clickup.com/1281535/v/dc/173fz-212393/173fz-303673"),
-    planning("86ajn44f1", "Friends", "approved", "https://app.clickup.com/1281535/v/dc/173fz-212393/173fz-300001"),
-    planning("86ajn44ps", "Progress Status", "in review", "https://app.clickup.com/1281535/v/dc/173fz-212393/173fz-301613"),
-    planning("86ajn44so", "Song links", "to do", null)
+    planning("def456aa1", "Search page", "approved", "https://app.clickup.com/999999/v/dc/doc-1/page-1"),
+    planning("def456aa2", "User profile", "approved", "https://app.clickup.com/999999/v/dc/doc-1/page-2"),
+    planning("def456aa3", "Order history", "in review", "https://app.clickup.com/999999/v/dc/doc-1/page-3"),
+    planning("def456aa4", "Newsletter", "to do", null)
   ];
   const sessions = [
-    { sessionId: "s-friends", title: "Friends builder", gitBranch: "CU-86ak7brvp", lastModified: NOW - 60 * 1000, statusGroup: "running" },
-    { sessionId: "s-recipes", title: "recipes", firstPrompt: "https://app.clickup.com/t/86ak7bx9h", lastModified: NOW - DAY, needsAnswer: true },
-    { sessionId: "s-progress", title: "spec-progress-status", firstPrompt: "planning https://app.clickup.com/t/86ajn44ps", lastModified: NOW - 2 * DAY }
+    { sessionId: "s-profile", title: "Profile builder", gitBranch: "CU-abc123aa3", lastModified: NOW - 60 * 1000, statusGroup: "running" },
+    { sessionId: "s-checkout", title: "checkout", firstPrompt: "https://app.clickup.com/t/abc123aa5", lastModified: NOW - DAY, needsAnswer: true },
+    { sessionId: "s-progress", title: "spec-order-history", firstPrompt: "planning https://app.clickup.com/t/def456aa3", lastModified: NOW - 2 * DAY }
   ];
   return {
     board: {
-      id: "groove",
-      name: "Groove",
+      id: "website",
+      name: "Website",
       clickupUserId: "42",
-      clickup: { buildListName: "Initial Build Web", planningListName: "Groove Planning" },
+      clickup: { buildListName: "Web build list", planningListName: "Planning list" },
       deadlines: [
         { id: "d1", label: "Feature freeze", date: NOW + 17 * DAY },
         { id: "d2", label: "Launch", date: NOW + 50 * DAY }
       ],
-      upNext: ["86ak7open"]
+      upNext: ["abc123opn"]
     },
     buildTasks,
     planningTasks,
     sessions,
-    sessionAgents: { "s-friends": "agent-builder", "s-recipes": "agent-builder", "s-progress": "agent-spec" },
+    sessionAgents: { "s-profile": "agent-builder", "s-checkout": "agent-builder", "s-progress": "agent-spec" },
     agents: AGENTS,
     repositoryResults: [
       {
-        repository: "blueprint",
+        repository: "website",
         available: true,
         branchesByTask: {
-          "86ak7bh2e": [{ repository: "blueprint", name: "CU-86ak7bh2e", local: true, pushed: true, aheadOfBase: 7, inStaging: true }],
-          "86ak7brvp": [{ repository: "blueprint", name: "CU-86ak7brvp", local: true, pushed: false, aheadOfBase: 7, inStaging: false }]
+          "abc123aa1": [{ repository: "website", name: "CU-abc123aa1", local: true, pushed: true, aheadOfBase: 7, inStaging: true }],
+          "abc123aa3": [{ repository: "website", name: "CU-abc123aa3", local: true, pushed: false, aheadOfBase: 7, inStaging: false }]
         }
       }
     ],
-    pullRequestResults: [{ available: true, byTask: { "86ak7bh2e": [{ number: 4812, state: "merged", ci: "passing" }] } }],
+    pullRequestResults: [{ available: true, byTask: { "abc123aa1": [{ number: 4812, state: "merged", ci: "passing" }] } }],
     now: NOW
   };
 }
 
-test("a whole Groove: cards, stages, filters, spec pipeline and numbers", () => {
-  const snapshot = buildProjectSnapshot(grooveFixture());
+test("a project that names its own spec link field reads that field", () => {
+  const fixture = websiteFixture();
+  const renamed = fixture.planningTasks.map((task) => ({
+    ...task,
+    customFields: task.customFields.map((field) => ({ ...field, name: "Design document" }))
+  }));
+  const withDefault = buildProjectSnapshot({ ...fixture, planningTasks: renamed });
+  assert.equal(withDefault.cards.find((entry) => entry.id === "abc123aa1").specUrl, null);
+  const withSetting = buildProjectSnapshot({ ...fixture, planningTasks: renamed, board: { ...fixture.board, specUrlFieldName: "design document" } });
+  assert.equal(withSetting.cards.find((entry) => entry.id === "abc123aa1").specUrl, "https://app.clickup.com/999999/v/dc/doc-1/page-1");
+});
+
+test("a whole project: cards, stages, filters, spec pipeline and numbers", () => {
+  const snapshot = buildProjectSnapshot(websiteFixture());
   const card = (id) => snapshot.cards.find((entry) => entry.id === id);
 
   // Subtasks fold into their parent; unclaimed planning tasks become spec cards.
-  assert.deepEqual(snapshot.cards.map((entry) => entry.id), ["86ak7bh2e", "86ak7brvp", "86ak7bx9h", "86ak7open", "86ak7done", "86ajn44ps", "86ajn44so"]);
-  assert.equal(card("86ak7brvp").subtaskCount, 1);
-  assert.equal(card("86ajn44ps").kind, "spec");
+  assert.deepEqual(snapshot.cards.map((entry) => entry.id), ["abc123aa1", "abc123aa3", "abc123aa5", "abc123opn", "abc123don", "def456aa3", "def456aa4"]);
+  assert.equal(card("abc123aa3").subtaskCount, 1);
+  assert.equal(card("def456aa3").kind, "spec");
 
-  // Leaderboards: planning → spec URL, merged PR, in staging → QA waits on her.
-  const leaderboards = card("86ak7bh2e");
-  assert.equal(leaderboards.specUrl, "https://app.clickup.com/1281535/v/dc/173fz-212393/173fz-303673");
+  // Search page: planning → spec URL, merged PR, in staging → QA waits on the user.
+  const leaderboards = card("abc123aa1");
+  assert.equal(leaderboards.specUrl, "https://app.clickup.com/999999/v/dc/doc-1/page-1");
   assert.equal(leaderboards.spec.state, "done");
   assert.equal(leaderboards.build.steps[leaderboards.build.index], "qa");
   assert.equal(leaderboards.needs.kind, "qa");
 
-  // Friends: builder by branch, unpushed branch.
-  const friends = card("86ak7brvp");
-  assert.deepEqual(friends.builderSessions.map((session) => session.sessionId), ["s-friends"]);
+  // User profile: builder by branch, unpushed branch.
+  const friends = card("abc123aa3");
+  assert.deepEqual(friends.builderSessions.map((session) => session.sessionId), ["s-profile"]);
   assert.equal(friends.build.steps[friends.build.index], "branch");
   assert.equal(friends.needs.kind, "unpushed");
 
-  // Recipes: no planning task known, a builder session asking a question.
-  assert.equal(card("86ak7bx9h").spec.known, false);
-  assert.equal(card("86ak7bx9h").needs.kind, "session-question");
+  // Checkout: no planning task known, a builder session asking a question.
+  assert.equal(card("abc123aa5").spec.known, false);
+  assert.equal(card("abc123aa5").needs.kind, "session-question");
 
-  // Progress Status spec: in review with its Spec Writer session.
-  const progress = card("86ajn44ps");
+  // Order history spec: in review with its spec-role session.
+  const progress = card("def456aa3");
   assert.equal(progress.spec.steps[progress.spec.index], "review");
   assert.deepEqual(progress.specSessions.map((session) => session.sessionId), ["s-progress"]);
 
-  // My focus: things waiting on her first; Up next is kept as pinned.
-  assert.equal(snapshot.filters.focus[0] === "86ak7bx9h" || snapshot.cards.find((entry) => entry.id === snapshot.filters.focus[0]).needs !== null, true);
-  assert.ok(snapshot.filters.focus.includes("86ak7open"), "pinned to Up next");
-  assert.ok(!snapshot.filters.focus.includes("86ak7done"), "closed tasks never in focus");
-  assert.deepEqual(snapshot.filters.upNext, ["86ak7open"]);
+  // My focus: things waiting on the user first; Up next is kept as pinned.
+  assert.equal(snapshot.filters.focus[0] === "abc123aa5" || snapshot.cards.find((entry) => entry.id === snapshot.filters.focus[0]).needs !== null, true);
+  assert.ok(snapshot.filters.focus.includes("abc123opn"), "pinned to Up next");
+  assert.ok(!snapshot.filters.focus.includes("abc123don"), "closed tasks never in focus");
+  assert.deepEqual(snapshot.filters.upNext, ["abc123opn"]);
 
   // Spec pipeline counts by stage.
   const stageCount = (stage) => snapshot.specPipeline.find((entry) => entry.stage === stage).count;
@@ -561,26 +573,28 @@ test("the store keeps projects, cleans what it reads and survives a broken file"
   const storagePath = path.join(folder, "project-boards.json");
   const store = createProjectBoardStore({ storagePath });
   const board = store.addBoard({
-    name: "  Groove  ",
-    clickup: { seedTaskId: "86ak7bh2e" },
-    repositories: [{ name: "blueprint", localPath: "/Users/ula/blueprint", githubSlug: "hesdevs/blueprint" }, { name: "" }],
+    name: "  Website  ",
+    clickup: { seedTaskId: "abc123aa1" },
+    repositories: [{ name: "website", localPath: "/Users/someone/website", githubSlug: "acme/website" }, { name: "" }],
     deadlines: [{ label: "Feature freeze", date: NOW }, { label: "", date: NOW }],
     statusOverrides: { "qa passed": "done", weird: "nonsense" }
   });
-  assert.equal(board.name, "Groove");
+  assert.equal(board.name, "Website");
   assert.equal(board.repositories.length, 1);
-  assert.equal(board.repositories[0].stagingBranch, "docker-staging");
+  assert.equal(board.repositories[0].stagingBranch, "staging");
+  assert.equal(board.repositories[0].baseBranch, "main");
+  assert.equal(board.specUrlFieldName, "Spec URL", "the spec link field has a default name");
   assert.equal(board.deadlines.length, 1);
   assert.deepEqual(board.statusOverrides, { "qa passed": "done" });
 
-  store.setUpNext(board.id, ["86ak7open", "86ak7open", "86ak7bx9h"]);
-  store.linkSession(board.id, "86ak7bx9h", "s-1");
-  store.unlinkSession(board.id, "86ak7brvp", "s-1");
+  store.setUpNext(board.id, ["abc123opn", "abc123opn", "abc123aa5"]);
+  store.linkSession(board.id, "abc123aa5", "s-1");
+  store.unlinkSession(board.id, "abc123aa3", "s-1");
   store.flush();
   const reread = readBoardsFile(storagePath).boards[0];
-  assert.deepEqual(reread.upNext, ["86ak7open", "86ak7bx9h"]);
-  assert.deepEqual(reread.manualLinks["86ak7bx9h"].sessionIds, ["s-1"]);
-  assert.deepEqual(reread.manualLinks["86ak7brvp"].unlinkedSessionIds, ["s-1"]);
+  assert.deepEqual(reread.upNext, ["abc123opn", "abc123aa5"]);
+  assert.deepEqual(reread.manualLinks["abc123aa5"].sessionIds, ["s-1"]);
+  assert.deepEqual(reread.manualLinks["abc123aa3"].unlinkedSessionIds, ["s-1"]);
 
   fs.writeFileSync(storagePath, "{ not json");
   assert.deepEqual(readBoardsFile(storagePath).boards, []);
@@ -593,12 +607,12 @@ test("the service finds both lists from one task, caches ClickUp and survives go
   const { createProjectDataService } = await import("../electron/projectData.js");
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "clauding-test-projectdata-"));
   const boardStore = createProjectBoardStore({ storagePath: path.join(folder, "project-boards.json") });
-  const board = boardStore.addBoard({ name: "Groove", clickup: { seedTaskId: "86ak7bh2e" } });
+  const board = boardStore.addBoard({ name: "Website", clickup: { seedTaskId: "abc123aa1" } });
 
-  const buildList = { id: "901300000001", name: "Initial Build Web" };
-  const planningList = { id: "901300000002", name: "Groove Planning" };
+  const buildList = { id: "901300000001", name: "Web build list" };
+  const planningList = { id: "901300000002", name: "Planning list" };
   const leaderboards = rawTask({ list: buildList });
-  const planningTask = rawTask({ id: "86ajn44t6", name: "Leaderboards", list: planningList, dependencies: [], status: { status: "approved", type: "custom" } });
+  const planningTask = rawTask({ id: "def456aa1", name: "Search page", list: planningList, dependencies: [], status: { status: "approved", type: "custom" } });
   let online = true;
   const calls = [];
   const fetchImplementation = async (url) => {
@@ -607,8 +621,8 @@ test("the service finds both lists from one task, caches ClickUp and survives go
       throw new Error("offline");
     }
     const body = (() => {
-      if (url.includes("/task/86ak7bh2e")) return leaderboards;
-      if (url.includes("/task/86ajn44t6")) return planningTask;
+      if (url.includes("/task/abc123aa1")) return leaderboards;
+      if (url.includes("/task/def456aa1")) return planningTask;
       if (url.includes(`/list/${buildList.id}/task`)) return { tasks: [leaderboards], last_page: true };
       if (url.includes(`/list/${planningList.id}/task`)) return { tasks: [planningTask], last_page: true };
       return null;
@@ -634,8 +648,8 @@ test("the service finds both lists from one task, caches ClickUp and survives go
   assert.equal(first.cards[0].specUrl, null, "the fixture planning task has no Spec URL field");
   assert.equal(first.cards[0].spec.state, "done", "approved planning task");
   const saved = boardStore.getBoard(board.id).clickup;
-  assert.equal(saved.buildListName, "Initial Build Web");
-  assert.equal(saved.planningListName, "Groove Planning");
+  assert.equal(saved.buildListName, "Web build list");
+  assert.equal(saved.planningListName, "Planning list");
 
   // Within five minutes: the cache, no request at all.
   const before = calls.length;
@@ -653,6 +667,6 @@ test("the service finds both lists from one task, caches ClickUp and survives go
 
   // The left list reads the cache only.
   const [summary] = service.summaries();
-  assert.equal(summary.name, "Groove");
+  assert.equal(summary.name, "Website");
   assert.equal(summary.summary.leftToClose, 1);
 });

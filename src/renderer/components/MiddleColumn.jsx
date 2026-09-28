@@ -405,7 +405,8 @@ export default function MiddleColumn({
   onCloseReader,
   onOpenReaderInPanel,
   find,
-  windowTools
+  windowTools,
+  projectPane = null
 }) {
   const { translate, language } = useTranslation();
   const [renameRequest, setRenameRequest] = useState(0);
@@ -413,16 +414,22 @@ export default function MiddleColumn({
   const sessionId = (terminal && terminal.sessionId) || (session && session.sessionId) || null;
   // With the reader open the window tools move into its header, so they are
   // rendered once and stay in the same corner of the window.
-  const readerPane = reader ? (
+  // The Projects view covers the column the same way the reader does: the
+  // terminal stack under it stays mounted (hidden), so nothing running is
+  // closed and the scrollback is still there when a session is picked again.
+  const covered = Boolean(projectPane || reader);
+  const readerPane = projectPane ? (
+    projectPane
+  ) : reader ? (
     <DocumentReader reader={reader} onClose={onCloseReader} onOpenInPanel={onOpenReaderInPanel} windowTools={windowTools} />
   ) : null;
-  const underTools = reader ? null : windowTools;
+  const underTools = covered ? null : windowTools;
 
   if (!session && !terminal) {
     return (
       <div className="column column-middle">
         {readerPane}
-        {!reader && (
+        {!covered && (
           <>
             <div className="middle-tools">{underTools}</div>
             <div className="middle-centered">
@@ -446,7 +453,7 @@ export default function MiddleColumn({
     return (
       <div className="column column-middle">
         {readerPane}
-        {!reader && (
+        {!covered && (
           <>
             <div className="middle-tools">{underTools}</div>
             <div className="middle-centered">
@@ -487,7 +494,7 @@ export default function MiddleColumn({
   const metaDisabled = !sessionId;
   const metaTooltipKey = metaDisabled ? "meta.waitForSession" : null;
 
-  // Ula's order, highest first: the agent chip, then the status, then Fork,
+  // The user's order, highest first: the agent chip, then the status, then Fork,
   // then the two meta actions. Above all of them and never hidden: the
   // settings gear and Hide/Show panel, which live in `trailing`.
   const headerItems = [
@@ -574,7 +581,7 @@ export default function MiddleColumn({
   return (
     <div className="column column-middle">
       {readerPane}
-      <div className={reader ? "terminal-stack is-hidden" : "terminal-stack"} data-terminal-stack={reader ? "hidden" : "shown"}>
+      <div className={covered ? "terminal-stack is-hidden" : "terminal-stack"} data-terminal-stack={covered ? "hidden" : "shown"}>
         <header className="transcript-header">
           <HeaderToolbar
             signature={signature}

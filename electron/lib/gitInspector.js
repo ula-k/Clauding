@@ -1,17 +1,17 @@
 // Projects view: what the user's own checkouts say about each task's branch.
 //
-// Branches are named CU-<ClickUp task id> in every HES repo (sometimes with
-// a suffix: CU-86ak7bh2e-1, CU-86ak7bh2e-WAL). For every configured repo
+// Branches are named CU-<ClickUp task id>, sometimes with a suffix
+// (CU-abc123aa1-1, CU-abc123aa1-fix). For every configured repo
 // this reads, locally and without touching anything:
 //   - which CU- branches exist, locally and on origin
 //   - which of them are checked out in a worktree, and whether that
 //     worktree has uncommitted changes
-//   - how many commits each is ahead of the base branch (docker-deploy)
-//   - whether it has already reached the staging branch (docker-staging)
+//   - how many commits each is ahead of the base branch (per repository, "main" by default)
+//   - whether it has already reached the staging branch (per repository, "staging" by default)
 //
 // Only commands that read. `git fetch` is a separate function the view
 // calls on the user's ↻ click and nowhere else: fetching updates
-// remote-tracking refs, never her branches or files.
+// remote-tracking refs, never the user's branches or files.
 import { execFile } from "node:child_process";
 
 const BRANCH_PATTERN = /^CU-([0-9a-zA-Z]+)(?:-[0-9A-Za-z]+)?$/;
@@ -131,8 +131,8 @@ export async function inspectRepository(repository, options = {}) {
     name,
     localPath,
     remoteName = "origin",
-    baseBranch = "docker-deploy",
-    stagingBranch = "docker-staging"
+    baseBranch = "main",
+    stagingBranch = "staging"
   } = repository;
   const result = { repository: name, available: false, error: null, branchesByTask: {} };
   if (!localPath) {
@@ -176,7 +176,7 @@ export async function inspectRepository(repository, options = {}) {
       uncommitted: worktree ? await hasUncommittedChanges(worktree.path, options) : null
     };
     // A branch with no commits of its own that is "in staging" was only
-    // just cut: every commit of docker-deploy is in staging too.
+    // just cut: every commit of the base branch is in staging too.
     if (info.aheadOfBase === 0) {
       info.inStaging = false;
     }

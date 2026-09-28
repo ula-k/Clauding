@@ -189,7 +189,7 @@ export function expandHomeFolder(target, { platform = process.platform, homeDire
   return text;
 }
 
-// "C:\Users\ula\Documents\projects\website" -> "~\Documents\projects\website"
+// "C:\Users\someone\Documents\projects\website" -> "~\Documents\projects\website"
 export function shortenHomePath(fullPath, { platform = process.platform, homeDirectory = os.homedir() } = {}) {
   if (typeof fullPath !== "string") {
     return "";

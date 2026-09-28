@@ -1,5 +1,5 @@
 // Projects view: where a task is in the user's own pipeline — the two rows
-// of dots on a task card — and whether it is waiting on her.
+// of dots on a task card — and whether it is waiting on the user.
 //
 //   Spec:  noSpec → session → draft → review → approved
 //   Build: open → builder → branch → PR → staging → QA → prod
@@ -77,11 +77,11 @@ export function buildStage({ bucket, builderSessions = [], branches = [], pullRe
 export function whatNeedsUser({ bucket, spec, sessions = [], branches = [], pullRequests = [], assignedToUser }) {
   const blocked = sessions.find((session) => session.needsAnswer);
   if (blocked) {
-    return { kind: "session-question", sessionId: blocked.sessionId, label: `${blocked.title} needs an answer` };
+    return { kind: "session-question", sessionId: blocked.sessionId, title: blocked.title, label: `${blocked.title} needs an answer` };
   }
   const redPull = pullRequests.find((pull) => pull.state === "open" && pull.ci === "failing");
   if (redPull) {
-    return { kind: "red-ci", label: `CI failing on PR #${redPull.number}` };
+    return { kind: "red-ci", number: redPull.number, label: `CI failing on PR #${redPull.number}` };
   }
   if (spec && spec.known && spec.steps[spec.index] === SPEC_STAGES.review) {
     return { kind: "spec-review", label: "spec waiting for your approval" };
@@ -94,7 +94,7 @@ export function whatNeedsUser({ bucket, spec, sessions = [], branches = [], pull
   }
   const unpushed = branches.find((branch) => branch.local && !branch.pushed && (branch.aheadOfBase || 0) > 0);
   if (unpushed && sessions.some((session) => session.role === SESSION_ROLES.builder)) {
-    return { kind: "unpushed", label: `${unpushed.name} not pushed` };
+    return { kind: "unpushed", branch: unpushed.name, label: `${unpushed.name} not pushed` };
   }
   return null;
 }

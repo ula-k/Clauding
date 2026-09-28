@@ -94,7 +94,7 @@ test("the flags go last, after everything the app needs for itself", () => {
 
 // The bug this pins down: "I add any extra flags and the new session does not
 // open." The command line was never the problem — these two strings, the ones
-// Ula actually types, come out of the builder exactly as `claude` wants them,
+// the user actually types, come out of the builder exactly as `claude` wants them,
 // one token per word, the `@` and the `:` untouched, and after everything the
 // app sets itself. What did go wrong was the value the field suggested
 // (untagged, so the CLI refused it) and the pane disappearing with the CLI.

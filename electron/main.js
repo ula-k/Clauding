@@ -58,6 +58,7 @@ import { builtinAgentDraft, seedBuiltinSkills, seedBuiltins } from "./builtins.j
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
 import { createProjectBoardStore } from "./projectBoards.js";
 import { createProjectDataService } from "./projectData.js";
+import { taskIdFromLink } from "./lib/clickupClient.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
@@ -1304,7 +1305,23 @@ function registerIpc() {
   });
 
   ipcMain.handle(CHANNELS.boardsGet, async () => projectBoards.getState());
-  ipcMain.handle(CHANNELS.boardsAdd, async (event, { draft }) => projectBoards.addBoard(draft || {}));
+  // "Add a project…": the sheet sends a name, one task link and the local
+  // repositories; the link becomes the seed the lists are found from.
+  ipcMain.handle(CHANNELS.boardsAdd, async (event, { draft }) => {
+    const request = draft || {};
+    if (projectData.usesFixture) {
+      throw new Error("Projects come from CLAUDING_PROJECTS_FIXTURE in this run; nothing is saved.");
+    }
+    const seedTaskId = request.seedLink ? taskIdFromLink(request.seedLink) : null;
+    if (request.seedLink && !seedTaskId) {
+      throw new Error("That is not a link to a ClickUp task.");
+    }
+    const { seedLink, ...rest } = request;
+    return projectBoards.addBoard({
+      ...rest,
+      clickup: { ...(rest.clickup || {}), seedTaskId: seedTaskId || (rest.clickup && rest.clickup.seedTaskId) || null }
+    });
+  });
   ipcMain.handle(CHANNELS.boardsUpdate, async (event, { boardId, update }) => projectBoards.updateBoard(boardId, update || {}));
   ipcMain.handle(CHANNELS.boardsDelete, async (event, { boardId }) => {
     projectBoards.deleteBoard(boardId);
@@ -1698,6 +1715,14 @@ function registerIpc() {
 
   ipcMain.handle(CHANNELS.panelOpenSkills, async (event, { sessionKey }) => {
     return panelTabs.openSkills(sessionKey);
+  });
+
+  ipcMain.handle(CHANNELS.panelOpenTask, async (event, { sessionKey, taskId, title }) => {
+    const cleanTaskId = String(taskId || "").trim();
+    if (!/^[0-9a-z]{4,20}$/i.test(cleanTaskId)) {
+      throw new Error("Not a ClickUp task id.");
+    }
+    return panelTabs.open(sessionKey, { kind: "clickup", target: cleanTaskId, title: String(title || cleanTaskId).slice(0, 120) });
   });
 
   ipcMain.handle(CHANNELS.panelClose, async (event, { sessionKey, tabId }) => {

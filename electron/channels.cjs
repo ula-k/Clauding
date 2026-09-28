@@ -111,6 +111,9 @@ const CHANNELS = {
   panelOpenSearch: "panel:open-search",
   // The one skills-catalogue tab of a session (the macOS Skills menu).
   panelOpenSkills: "panel:open-skills",
+  // The app's own read-only view of one ClickUp task (Projects view), as a
+  // panel tab of the project on screen.
+  panelOpenTask: "panel:open-task",
   panelClose: "panel:close",
   panelActivate: "panel:activate",
   panelSetTitle: "panel:set-title",

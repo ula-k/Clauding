@@ -16,7 +16,7 @@ nothing on disk.
 ## Steps
 1. Open Clauding.
 2. Type a word from a session's name in the search box.
-3. Type part of a folder name instead ("blueprint").
+3. Type part of a folder name instead ("website").
 4. Type a word from a session's first prompt.
 5. Type an agent's name.
 6. Clear the box.

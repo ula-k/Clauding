@@ -2,17 +2,19 @@
 // modules read — ClickUp's two lists, the user's checkouts, GitHub, the
 // Claude Code sessions — into the single object the window draws. Nothing
 // here reads a file or the network; the caller passes it all in, so the
-// dry tests can build a whole Groove from fixtures.
+// dry tests can build a whole project from fixtures.
 //
-// The ClickUp model (Groove, from the Feature Builder's own notes):
-//   build list    "Initial Build Web" — one task per piece of work
-//   planning list the planning tasks, each with a Spec URL field pointing
+// The ClickUp model the view expects:
+//   build list    one task per piece of work
+//   planning list the planning tasks, each with a spec-link custom field
+//                 (board.specUrlFieldName, "Spec URL" by default) pointing
 //                 at the spec page
 //   a build task "depends on" its planning task
 // A planning task no build task depends on yet is a spec still on its way:
 // it gets a card of its own (kind "spec").
 import { BUCKETS, SPEC_STAGES, SPEC_STAGE_ORDER, bucketForStatus } from "./statusBuckets.js";
 import { linkSessionsToTasks, SESSION_ROLES } from "./taskLinker.js";
+import { specUrlFrom } from "./clickupClient.js";
 import { buildStage, specStage, whatNeedsUser } from "./pipelineStage.js";
 import {
   bucketCounts,
@@ -79,11 +81,16 @@ export function buildProjectSnapshot({
   const userId = board.clickupUserId || null;
   const upNext = (board.upNext || []).map((taskId) => String(taskId));
 
+  // The spec link is read from the custom field the project names
+  // (board.specUrlFieldName); a task mapped without its fields keeps the
+  // link it came with.
+  const withSpecUrl = (task) =>
+    Array.isArray(task.customFields) ? { ...task, specUrl: specUrlFrom(task.customFields, board.specUrlFieldName) } : task;
   const topBuild = countableTasks(buildTasks).map((task) => ({
-    ...task,
+    ...withSpecUrl(task),
     bucket: bucketForStatus(task.status, task.statusType, statusOverrides)
   }));
-  const topPlanning = countableTasks(planningTasks);
+  const topPlanning = countableTasks(planningTasks).map(withSpecUrl);
   const planningById = new Map(topPlanning.map((task) => [task.id, task]));
   const subtaskCounts = new Map();
   for (const task of buildTasks) {
@@ -134,6 +141,9 @@ export function buildProjectSnapshot({
     const card = {
       id: task.id,
       kind: "build",
+      customId: task.customId || null,
+      description: excerptOf(task.description),
+      fields: fieldsOf(task.customFields),
       name: task.name,
       url: task.url,
       status: task.status,
@@ -171,6 +181,9 @@ export function buildProjectSnapshot({
     const card = {
       id: planningTask.id,
       kind: "spec",
+      customId: planningTask.customId || null,
+      description: excerptOf(planningTask.description),
+      fields: fieldsOf(planningTask.customFields),
       name: planningTask.name,
       url: planningTask.url,
       status: planningTask.status,
@@ -262,8 +275,15 @@ export function buildProjectSnapshot({
     sources: {
       buildList: board.clickup && board.clickup.buildListName ? board.clickup.buildListName : null,
       planningList: board.clickup && board.clickup.planningListName ? board.clickup.planningListName : null,
-      repositories: repositoryResults.map((result) => ({ name: result.repository, available: result.available, error: result.error })),
-      pullRequests: pullRequestResults.map((result) => ({ available: result.available, reason: result.reason })),
+      repositories: (board.repositories && board.repositories.length > 0
+        ? board.repositories.map((repository, index) => ({ name: repository.name, result: repositoryResults[index] || null }))
+        : repositoryResults.map((result) => ({ name: result.repository, result }))
+      ).map(({ name, result }) => ({
+        name,
+        available: result ? result.available !== false : null,
+        error: result ? result.error || null : null
+      })),
+      pullRequests: pullRequestResults.map((result) => ({ available: result.available, reason: result.reason || null })),
       clickup
     },
     timeline,
@@ -287,6 +307,34 @@ export function buildProjectSnapshot({
       nextDeadline: timeline.next ? { label: timeline.next.label, daysLeft: timeline.next.daysLeft } : null
     }
   };
+}
+
+const DESCRIPTION_EXCERPT_LENGTH = 600;
+
+// The first part of a task's description, for the expanded card; the whole
+// text is read on demand (the panel's task view).
+function excerptOf(description) {
+  const text = String(description || "").trim();
+  if (text.length <= DESCRIPTION_EXCERPT_LENGTH) {
+    return text;
+  }
+  return `${text.slice(0, DESCRIPTION_EXCERPT_LENGTH).replace(/\s+\S*$/, "")}…`;
+}
+
+// Custom fields as name + readable text; values that are not plain text or
+// numbers (people, attachments, drop-down ids) are left to ClickUp itself.
+function fieldsOf(customFields) {
+  const fields = [];
+  for (const field of customFields || []) {
+    const value = field.value;
+    if (typeof value === "string" || typeof value === "number") {
+      const text = String(value).trim();
+      if (text) {
+        fields.push({ name: field.name, value: text.slice(0, 300) });
+      }
+    }
+  }
+  return fields.slice(0, 12);
 }
 
 function dedupeSessions(list) {

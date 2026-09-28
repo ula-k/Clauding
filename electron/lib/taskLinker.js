@@ -4,16 +4,16 @@
 //   1. manual    — the user linked the session to the task by hand
 //                  (board.manualLinks); also the only way to UNlink
 //   2. branch    — the session's git branch or working folder carries
-//                  CU-<task id> (Feature Builder works in a CU- worktree)
+//                  CU-<task id> (a builder typically works in a CU- worktree)
 //   3. mention   — the session's first prompt or title contains the task's
-//                  link (app.clickup.com/t/<id>) or CU-<id>; a Builder
+//                  link (app.clickup.com/t/<id>) or CU-<id>; a builder
 //                  always starts from the task link
 //   4. transcript — the same, found in the first part of the transcript
 //                  (passed in as `transcriptTextBySession`; reading it is
 //                  the caller's job)
 //
-// A session's role comes from the agent it was born from: the Spec Writer
-// writes specs, the Feature Builder builds. The user can map any agent to a
+// A session's role comes from the agent it was born from: an agent whose
+// name says "spec" writes specs, one whose name says "build" builds. The user can map any agent to a
 // role (board.agentRoles); unknown agents and plain sessions are "other".
 import { taskIdFromBranch } from "./gitInspector.js";
 

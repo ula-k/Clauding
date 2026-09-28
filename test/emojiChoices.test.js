@@ -8,7 +8,7 @@ import { DEFAULT_AGENT_EMOJI } from "../src/renderer/agentConstants.js";
 
 test("a pasted emoji with text after it keeps only the emoji", () => {
   assert.equal(firstGrapheme("✅ Test"), "✅");
-  assert.equal(firstGrapheme("📐 spec writer"), "📐");
+  assert.equal(firstGrapheme("📐 spec author"), "📐");
   assert.equal(firstGrapheme("Test ✅"), "T", "the first character is the first character");
 });
 

@@ -5,6 +5,7 @@ import GroupHeader from "./GroupHeader.jsx";
 import { SearchIcon, PlusIcon, EyeIcon, ChevronRightIcon } from "./Icons.jsx";
 import NewSessionSheet from "./NewSessionSheet.jsx";
 import AgentsTab from "./AgentsTab.jsx";
+import ProjectsList from "./ProjectsList.jsx";
 import AgentForm from "./AgentForm.jsx";
 import { buildGroupedList, groupIdForSession } from "../sessionGrouping.js";
 import { hasChosenColor, sessionColorToken } from "../sessionColors.js";
@@ -12,9 +13,11 @@ import { bulkTagPlan, tagLabelsForSession, tagsForSession } from "../sessionTags
 import ManageTagsSheet from "./ManageTagsSheet.jsx";
 import { commandKeyPressed } from "../platform.js";
 
-// The left column: two tabs. "Sessions" is the user's own groups, each a header
-// with plain name-only rows under it and a single "Hidden (N)" line at the
-// very bottom; "Agents" is the agents the user defined, one row each.
+// The left column: three tabs. "Sessions" is the user's own groups, each a
+// header with plain name-only rows under it and a single "Hidden (N)" line at
+// the very bottom; "Agents" is the agents the user defined, one row each;
+// "Projects" is the user's projects (ProjectsList.jsx). Which tab is shown
+// belongs to App, because the Projects tab also changes the middle column.
 //
 // Both sheets that can cover this column live here: the "+ New" sheet (whose
 // open state belongs to App, because starting a session closes it) and the
@@ -59,10 +62,13 @@ export default function SessionsColumn({
   tagActions,
   onSelectAllVisible,
   onClearSelection,
-  bulkActions
+  bulkActions,
+  activeTab = "sessions",
+  onChangeTab,
+  projects
 }) {
   const { translate, language, setLanguage } = useTranslation();
-  const [activeTab, setActiveTab] = useState("sessions");
+  const setActiveTab = onChangeTab;
   // null when the agent form is closed; otherwise which agent it edits
   // (null id = a new one) and whether the "+ New" sheet should come back
   // afterwards, which is what "Add agent…" inside that sheet does.
@@ -243,10 +249,27 @@ export default function SessionsColumn({
             >
               {translate("tabs.agents")}
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={activeTab === "projects" ? "tab is-active" : "tab"}
+              onClick={() => setActiveTab("projects")}
+              data-projects-tab
+            >
+              {translate("tabs.projects")}
+            </button>
           </div>
-          <button type="button" className="button is-primary new-button" onClick={() => onOpenNewSheet(null, null)} data-new-button>
+          {/* With three tabs on this row the button is the "+" alone (its name
+              stays in the tooltip and for screen readers). */}
+          <button
+            type="button"
+            className="button is-primary new-button is-icon-only"
+            onClick={() => onOpenNewSheet(null, null)}
+            title={translate("newSession.button")}
+            aria-label={translate("newSession.button")}
+            data-new-button
+          >
             <PlusIcon />
-            {translate("newSession.button")}
           </button>
         </div>
         {newSheetOpen && !agentFormState && (
@@ -306,7 +329,16 @@ export default function SessionsColumn({
         )}
       </div>
 
-      {activeTab === "agents" ? (
+      {activeTab === "projects" ? (
+        <ProjectsList
+          summaries={projects.summaries}
+          loading={projects.loading}
+          selectedBoardId={projects.selectedBoardId}
+          onSelect={projects.onSelect}
+          onAdd={projects.onAdd}
+          readOnly={projects.readOnly}
+        />
+      ) : activeTab === "agents" ? (
         <AgentsTab
           agents={agents}
           sessions={agentSessions || sessions}

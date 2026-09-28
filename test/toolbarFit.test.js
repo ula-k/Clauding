@@ -105,7 +105,7 @@ test("controls of equal priority fall out from the right, the way they are drawn
 test("every header control has a priority of its own", () => {
   const priorities = Object.values(HEADER_ITEM_PRIORITY);
   assert.equal(new Set(priorities).size, priorities.length);
-  // Ula's order: the agent chip outranks the status pill, which outranks
+  // The user's order: the agent chip outranks the status pill, which outranks
   // Fork, which outranks the two meta actions.
   assert.ok(HEADER_ITEM_PRIORITY.agentChip > HEADER_ITEM_PRIORITY.statusPill);
   assert.ok(HEADER_ITEM_PRIORITY.statusPill > HEADER_ITEM_PRIORITY.fork);

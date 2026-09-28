@@ -74,6 +74,23 @@
   --project-color-8: #d0a0a8;
   --project-color-9: #a8a0c0;
 
+  /* Projects view: one color per ClickUp status bucket, used by the list's
+     thin bar, the stack bar, the legend, the people bars and status pills */
+  --bucket-open: #4b564d;
+  --bucket-in-progress: #b9a7e6;
+  --bucket-feedback: #d6c58f;
+  --bucket-issues-found: #d9968a;
+  --bucket-in-staging: #8fbcb4;
+  --bucket-done: #a9c7a4;
+  --bucket-other: #8a8a9a;
+  --sage: #a9c7a4;
+  --sage-soft: rgba(169, 199, 164, 0.16);
+  --blue: #8fa9c9;
+  --blue-soft: rgba(143, 169, 201, 0.18);
+  --teal: #8fbcb4;
+  --mauve: #c49bb8;
+  --mauve-soft: rgba(196, 155, 184, 0.16);
+
   --code-background: #141814;
   --code-border: #2a322b;
 

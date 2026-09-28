@@ -378,6 +378,14 @@ electron/smokeGroups.js    CLAUDING_SMOKE_GROUPS automation for the list (dev on
 electron/smokeCollapse.js  CLAUDING_SMOKE_COLLAPSE automation for folding a group shut (dev only)
 electron/liveStatus.js     Running / Waiting derived from ~/.claude registries
 electron/projects.js       folder labels ("…/projects/website"), color index, ~ paths
+electron/projectBoards.js  the Projects tab's projects ("boards"), project-boards.json
+electron/projectData.js    one project's data: ClickUp through a disk cache, git, gh, sessions; the fixture hook
+electron/lib/clickupClient.js  ClickUp, read-only (GET only), token from the Keychain or CLAUDING_CLICKUP_TOKEN
+electron/lib/{statusBuckets,gitInspector,pullRequests,taskLinker,pipelineStage,projectStats,projectSnapshot}.js  the pure pieces of a project snapshot
+src/renderer/projectsView.js   what the Projects view draws, from a snapshot (pure, tested)
+src/renderer/components/ProjectsList.jsx   the Projects tab: one row per project, "Add a project…"
+src/renderer/components/ProjectView.jsx    the project in the middle column: deadlines, numbers, chips, cards, spec pipeline
+src/renderer/components/ClickupTaskTab.jsx the side panel's own read-only view of a ClickUp task
 scripts/prepareNodePty.js  postinstall: makes node-pty usable inside Electron
 scripts/checkNodePty.js    CI: a real pty, no Electron — the one thing a Mac cannot answer for Windows
 scripts/start.js           npm start (Vite dev server, then Electron)
@@ -972,7 +980,7 @@ The left column looks like the Claude Code agents view: **one line per
 session, the name and nothing else**, a small status dot on the left and a
 dim relative time on the right. The folder is in the tooltip, not on a second
 line. The search box still matches the folder and the first prompt under the
-hood, so typing "blueprint" finds a session in that folder.
+hood, so typing "website" finds a session in that folder.
 
 **A row says two things at once, in two places.** The **name** is written
 in the session's own color (see **Session colors** below); the **dot** in
@@ -1257,7 +1265,7 @@ never the folder it works in. The working folder is picked per session in
   "agents": [
     {
       "id": "<uuid>",
-      "name": "Spec Writer",
+      "name": "Spec Author",
       "emoji": "📐",
       "color": "--project-color-2",
       "definitionFolder": "/Users/<you>/Documents/agents/spec-writer",
@@ -1297,7 +1305,7 @@ with that agent already picked.
 rest, following the usual convention: the `.md` whose basename is the
 folder's name (`agents/spec-writer/spec-writer.md`), else `README.md`, else
 the only `.md` there is. The **name** comes from that file's first `# `
-heading with an `Agent:` prefix removed ("# Agent: Spec Writer" → "Spec
+heading with an `Agent:` prefix removed ("# Agent: Spec Author" → "Spec
 Writer"), the **emoji** from the first emoji in the file (or `✦`), and a
 **select** lists the folder's other top-level `.md` files. Everything is
 editable; the name and emoji are only re-suggested while you have not typed
@@ -1379,12 +1387,12 @@ badge on its row.
   is not shown twice. Rows without an agent are exactly as they were.
 * **Terminal header**: an `emoji name` chip next to the title.
 * **Search** matches the agent name too, so typing "spec" finds everything
-  the Spec Writer ran.
+  the Spec Author ran.
 * **Under the agent's own row** (Agents tab): every session that agent
   started, as sub-rows that look and behave like a row in the Sessions list
   — status dot, name, right-aligned time, and a click that selects the
   session and opens its terminal exactly the same way. The agent's name gets
-  a count next to it ("Spec Writer · 3"); clicking the agent row itself
+  a count next to it ("Spec Author · 3"); clicking the agent row itself
   still opens "+ New" with that agent picked.
 
   A session belongs to the list when `sessionAgents` links it **or** when the
@@ -1411,12 +1419,78 @@ badge on its row.
   links, so they do not appear under an agent either: a smoke run's
   conversations stay out of both places.
 
+## Projects
+
+The third tab of the left column, next to Sessions and Agents. A project
+follows one ClickUp list (plus, when there is one, the list its specs are
+planned in), the CU- branches in your local checkouts, their pull requests,
+and the Claude Code sessions that work on its tasks. Everything is **read
+only**: ClickUp, git and GitHub are read, never written.
+
+* **The list (left)**: one row per project, grouped (Work / Private) — its
+  color, name, how many tasks are left, a thin bar of where the tasks are,
+  the nearest deadline ("Feature freeze in 18 d") and how much is closed. The
+  numbers come from the last ClickUp answer on disk, so the list draws at
+  once. "Add a project…" is a text link that opens a small sheet: a name, one
+  ClickUp task link (the lists are found from it) and the local repositories.
+  Because three tabs share the top row, "+ New" is now the "+" alone (its name
+  is in the tooltip).
+* **The view (middle)**: selecting a project covers the middle column the way
+  the skill reader does. The terminals are **not** closed or unmounted — they
+  stay in the terminal stack underneath; Sessions or Agents (or clicking a
+  session chip) brings the terminal back as it was. From the top: the header
+  (name, the ClickUp lists and repositories as text chips, "refreshed … ago",
+  **Refresh** — ClickUp, `git fetch` in the repositories and GitHub again —
+  and Show / Hide panel), the **deadline axis** with a Today marker and, under
+  it, a line marked **Computed** ("To make Feature freeze: 14 tasks in 14 work
+  days → about 1 a day") — a suggestion, not a goal anyone set; the
+  **numbers** (tasks per status bucket, left to close with a small burn-down,
+  the pace needed and the pace of the last two weeks, specs to write / in
+  review / PRs with red CI, and who has what); the **filter chips** with counts
+  (My focus · Up next · Specs pipeline · Build · Everything); and the **task
+  cards**: title, ClickUp status, what waits on you, two rows of dots (Spec:
+  no spec → session → draft → review → approved; Build: open → builder →
+  branch → PR → staging → QA → prod) and link chips — the task (`CU-<id>`),
+  its spec, the spec and builder sessions, the branch per repository with how
+  far ahead it is and whether it has uncommitted work, and the PR with its CI.
+  A click on a card opens its details in place (description, fields, comments
+  count, assignee, sessions, code). Under **Specs pipeline** the view shows the
+  five stage counters with the list of one stage under them.
+* **The side panel** is keyed `project:<id>`, so every project keeps its own
+  tabs. The `CU-…` chip opens the app's **own** view of the task (status,
+  fields, description, comments, read by the app) as a panel tab — not a
+  webview, where ClickUp would be signed out; "Open in ClickUp ↗" takes the
+  real page to your browser. The small ↗ on the chip does that directly.
+* **States**: a skeleton while the first answer loads; "No ClickUp token"
+  with how to set one; offline (the last copy, "as of …"); an error with the
+  request that failed; "no ClickUp list yet".
+
+**Where it is kept.** `~/Library/Application Support/Clauding/project-boards.json`
+holds the projects (name, color, group, the lists, the repositories with their
+`baseBranch` — `main` by default — and `stagingBranch` — `staging` by default,
+the ClickUp field that holds a spec link, `specUrlFieldName`, `"Spec URL"` by
+default and matched without regard to case, deadlines, Up next, manual
+session links); `project-cache/<id>.json` next to it holds the last ClickUp
+answer. Deadlines, Up next and the other settings are edited in that file for
+now; the settings sheet, pinning, manual links and starting a session for a
+task are stage 2.
+
+**The token.** Your personal ClickUp API token, from the macOS Keychain
+(`security add-generic-password -a clickup-api -s clickup-api-token -w <token>`)
+or from `CLAUDING_CLICKUP_TOKEN`. It stays in memory: never written to disk,
+never logged, never sent to the window.
+
+**Test data.** `CLAUDING_PROJECTS_FIXTURE=<file.json>` replaces ClickUp, git,
+gh and the project list itself with the file (`test/fixtures/projects/website.json`
+is a made-up "Website" project with a second one that has no token and a
+third in the Private group). Nothing is read from ClickUp and nothing is saved.
+
 ## Extra `claude` flags
 
 Anything the CLI takes that the app does not set itself can be added to the
 command line — `--model sonnet`, `--dangerously-skip-permissions`, or the one
 this was built for: `--channels plugin:telegram@claude-plugins-official`,
-which lets Ula talk to that session from Telegram. There are three levels and
+which lets the user talk to that session from Telegram. There are three levels and
 they are appended in this order, so the narrower one always comes last:
 
 1. **Global** — `extraClaudeArguments` in `settings.json`, edited in
@@ -1877,6 +1951,8 @@ CLAUDING_SCREENSHOT_RESUME=<sessionId> ...                # that terminal resume
                                                          # CLAUDING_DRY_SPAWN=1 the id may be invented)
 CLAUDING_SCREENSHOT_AGENT=<agentId> ...                   # that terminal is opened as this agent, so
                                                          # the header carries its chip
+CLAUDING_PROJECTS_FIXTURE=test/fixtures/projects/website.json ...  # the Projects tab on made-up data
+                                                         # (no ClickUp, no git, no gh; nothing saved)
 CLAUDING_SCREENSHOT_WIDTH=1000 CLAUDING_SCREENSHOT_HEIGHT=900 ...
                                                          # the window opens this big instead of
                                                          # 1440x900 (1000 is its minimum width),

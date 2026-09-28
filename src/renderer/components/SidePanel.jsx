@@ -4,6 +4,7 @@ import { renderMarkdown, withoutFrontmatter } from "../markdown.js";
 import { CloseIcon, FindTabIcon, GlobeIcon, MarkdownIcon, PageIcon, PlusIcon, ReloadIcon, SparkIcon } from "./Icons.jsx";
 import SearchResults from "./SearchResults.jsx";
 import SkillsPanel from "./SkillsPanel.jsx";
+import ClickupTaskTab from "./ClickupTaskTab.jsx";
 import { fileUrlFor, splitAddress } from "../paths.js";
 
 // The right panel: Hermes-style tabs next to the terminal. Each tab is a
@@ -42,7 +43,16 @@ function TabIcon({ kind }) {
   if (kind === "skills") {
     return <SparkIcon />;
   }
+  if (kind === "clickup") {
+    return <span className="clickup-mark" aria-hidden="true" />;
+  }
   return <PageIcon />;
+}
+
+// A ClickUp task tab (Projects view) has no page of its own: its address
+// and "Open in browser" are the task on app.clickup.com.
+function externalTargetOf(tab) {
+  return tab.kind === "clickup" ? `https://app.clickup.com/t/${tab.target}` : tab.target;
 }
 
 // An http(s) page or a local HTML file. `reloadCounter` bumps whenever the
@@ -193,8 +203,10 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
   const tabs = panelState.tabs;
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  // Only files on disk are watched; a URL, a search, the skills catalogue
+  // and a ClickUp task are not files.
   const localTargetsKey = tabs
-    .filter((tab) => tab.kind !== "url")
+    .filter((tab) => tab.kind === "html" || tab.kind === "markdown")
     .map((tab) => tab.target)
     .join("\n");
   const activeTab = tabs.find((tab) => tab.tabId === panelState.activeTabId) || null;
@@ -223,7 +235,7 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
       setReloadCounters((previous) => {
         const next = { ...previous };
         for (const tab of tabsRef.current) {
-          if (tab.kind !== "url" && tab.target === filePath) {
+          if ((tab.kind === "html" || tab.kind === "markdown") && tab.target === filePath) {
             next[tab.tabId] = (next[tab.tabId] || 0) + 1;
           }
         }
@@ -249,7 +261,7 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
     if (!activePage) {
       return;
     }
-    navigator.clipboard.writeText(activePage.target).then(() => {
+    navigator.clipboard.writeText(externalTargetOf(activePage)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), COPIED_FEEDBACK_MILLISECONDS);
     });
@@ -257,7 +269,7 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
 
   function openExternally() {
     if (activePage) {
-      window.clauding.openExternally(activePage.target).catch((error) => console.error("Could not open externally", error));
+      window.clauding.openExternally(externalTargetOf(activePage)).catch((error) => console.error("Could not open externally", error));
     }
   }
 
@@ -335,7 +347,7 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
                     ? translate("panel.noTab")
                     : copied
                       ? translate("panel.copied")
-                      : <AddressText target={activePage.target} />}
+                      : <AddressText target={externalTargetOf(activePage)} />}
             </button>
             <button type="button" className="panel-tool" onClick={reloadActive} disabled={!activePage} title={translate("panel.reload")}>
               <ReloadIcon />
@@ -380,6 +392,16 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
                     skillMakerSeeding={skills ? skills.skillMakerSeeding : "installed"}
                   />
                 </div>
+              ) : tab.kind === "clickup" ? (
+                <ClickupTaskTab
+                  key={tab.tabId}
+                  tab={tab}
+                  active={!showAddressForm && tab.tabId === panelState.activeTabId}
+                  reloadCounter={reloadCounters[tab.tabId] || 0}
+                  onOpenExternal={(url) =>
+                    window.clauding.openExternally(url).catch((error) => console.error("Could not open externally", error))
+                  }
+                />
               ) : tab.kind === "markdown" ? (
                 <MarkdownTab
                   key={tab.tabId}

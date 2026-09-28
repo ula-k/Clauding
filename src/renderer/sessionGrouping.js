@@ -8,9 +8,9 @@ import { DEFAULT_GROUP_ID } from "./groupConstants.js";
 
 // The search box matches what is on screen (the name, the agent behind the
 // badge and the tag pills) and what is not (the folder and the first
-// prompt), so typing "blueprint" finds a session in that folder even though
+// prompt), so typing "website" finds a session in that folder even though
 // the row no longer prints the folder, and typing "spec" finds everything
-// the Spec Writer ran. Tags are matched by their label, which is why there
+// the Spec Author ran. Tags are matched by their label, which is why there
 // is no filter of their own: typing the tag is the filter.
 export function matchesSearch(session, query, tagLabels = []) {
   if (!query) {

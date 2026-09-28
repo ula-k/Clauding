@@ -51,6 +51,7 @@ elsewhere"), never the exact wording on screen — wording is quoted only as
 | [CL-23](CL-23-needs-answer.md) | List · when a session says NEEDS ANSWER | P2 | dry test `test/needsAnswer.test.js` + manual |
 | [CL-24](CL-24-tags.md) | List · tags | P2 | dry test `test/tags.test.js` + manual |
 | [CL-25](CL-25-skills-tab.md) | Panel · the Skills tab | P2 | dry test `test/skillsList.test.js` + manual |
+| [CL-27](CL-27-projects-view.md) | Projects · the tab and the project view | P2 | dry test `test/projectsView.test.js`, `test/projectsData.test.js` + manual |
 
 Eleven P1, eleven P2, two P3.
 

@@ -302,14 +302,14 @@ test("the hash ignores the note left by a copy and does not care what was writte
 
 test("on Windows the scan looks where a Windows machine keeps skills", () => {
   const onWindows = scanRootFolders({
-    homeDirectory: "C:\\Users\\ula",
+    homeDirectory: "C:\\Users\\someone",
     platform: "win32",
-    environment: { APPDATA: "C:\\Users\\ula\\AppData\\Roaming" }
+    environment: { APPDATA: "C:\\Users\\someone\\AppData\\Roaming" }
   });
   const folders = onWindows.map((root) => root.folder);
-  assert.ok(folders.includes("C:\\Users\\ula\\.claude\\plugins"), "plugins live in the same place");
-  assert.ok(folders.includes("C:\\Users\\ula\\AppData\\Roaming\\Claude"), "Claude Desktop keeps its copies here");
-  assert.ok(folders.includes("C:\\Users\\ula\\.hermes\\skills"));
+  assert.ok(folders.includes("C:\\Users\\someone\\.claude\\plugins"), "plugins live in the same place");
+  assert.ok(folders.includes("C:\\Users\\someone\\AppData\\Roaming\\Claude"), "Claude Desktop keeps its copies here");
+  assert.ok(folders.includes("C:\\Users\\someone\\.hermes\\skills"));
   assert.equal(
     folders.some((folder) => folder.includes("Library")),
     false,

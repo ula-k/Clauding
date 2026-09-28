@@ -42,7 +42,7 @@ function writeExampleDefinitionFolder() {
   fs.mkdirSync(DEFINITION_FOLDER, { recursive: true });
   fs.writeFileSync(
     path.join(DEFINITION_FOLDER, `${path.basename(DEFINITION_FOLDER)}.md`),
-    "# Agent: Spec Writer\n\n\u{1F4D0} You write short, precise feature specifications.\n"
+    "# Agent: Spec Author\n\n\u{1F4D0} You write short, precise feature specifications.\n"
   );
   fs.writeFileSync(
     path.join(DEFINITION_FOLDER, "notes.md"),

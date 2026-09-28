@@ -22,15 +22,15 @@ function row(session, statusBySession = new Map()) {
 test("a Windows working directory is read the same way", () => {
   // No Windows machine here: these are the strings a Claude Code on Windows
   // would have written into the transcript, read on a Mac.
-  const jobFolder = ["C:\\Users\\ula\\.claude\\jobs\\abc123", JOB_SCRATCH_FOLDER_NAME].join("\\");
+  const jobFolder = ["C:\\Users\\someone\\.claude\\jobs\\abc123", JOB_SCRATCH_FOLDER_NAME].join("\\");
   assert.equal(isScratchWorkingDirectory(jobFolder), true);
   assert.equal(isScratchWorkingDirectory(`${jobFolder}\\deeper`), true);
-  assert.equal(isScratchWorkingDirectory("C:\\Users\\ula\\projects\\clauding"), false);
-  assert.equal(projectShortName("C:\\Users\\ula\\Documents\\projects\\website"), "website");
+  assert.equal(isScratchWorkingDirectory("C:\\Users\\someone\\projects\\clauding"), false);
+  assert.equal(projectShortName("C:\\Users\\someone\\Documents\\projects\\website"), "website");
   assert.equal(
-    projectFolderLabel("C:\\Users\\ula\\Documents\\projects\\website", {
+    projectFolderLabel("C:\\Users\\someone\\Documents\\projects\\website", {
       platform: "win32",
-      homeDirectory: "C:\\Users\\ula"
+      homeDirectory: "C:\\Users\\someone"
     }),
     "…\\projects\\website"
   );
