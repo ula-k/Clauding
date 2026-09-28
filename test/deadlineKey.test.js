@@ -63,7 +63,7 @@ test("a phase's name goes outside a bar too short for it, never cut off", () => 
 });
 
 test("the board keeps the hidden list and the key deadline", () => {
-  const board = cleanBoard({ name: "Groove", deadlineHidden: ["clickup-mobile", "clickup-mobile", ""], keyDeadlineId: "clickup-web" });
+  const board = cleanBoard({ name: "Website", deadlineHidden: ["clickup-mobile", "clickup-mobile", ""], keyDeadlineId: "clickup-web" });
   assert.deepEqual(board.deadlineHidden, ["clickup-mobile"]);
   assert.equal(board.keyDeadlineId, "clickup-web");
   assert.equal(cleanBoard({ name: "X" }).keyDeadlineId, null);
