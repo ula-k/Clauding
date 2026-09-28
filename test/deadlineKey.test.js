@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { chooseNextTarget, deadlineTimeline } from "../electron/lib/projectStats.js";
 import { cleanBoard } from "../electron/projectBoards.js";
-import { keyAxisMarker, phaseLabelPlacement, phaseLanes } from "../src/renderer/projectsView.js";
+import { axisMilestones, keyAxisMarker, phaseLabelOptions, phaseLanes } from "../src/renderer/projectsView.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const now = Date.parse("2026-10-01T12:00:00Z");
@@ -55,11 +55,15 @@ test("two phases with the same dates get two lanes", () => {
   assert.deepEqual(lanes.map((lane) => lane[0].label).sort(), ["Initial Features Mobile", "Initial Features Web"]);
 });
 
-test("a phase's name goes outside a bar too short for it, never cut off", () => {
-  const text = "Initial Features Web · Sep 1 → Dec 23";
-  assert.equal(phaseLabelPlacement({ startAt: 0, at: 0.9 }, 800, text), "inside");
-  assert.equal(phaseLabelPlacement({ startAt: 0.1, at: 0.2 }, 800, text), "right");
-  assert.equal(phaseLabelPlacement({ startAt: 0.8, at: 0.9 }, 800, text), "left");
+test("a phase's name goes inside its bar, else right after it, else shorter inside — never before the bar", () => {
+  const names = () => ["Initial Features Web · Sep 1 → Dec 23", "Initial Features Web → Dec 23", "Initial Features Web"];
+  const options = (phase) => phaseLabelOptions(phase, { axisWidth: 800, labelsOf: names });
+  assert.deepEqual(options({ startAt: 0, at: 0.9 })[0].placement, "inside");
+  assert.deepEqual(options({ startAt: 0.1, at: 0.2 })[0], { text: names()[0], placement: "right", reach: 0.2 + (6 + names()[0].length * 6.2) / 800 });
+  const nearTheEnd = options({ startAt: 0.66, at: 0.92 });
+  assert.deepEqual(nearTheEnd.map((option) => option.placement), ["inside", "inside", "right"], "no room after it: the shorter names go inside");
+  assert.equal(nearTheEnd[0].text, "Initial Features Web → Dec 23");
+  assert.ok(nearTheEnd.every((option) => option.placement !== "left"));
 });
 
 test("the board keeps the hidden list and the key deadline", () => {
@@ -72,10 +76,32 @@ test("the board keeps the hidden list and the key deadline", () => {
 test("a name drawn next to a short bar takes room in its lane, so the next bar moves down", () => {
   const short = { id: "pre", label: "Initial Build pre-work", start: Date.parse("2026-07-06T12:00:00Z"), date: Date.parse("2026-08-31T12:00:00Z"), source: "clickup" };
   const timeline = deadlineTimeline([short, web], { now });
-  const labelOf = (phase, outside) => (outside ? `${phase.label} → Aug 31` : `${phase.label} · Jul 6 → Aug 31`);
+  const labelsOf = (phase) => [`${phase.label} · Jul 6 → Aug 31`, `${phase.label} → Aug 31`, phase.label];
   assert.equal(phaseLanes(timeline).length, 1, "the bars alone fit in one lane");
-  const lanes = phaseLanes(timeline, { axisWidth: 400, labelOf });
+  const lanes = phaseLanes(timeline, { axisWidth: 400, labelsOf });
   assert.equal(lanes.length, 2);
   assert.equal(lanes[0][0].placement, "right");
-  assert.equal(phaseLanes(timeline, { axisWidth: 1400, labelOf }).length, 1, "wide enough: both names inside, one lane");
+  assert.equal(lanes[0][0].labelText, "Initial Build pre-work · Jul 6 → Aug 31", "in one piece");
+  assert.equal(phaseLanes(timeline, { axisWidth: 1400, labelsOf }).length, 1, "wide enough: both names inside, one lane");
+  assert.equal(phaseLanes(timeline, { axisWidth: 1400, labelsOf })[0][0].placement, "inside");
+});
+
+test("past phases are done, the current one runs, later ones are later", () => {
+  const future = { id: "alpha", label: "Alpha", start: Date.parse("2027-01-04T12:00:00Z"), date: Date.parse("2027-01-26T12:00:00Z"), source: "clickup" };
+  const past = { id: "specs", label: "Specs", start: Date.parse("2026-08-03T12:00:00Z"), date: Date.parse("2026-09-25T12:00:00Z"), source: "clickup" };
+  const states = Object.fromEntries(phaseLanes(deadlineTimeline([past, web, future], { now })).flat().map((phase) => [phase.id, phase.state]));
+  assert.deepEqual(states, { specs: "done", "clickup-web": "running", alpha: "later" });
+});
+
+test("diamonds closer than 24 px become one with a count; same-day dates always do", () => {
+  const single = (id, day) => ({ id, label: id, date: Date.parse(`2027-${day}T12:00:00Z`), source: "clickup" });
+  const timeline = deadlineTimeline([web, single("Dev ends", "04-02"), single("Builds start", "04-05"), single("Stores", "06-30")], { now });
+  const apart = axisMilestones(timeline);
+  assert.equal(apart.length, 3, "without the axis width only the same day merges");
+  const merged = axisMilestones(timeline, { axisWidth: 600 });
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].together, 2);
+  assert.deepEqual(merged[0].members.map((member) => member.label), ["Dev ends", "Builds start"]);
+  assert.equal(merged[0].lastDate, Date.parse("2027-04-05T12:00:00Z"));
+  assert.ok(merged[0].at > apart[0].at && merged[0].at < apart[1].at, "the diamond sits between its dates");
 });

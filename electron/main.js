@@ -1580,6 +1580,19 @@ async function collectLinkedAgentSessions() {
   return found;
 }
 
+// The Projects tab keeps itself fresh without being open: every project is
+// refreshed in the background shortly after start and then every ten
+// minutes, so opening the tab shows a recent snapshot at once.
+const PROJECT_REFRESH_EVERY_MILLISECONDS = 10 * 60 * 1000;
+const FIRST_PROJECT_REFRESH_AFTER_MILLISECONDS = 3000;
+function scheduleProjectRefreshes() {
+  const refreshAll = () => {
+    projectData.refreshAll().catch((error) => console.log(`[projects] background refresh failed: ${error.message}`));
+  };
+  setTimeout(refreshAll, FIRST_PROJECT_REFRESH_AFTER_MILLISECONDS).unref();
+  setInterval(refreshAll, PROJECT_REFRESH_EVERY_MILLISECONDS).unref();
+}
+
 function registerIpc() {
   ipcMain.handle(CHANNELS.sessionsList, async (event, options) => {
     const offset = Number(options && options.offset) || 0;
@@ -1620,9 +1633,16 @@ function registerIpc() {
     return projectBoards.getState();
   });
   ipcMain.handle(CHANNELS.boardsSummaries, async () => projectData.summaries());
-  ipcMain.handle(CHANNELS.boardsSnapshot, async (event, { boardId, options }) =>
-    projectData.snapshot(boardId, { refresh: Boolean(options && options.refresh), fetchGit: Boolean(options && options.fetchGit) })
-  );
+  // { cachedOnly } and { local } answer from disk at once; { refresh } joins
+  // (or starts) the project's background refresh and answers with its
+  // snapshot (null when it failed — the window keeps what it shows).
+  ipcMain.handle(CHANNELS.boardsSnapshot, async (event, { boardId, options }) => {
+    const wanted = options || {};
+    if (wanted.refresh) {
+      return projectData.refreshInBackground(boardId, { fetchGit: Boolean(wanted.fetchGit) });
+    }
+    return projectData.snapshot(boardId, { cachedOnly: Boolean(wanted.cachedOnly), local: Boolean(wanted.local) });
+  });
   ipcMain.handle(CHANNELS.boardsTaskDetail, async (event, { taskId }) => projectData.taskDetail(taskId));
 
   ipcMain.handle(CHANNELS.sessionsGet, async (event, { sessionId }) => {
@@ -2234,6 +2254,9 @@ app.whenReady().then(() => {
     readSessionOpeningImplementation: readSessionOpening,
     log(line) {
       console.log(line);
+    },
+    onRefresh(state) {
+      sendToWindow(CHANNELS.boardsRefreshState, state);
     }
   });
   stopCommandSocket = startCommandSocket({
@@ -2250,6 +2273,7 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
   checkForNewVersionQuietlyIfDue();
+  scheduleProjectRefreshes();
   stopWatchingLiveStatus = watchLiveStatus(() => {
     // The registry file of a terminal's CLI changed: pick up the link / status first.
     terminalRegistry.refreshLinks();

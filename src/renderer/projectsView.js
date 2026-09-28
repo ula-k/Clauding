@@ -359,70 +359,135 @@ export function dailyPaceText(dailyPace) {
   };
 }
 
-// Deadline labels on the axis alternate above and below when two of them
-// would overlap; `minimumGap` is a fraction of the axis.
-export function axisMilestones(timeline, { minimumGap = 0.2 } = {}) {
+// Single dates on the axis, as diamonds. Several on the same day — or,
+// given the axis width, closer than `mergePixels` on screen — become one
+// diamond that names them all (`members`, `together`, `label` joined with
+// " · "). The dates under the diamonds alternate between two rows when two
+// of them would touch; `minimumGap` is a fraction of the axis.
+export const MILESTONE_MERGE_PIXELS = 24;
+export function axisMilestones(timeline, { minimumGap = 0.2, axisWidth = 0, mergePixels = MILESTONE_MERGE_PIXELS } = {}) {
   if (!timeline || !Array.isArray(timeline.deadlines)) {
     return [];
   }
-  // Single dates only (phases are drawn as bars, see phaseLanes); several
-  // on the same day become one marker that names them all.
-  const merged = [];
-  for (const deadline of timeline.deadlines.filter((entry) => !Number.isFinite(entry.start))) {
-    const sameDay = merged.find((entry) => new Date(entry.date).toDateString() === new Date(deadline.date).toDateString());
-    if (sameDay) {
-      sameDay.label = `${sameDay.label} · ${deadline.label}`;
-      sameDay.together = (sameDay.together || 1) + 1;
+  // Phases are drawn as bars (see phaseLanes).
+  const singles = timeline.deadlines.filter((entry) => !Number.isFinite(entry.start)).sort((first, second) => first.at - second.at);
+  const mergeFraction = axisWidth > 0 ? mergePixels / axisWidth : 0;
+  const groups = [];
+  for (const deadline of singles) {
+    const last = groups[groups.length - 1];
+    const sameDay = last && new Date(last.members[last.members.length - 1].date).toDateString() === new Date(deadline.date).toDateString();
+    const tooClose = last && mergeFraction > 0 && deadline.at - last.members[last.members.length - 1].at < mergeFraction;
+    if (last && (sameDay || tooClose)) {
+      last.members.push(deadline);
       continue;
     }
-    merged.push({ ...deadline });
+    groups.push({ members: [deadline] });
   }
   let lastAt = -1;
   let lastRow = 1;
-  return merged.map((deadline) => {
-    const next = timeline.next && timeline.next.id === deadline.id && timeline.next.date === deadline.date;
+  return groups.map(({ members }) => {
+    const first = members[0];
+    const lastMember = members[members.length - 1];
+    const isNext = (member) => timeline.next && timeline.next.id === member.id && timeline.next.date === member.date;
+    const state = members.some(isNext) ? "next" : members.every((member) => member.passed) ? "done" : "later";
+    // Where the diamond sits: the middle of the dates it stands for.
+    const at = (first.at + lastMember.at) / 2;
     let row = 0;
-    if (lastAt >= 0 && deadline.at - lastAt < minimumGap) {
+    if (lastAt >= 0 && at - lastAt < minimumGap) {
       row = lastRow === 0 ? 1 : 0;
     }
-    lastAt = deadline.at;
+    lastAt = at;
     lastRow = row;
-    return { ...deadline, state: deadline.passed ? "done" : next ? "next" : "later", row };
+    return {
+      ...first,
+      at,
+      label: members.map((member) => member.label).join(" · "),
+      members,
+      together: members.length,
+      lastDate: lastMember.date,
+      state,
+      row
+    };
   });
 }
 
-// Phases (start → end) as bars in lanes under the axis: a phase goes in the
-// first lane where it does not overlap what is already there — its bar, its
-// "…" button and, when its name does not fit inside the bar, the name drawn
-// next to it. So two phases with the same dates get two lanes, and a name
-// outside its bar never runs into the next bar. `axisWidth` (pixels) and
-// `labelOf(phase)` are what the placement is measured with; without them
-// only the bars count.
-const PHASE_MORE_PIXELS = 24;
-const PHASE_GAP_PIXELS = 6;
-export function phaseLanes(timeline, { axisWidth = 0, labelOf = null } = {}) {
+// Phases (start → end) as bars in lanes under the axis. A bar holds its own
+// name when it fits ("Specs · Aug 3 → Sep 25"); otherwise the whole name
+// sits right after the bar's end, or — when there is no room before the
+// axis ends — a shorter one goes inside ("Specs → Sep 25", then "Specs").
+// A name is never put before its bar. A phase goes in the first lane where
+// its bar and its name fit after what is already there, trying the fuller
+// names first; so two phases with the same dates get two lanes and there
+// are never more lanes than needed. `axisWidth` (pixels), `labelsOf(phase)`
+// (the names to try, longest first) and `textWidth(text)` (pixels) are what
+// the placement is measured with; without them only the bars count.
+const PHASE_GAP_PIXELS = 3;
+const PHASE_OUTSIDE_GAP_PIXELS = 6;
+const PHASE_PADDING_PIXELS = 14;
+export const PHASE_LABEL_CHARACTER_PIXELS = 6.2;
+export function estimatedTextWidth(text) {
+  return String(text || "").length * PHASE_LABEL_CHARACTER_PIXELS;
+}
+
+// The ways a phase's name can be drawn, best first: { text, placement,
+// reach } — reach is how far right (a fraction of the axis) the bar and
+// its name go. Only ways that stay inside the axis are offered; the last
+// resort is the shortest name after the bar.
+export function phaseLabelOptions(phase, { axisWidth = 0, labelsOf = null, textWidth = estimatedTextWidth } = {}) {
+  const names = labelsOf ? labelsOf(phase) : [];
+  if (!axisWidth || names.length === 0) {
+    return [{ text: names[0] || "", placement: "inside", reach: phase.at }];
+  }
+  const barPixels = Math.max(0, (phase.at - phase.startAt) * axisWidth);
+  const fitsInside = (text) => textWidth(text) + PHASE_PADDING_PIXELS <= barPixels;
+  const rightReach = (text) => phase.at + (PHASE_OUTSIDE_GAP_PIXELS + textWidth(text)) / axisWidth;
+  const options = [];
+  if (fitsInside(names[0])) {
+    options.push({ text: names[0], placement: "inside", reach: phase.at });
+  }
+  if (rightReach(names[0]) <= 1) {
+    options.push({ text: names[0], placement: "right", reach: rightReach(names[0]) });
+  }
+  for (const shorter of names.slice(1)) {
+    if (fitsInside(shorter)) {
+      options.push({ text: shorter, placement: "inside", reach: phase.at });
+    }
+  }
+  for (const shorter of names.slice(1)) {
+    if (rightReach(shorter) <= 1) {
+      options.push({ text: shorter, placement: "right", reach: rightReach(shorter) });
+    }
+  }
+  const shortest = names[names.length - 1];
+  options.push({ text: shortest, placement: "right", reach: rightReach(shortest) });
+  return options;
+}
+
+export function phaseLanes(timeline, { axisWidth = 0, labelsOf = null, textWidth = estimatedTextWidth } = {}) {
   const phases = ((timeline && timeline.deadlines) || []).filter((deadline) => Number.isFinite(deadline.start));
   const lanes = [];
-  const pixel = axisWidth > 0 ? 1 / axisWidth : 0;
-  for (const phase of [...phases].sort((first, second) => first.start - second.start)) {
-    const insideText = labelOf ? labelOf(phase) : "";
-    const outsideText = labelOf ? labelOf(phase, true) : "";
-    const placement = labelOf ? phaseLabelPlacement(phase, axisWidth, insideText) : "inside";
-    const outsidePixels = placement === "inside" ? 0 : String(outsideText).length * PHASE_LABEL_CHARACTER_PIXELS + 8;
-    const from = placement === "left" ? phase.startAt - outsidePixels * pixel : phase.startAt;
-    // The "…" sits inside the right end of a bar wide enough for it (and
-    // its name), else just after the bar.
-    const barPixels = (phase.at - phase.startAt) * axisWidth;
-    const moreInside = placement === "inside" && barPixels >= 60;
-    const to = phase.at + ((moreInside ? 0 : PHASE_MORE_PIXELS) + (placement === "right" ? outsidePixels : 0)) * pixel;
-    let lane = lanes.find((candidate) => candidate.occupiedTo + PHASE_GAP_PIXELS * pixel <= from && candidate.lastDate < phase.start);
-    if (!lane) {
-      lane = { phases: [], occupiedTo: -1, lastDate: -Infinity };
-      lanes.push(lane);
+  const gap = axisWidth > 0 ? PHASE_GAP_PIXELS / axisWidth : 0;
+  for (const phase of [...phases].sort((first, second) => first.start - second.start || first.date - second.date)) {
+    const options = phaseLabelOptions(phase, { axisWidth, labelsOf, textWidth });
+    let chosen = null;
+    let chosenLane = null;
+    for (const lane of lanes) {
+      if (lane.lastDate >= phase.start || lane.occupiedTo + gap > phase.startAt) {
+        continue;
+      }
+      chosen = options[0];
+      chosenLane = lane;
+      break;
     }
-    lane.phases.push({ ...phase, placement, moreInside, state: phase.passed ? "done" : phase.running ? "running" : "later" });
-    lane.occupiedTo = Math.max(lane.occupiedTo, to);
-    lane.lastDate = Math.max(lane.lastDate, phase.date);
+    if (!chosenLane) {
+      chosenLane = { phases: [], occupiedTo: -1, lastDate: -Infinity };
+      lanes.push(chosenLane);
+      chosen = options[0];
+    }
+    const state = phase.passed ? "done" : phase.running ? "running" : "later";
+    chosenLane.phases.push({ ...phase, placement: chosen.placement, labelText: chosen.text, state });
+    chosenLane.occupiedTo = Math.max(chosenLane.occupiedTo, chosen.reach);
+    chosenLane.lastDate = Math.max(chosenLane.lastDate, phase.date);
   }
   return lanes.map((lane) => lane.phases);
 }
@@ -696,20 +761,6 @@ export function taskKickoffMessage(card) {
   }
   const link = card.url || `https://app.clickup.com/t/${card.id}`;
   return `${link}\n\n${card.kind === "spec" ? "Spec task" : "Task"}: ${card.name}`;
-}
-
-// Where a phase bar's name goes: inside the bar when it fits, otherwise
-// outside it — after the bar, or before it when the bar ends near the right
-// edge — so a name is never cut off without a word. `axisWidth` is in
-// pixels; the text width is estimated from its length.
-export const PHASE_LABEL_CHARACTER_PIXELS = 6.2;
-export function phaseLabelPlacement(phase, axisWidth, text) {
-  const barPixels = Math.max(0, (phase.at - phase.startAt) * (axisWidth || 0));
-  const textPixels = String(text || "").length * PHASE_LABEL_CHARACTER_PIXELS + 14;
-  if (!axisWidth || barPixels >= textPixels) {
-    return "inside";
-  }
-  return phase.at <= 0.62 ? "right" : "left";
 }
 
 // The marker "Next" gets on the axis line when it is the end of a phase

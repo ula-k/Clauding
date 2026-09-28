@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
-import { relativeTime } from "../time.js";
 import {
   BUCKET_COLORS,
   BUCKET_ORDER,
@@ -11,6 +10,7 @@ import {
   cardsForFilter,
   cardsForStat,
   emptyDeadlineReason,
+  estimatedTextWidth,
   moveInList,
   searchCards,
   statFilterLabel,
@@ -46,16 +46,41 @@ import { DotsIcon, SearchIcon } from "./Icons.jsx";
 // hand, deadlines — through the settings sheet, the deadline sheet or a
 // card's "…" menu). "Start a session for this task" opens a terminal.
 
-const AUTO_REFRESH_MILLISECONDS = 5 * 60 * 1000;
+// The view is drawn again from disk this often (sessions, "today")…
+const LOCAL_REDRAW_MILLISECONDS = 60 * 1000;
+// …and a snapshot older than this is refreshed when the project is opened
+// (the main process refreshes every project every ten minutes anyway).
+const STALE_AFTER_MILLISECONDS = 10 * 60 * 1000;
 const ROLE_EMOJI = { spec: "✍️", builder: "🔨", other: "💬" };
 const BURN_DOWN_WIDTH = 150;
 const BURN_DOWN_HEIGHT = 36;
 // How many of the newest sessions "Link a session…" offers.
 const SESSIONS_IN_LINK_MENU = 15;
-// About how wide one label under the deadline axis is.
-const AXIS_LABEL_PIXELS = 330;
-// …and one date alone ("Apr 12").
-const AXIS_DATE_PIXELS = 90;
+// …and one date alone ("Apr 12"), or two ("Apr 2 – Apr 5").
+const AXIS_DATE_PIXELS = 72;
+// Between a phase bar's end and its name drawn after it.
+const PHASE_OUTSIDE_GAP_PIXELS = 6;
+const PHASE_LABEL_FONT = "10.5px";
+
+// How wide a phase name is on screen, measured with the page's own font
+// (an estimate from its length until the axis is on screen).
+function useLabelWidth(elementRef) {
+  return useMemo(() => {
+    let context = null;
+    return (text) => {
+      if (!context && typeof document !== "undefined") {
+        const canvas = document.createElement("canvas");
+        context = canvas.getContext("2d");
+      }
+      const element = elementRef.current;
+      if (!context || !element) {
+        return estimatedTextWidth(text);
+      }
+      context.font = `${PHASE_LABEL_FONT} ${getComputedStyle(element).fontFamily}`;
+      return context.measureText(String(text || "")).width;
+    };
+  }, [elementRef]);
+}
 
 function cleanErrorMessage(error) {
   return String(error && error.message ? error.message : error).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
@@ -65,6 +90,15 @@ function useShortDate(language) {
   return useMemo(() => {
     const formatter = new Intl.DateTimeFormat(language || "en", { month: "short", day: "numeric" });
     return (time) => (time ? formatter.format(new Date(time)) : "");
+  }, [language]);
+}
+
+// "14:05", or "Sep 27, 14:05" for a snapshot from another day.
+function useAsOfTime(language) {
+  return useMemo(() => {
+    const timeOnly = new Intl.DateTimeFormat(language || "en", { hour: "numeric", minute: "2-digit" });
+    const withDay = new Intl.DateTimeFormat(language || "en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    return (time) => (new Date(time).toDateString() === new Date().toDateString() ? timeOnly : withDay).format(new Date(time));
   }, [language]);
 }
 
@@ -93,6 +127,7 @@ export default function ProjectView({
   onRemoved
 }) {
   const { translate, language } = useTranslation();
+  const formatAsOf = useAsOfTime(language);
   const [snapshot, setSnapshot] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,6 +145,23 @@ export default function ProjectView({
   boardRef.current = boardId;
   onLoadedRef.current = onLoaded;
 
+  // A snapshot arrived for the project on screen: draw it (never blank).
+  const show = useCallback((askedFor, answer) => {
+    if (!answer || boardRef.current !== askedFor) {
+      return;
+    }
+    setSnapshot(answer);
+    setLoadError(null);
+    if (onLoadedRef.current) {
+      onLoadedRef.current();
+    }
+  }, []);
+
+  // load(): the view built again from what is on disk (no network) — after
+  // a setting changed, and now and then while the view is open.
+  // load({ refresh: true }): ClickUp, git and GitHub asked again in the
+  // background; what is on screen stays until the new snapshot is there,
+  // and stays when the refresh fails.
   const load = useCallback(
     async (options = {}) => {
       const askedFor = boardId;
@@ -117,31 +169,30 @@ export default function ProjectView({
         setRefreshing(true);
       }
       try {
-        const answer = await window.clauding.getBoardSnapshot(askedFor, options);
-        if (boardRef.current === askedFor) {
-          setSnapshot(answer);
-          setLoadError(null);
-          if (onLoadedRef.current) {
-            onLoadedRef.current();
-          }
-        }
+        const answer = await window.clauding.getBoardSnapshot(askedFor, options.refresh ? options : { local: true });
+        show(askedFor, answer);
+        return answer;
       } catch (error) {
         if (boardRef.current === askedFor) {
           setLoadError(cleanErrorMessage(error));
         }
+        return null;
       } finally {
-        if (boardRef.current === askedFor) {
+        if (options.refresh && boardRef.current === askedFor) {
           setRefreshing(false);
         }
       }
     },
-    [boardId]
+    [boardId, show]
   );
 
-  // A new project starts from nothing: the skeleton, the default filter.
+  // A new project starts from its last snapshot, drawn at once; the
+  // skeleton only when it was never read. A snapshot older than the
+  // background refresh interval is refreshed right away.
   useEffect(() => {
     setSnapshot(null);
     setLoadError(null);
+    setRefreshing(false);
     setFilter("focus");
     setExpandedCardId(null);
     setSpecStage(null);
@@ -150,12 +201,37 @@ export default function ProjectView({
     setQuery("");
     setSettingsSection(null);
     setDeadlineEditing(null);
-    load();
-    // Every five minutes while the view is open; the main process only
-    // asks ClickUp again when its cache is older than that.
-    const timer = setInterval(() => load(), AUTO_REFRESH_MILLISECONDS);
-    return () => clearInterval(timer);
-  }, [boardId, load]);
+    const askedFor = boardId;
+    (async () => {
+      try {
+        show(askedFor, await window.clauding.getBoardSnapshot(askedFor, { cachedOnly: true }));
+      } catch (error) {
+        // Nothing stored: the next step reads again.
+      }
+      const rebuilt = await load();
+      const refreshedAt = rebuilt && rebuilt.sources && rebuilt.sources.clickup ? rebuilt.sources.clickup.refreshedAt : null;
+      if (boardRef.current === askedFor && (!refreshedAt || Date.now() - refreshedAt > STALE_AFTER_MILLISECONDS)) {
+        load({ refresh: true });
+      }
+    })();
+    // The background refreshes of the main process (app start, every ten
+    // minutes, another window's Refresh) land here too.
+    const unsubscribe = window.clauding.onBoardRefreshState((state) => {
+      if (!state || state.boardId !== askedFor || boardRef.current !== askedFor) {
+        return;
+      }
+      setRefreshing(Boolean(state.refreshing));
+      if (!state.refreshing && state.snapshot) {
+        show(askedFor, state.snapshot);
+      }
+    });
+    // Sessions come and go and "today" moves: drawn again from disk.
+    const timer = setInterval(() => load(), LOCAL_REDRAW_MILLISECONDS);
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
+  }, [boardId, load, show]);
 
   // Projects → Project Settings… in the menu bar.
   useEffect(() => {
@@ -243,6 +319,7 @@ export default function ProjectView({
   }
 
   const state = sourceState(snapshot);
+  const asOfTime = state.refreshedAt ? formatAsOf(state.refreshedAt) : null;
   const pullRequestsAvailable = !snapshot || snapshot.sources.pullRequests.every((source) => source.available !== false);
   const name = snapshot ? snapshot.name : boardName;
 
@@ -253,16 +330,13 @@ export default function ProjectView({
         <h1 className="project-title">{name}</h1>
         {snapshot && <SourceChips snapshot={snapshot} pullRequestsAvailable={pullRequestsAvailable} />}
         <span className="project-header-spacer" />
-        <span className={state.kind === "offline" ? "project-freshness is-offline" : "project-freshness"} data-project-freshness={state.kind}>
-          {refreshing
-            ? translate("projects.refreshing")
-            : state.kind === "offline"
-              ? translate("projects.offlineAsOf", { time: state.refreshedAt ? relativeTime(state.refreshedAt, translate, now) : "—" })
-              : state.refreshedAt
-                ? now - state.refreshedAt < 60000
-                  ? translate("projects.refreshedJustNow")
-                  : translate("projects.refreshedAgo", { time: relativeTime(state.refreshedAt, translate, now) })
-                : ""}
+        <span
+          className={state.kind === "offline" ? "project-freshness is-offline" : "project-freshness"}
+          data-project-freshness={state.kind}
+          data-project-refreshing={refreshing ? "true" : "false"}
+        >
+          {asOfTime ? translate(state.kind === "offline" ? "projects.offlineAt" : "projects.asOf", { time: asOfTime }) : ""}
+          {refreshing && <span className="project-refreshing">{asOfTime ? " · " : ""}{translate("projects.refreshingNote")}</span>}
         </span>
         <button
           type="button"
@@ -629,8 +703,11 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask, 
   const timeline = snapshot.timeline;
   const axisRef = useRef(null);
   const [axisWidth, setAxisWidth] = useState(0);
-  // The small "…" of a phase bar: { phase, anchor } while its menu is open.
+  // A phase bar's menu (click or right-click): { phase, anchor } while open.
   const [phaseMenu, setPhaseMenu] = useState(null);
+  // A diamond and its names in the legend light up together.
+  const [hoveredMilestone, setHoveredMilestone] = useState(null);
+  const measureLabel = useLabelWidth(axisRef);
   useEffect(() => {
     const axis = axisRef.current;
     if (!axis || typeof ResizeObserver === "undefined") {
@@ -661,17 +738,42 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask, 
       </section>
     );
   }
-  // Labels alternate above and below when two would touch: how close is
-  // "touching" depends on how wide the axis is on screen right now.
-  // Many single dates do not fit as labels on the axis: the axis keeps the
-  // diamonds and their dates, and the names go in a row under it.
-  const compactMarkers = axisMilestones(timeline).length > 3;
-  const labelPixels = compactMarkers ? AXIS_DATE_PIXELS : AXIS_LABEL_PIXELS;
-  const minimumGap = axisWidth > 0 ? Math.min(0.6, Math.max(0.04, labelPixels / axisWidth)) : 0.2;
-  const milestones = axisMilestones(timeline, { minimumGap });
-  const phaseText = (phase, outside = false) =>
-    outside ? `${phase.label} → ${shortDate(phase.date)}` : `${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`;
-  const lanes = phaseLanes(timeline, { axisWidth, labelOf: phaseText });
+  // The dates under the diamonds alternate between two rows when two would
+  // touch; diamonds closer than MILESTONE_MERGE_PIXELS become one.
+  const minimumGap = axisWidth > 0 ? Math.min(0.6, Math.max(0.02, AXIS_DATE_PIXELS / axisWidth)) : 0.2;
+  const milestones = axisMilestones(timeline, { minimumGap, axisWidth });
+  const milestoneDate = (milestone) =>
+    new Date(milestone.date).toDateString() === new Date(milestone.lastDate).toDateString()
+      ? shortDate(milestone.date)
+      : `${shortDate(milestone.date)} – ${shortDate(milestone.lastDate)}`;
+  const milestoneTitle = (milestone) => milestone.members.map((member) => `${member.label} · ${shortDate(member.date)}`).join("\n");
+  const openMilestone = (milestone) => {
+    if (milestone.members.length > 1) {
+      return;
+    }
+    if (milestone.source === "clickup") {
+      onOpenTask(milestone.taskId, milestone.label);
+    } else {
+      onEdit(milestone.id);
+    }
+  };
+  // The names a phase can be drawn with, longest first (see phaseLanes).
+  const phaseLabels = (phase) => [
+    `${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`,
+    `${phase.label} → ${shortDate(phase.date)}`,
+    phase.label
+  ];
+  const lanes = phaseLanes(timeline, { axisWidth, labelsOf: phaseLabels, textWidth: measureLabel });
+  // A right-click opens the menu at the pointer; a click (or Enter) under
+  // the bar or name that was clicked.
+  const openPhaseMenu = (event, phase) => {
+    event.preventDefault();
+    const atPointer = event.type === "contextmenu" && (event.clientX || event.clientY);
+    const anchor = atPointer
+      ? { left: event.clientX, right: event.clientX, top: event.clientY, bottom: event.clientY, width: 0, height: 0 }
+      : event.currentTarget.getBoundingClientRect();
+    setPhaseMenu({ phase, anchor });
+  };
   const sources = snapshot.dateSources || {};
   const sourceNote =
     sources.source && sources.source.name
@@ -733,38 +835,47 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask, 
           <button
             type="button"
             key={milestone.id || milestone.label}
-            className={`deadline-milestone is-${milestone.state}${next && next.reason === "pinned" && next.id === milestone.id ? " is-key" : ""}${milestone.row ? " is-lower" : ""}${milestone.at < 0.08 ? " is-start" : ""}${milestone.at > 0.92 ? " is-end" : ""}`}
+            className={`deadline-milestone is-${milestone.state}${next && next.reason === "pinned" && milestone.members.some((member) => member.id === next.id) ? " is-key" : ""}${milestone.row ? " is-lower" : ""}${milestone.at < 0.04 ? " is-start" : ""}${milestone.at > 0.96 ? " is-end" : ""}${hoveredMilestone === milestone.id ? " is-hovered" : ""}`}
             style={{ left: `${milestone.at * 100}%` }}
-            title={`${milestone.label} · ${shortDate(milestone.date)} — ${translate("projects.editDeadline")}`}
-            onClick={() => (milestone.source === "clickup" ? onOpenTask(milestone.taskId, milestone.label) : onEdit(milestone.id))}
+            title={milestoneTitle(milestone)}
+            onClick={() => openMilestone(milestone)}
+            onMouseEnter={() => setHoveredMilestone(milestone.id)}
+            onMouseLeave={() => setHoveredMilestone(null)}
             data-deadline-milestone={milestone.id}
+            data-milestone-count={milestone.together}
           >
-            <span className="deadline-diamond" />
-            {compactMarkers ? (
-              <span className="deadline-label">
-                <b>{shortDate(milestone.date)}</b>
-              </span>
-            ) : (
-              <span className="deadline-label">
-                {milestone.source === "task" || milestone.source === "clickup" ? "⧉ " : ""}
-                {milestone.label} · <b>{shortDate(milestone.date)}</b>
-              </span>
-            )}
+            <span className="deadline-diamond">{milestone.together > 1 && <span className="deadline-count">{milestone.together}</span>}</span>
+            <span className="deadline-label">
+              <b>{milestoneDate(milestone)}</b>
+            </span>
           </button>
         ))}
       </div>
-      {compactMarkers && (
+      {milestones.length > 0 && (
         <div className="deadline-legend" data-deadline-legend>
           {milestones.map((milestone) => (
-            <button
-              type="button"
+            <span
               key={milestone.id || milestone.label}
-              className={`deadline-legend-item is-${milestone.state}`}
-              onClick={() => (milestone.source === "clickup" ? onOpenTask(milestone.taskId, milestone.label) : onEdit(milestone.id))}
+              className={`deadline-legend-group is-${milestone.state}${hoveredMilestone === milestone.id ? " is-hovered" : ""}`}
+              title={milestoneTitle(milestone)}
+              onMouseEnter={() => setHoveredMilestone(milestone.id)}
+              onMouseLeave={() => setHoveredMilestone(null)}
             >
               <span className="deadline-legend-diamond" />
-              <b>{shortDate(milestone.date)}</b> {milestone.label}
-            </button>
+              {milestone.together > 1 && <span className="deadline-legend-count">{milestone.together}</span>}
+              {milestone.members.map((member, index) => (
+                <span key={member.id || member.label}>
+                  {index > 0 && <span className="deadline-legend-separator"> · </span>}
+                  <button
+                    type="button"
+                    className="deadline-legend-item"
+                    onClick={() => (member.source === "clickup" ? onOpenTask(member.taskId, member.label) : onEdit(member.id))}
+                  >
+                    {member.label}
+                  </button>
+                </span>
+              ))}
+            </span>
           ))}
         </div>
       )}
@@ -773,41 +884,36 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask, 
           {lanes.map((lane, laneIndex) => (
             <div key={laneIndex} className="phase-lane">
               {lane.map((phase) => {
-                const insideText = phaseText(phase);
-                const placement = phase.placement;
                 const isKey = next && next.id === phase.id && next.isPhaseEnd;
+                const fullText = `${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`;
                 return (
                   <span key={phase.id} className="phase-bar-group">
                     <button
                       type="button"
                       className={`phase-bar is-${phase.state}${isKey ? " is-key" : ""}`}
                       style={{ left: `${phase.startAt * 100}%`, width: `${Math.max((phase.at - phase.startAt) * 100, 0.8)}%` }}
-                      title={`${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`}
-                      onClick={() => (phase.source === "clickup" ? onOpenTask(phase.taskId, phase.label) : onEdit(phase.id))}
+                      title={fullText}
+                      aria-label={fullText}
+                      onClick={(event) => openPhaseMenu(event, phase)}
+                      onContextMenu={(event) => openPhaseMenu(event, phase)}
                       data-phase={phase.id}
+                      data-phase-placement={phase.placement}
                     >
-                      {placement === "inside" && <span className={phase.moreInside ? "phase-bar-label has-more" : "phase-bar-label"}>{insideText}</span>}
+                      {phase.placement === "inside" && <span className="phase-bar-label">{phase.labelText}</span>}
                     </button>
-                    {placement !== "inside" && (
-                      <span
-                        className={`phase-bar-outside is-${placement}`}
-                        style={placement === "right" ? { left: `calc(${phase.at * 100}% + 26px)` } : { right: `calc(${(1 - phase.startAt) * 100}% + 6px)` }}
-                        title={insideText}
+                    {phase.placement === "right" && (
+                      <button
+                        type="button"
+                        className={`phase-bar-outside is-${phase.state}${isKey ? " is-key" : ""}`}
+                        style={{ left: `calc(${phase.at * 100}% + ${PHASE_OUTSIDE_GAP_PIXELS}px)` }}
+                        title={fullText}
+                        onClick={(event) => openPhaseMenu(event, phase)}
+                        onContextMenu={(event) => openPhaseMenu(event, phase)}
+                        data-phase-label={phase.id}
                       >
-                        {phaseText(phase, true)}
-                      </span>
+                        {phase.labelText}
+                      </button>
                     )}
-                    <button
-                      type="button"
-                      className="phase-bar-more"
-                      style={{ left: phase.moreInside || phase.at > 0.97 ? `calc(${phase.at * 100}% - 20px)` : `calc(${phase.at * 100}% + 3px)` }}
-                      title={translate("projects.phaseMenu")}
-                      aria-label={translate("projects.phaseMenu")}
-                      onClick={(event) => setPhaseMenu({ phase, anchor: event.currentTarget.getBoundingClientRect() })}
-                      data-phase-more={phase.id}
-                    >
-                      …
-                    </button>
                   </span>
                 );
               })}
@@ -818,7 +924,22 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask, 
       )}
       {phaseMenu && (
         <PopupMenu anchor={phaseMenu.anchor} align="left" onClose={() => setPhaseMenu(null)}>
-          <MenuLabel>{phaseMenu.phase.label}</MenuLabel>
+          <MenuLabel>
+            {phaseMenu.phase.label} · {shortDate(phaseMenu.phase.start)} → {shortDate(phaseMenu.phase.date)}
+          </MenuLabel>
+          <MenuItem
+            onClick={() => {
+              setPhaseMenu(null);
+              if (phaseMenu.phase.source === "clickup") {
+                onOpenTask(phaseMenu.phase.taskId, phaseMenu.phase.label);
+              } else {
+                onEdit(phaseMenu.phase.id);
+              }
+            }}
+          >
+            {phaseMenu.phase.source === "clickup" ? translate("projects.openPhaseTask") : translate("projects.editDeadline")}
+          </MenuItem>
+          <MenuSeparator />
           {next && next.reason === "pinned" && next.id === phaseMenu.phase.id ? (
             <MenuItem
               onClick={() => {

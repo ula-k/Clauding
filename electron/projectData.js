@@ -2,11 +2,22 @@
 // ClickUp (through a cache on disk), the user's checkouts, GitHub and the
 // Claude Code sessions, and hands buildProjectSnapshot everything it needs.
 //
-// ClickUp answers are cached in <userData>/project-cache/<board id>.json:
-// the view opens instantly with the last answer (also offline), refreshes
-// in the background when the cache is older than five minutes, and on the
-// user's ↻. A failed refresh keeps the cache and says so
-// (sources.clickup.ok = false, with the time of the data shown).
+// Two files per project in <userData>/project-cache/:
+//   <board id>.json           what ClickUp said (tasks, time in status,
+//                             phases), merged refresh after refresh;
+//   <board id>.snapshot.json  the whole computed view plus what git and
+//                             GitHub said, so the view draws at once — on
+//                             app start, offline — without any network.
+// The window shows the last snapshot first and asks for a refresh in the
+// background; refreshAll runs on app start and every ten minutes. A failed
+// refresh keeps both files and says so (sources.clickup.ok = false, with
+// the time of the data shown).
+//
+// A refresh asks ClickUp only for the tasks changed since the last one
+// (date_updated_gt) and merges them into the copy; the whole lists are read
+// again once an hour (deleted or moved tasks drop out then). Time in status
+// is asked for the tasks whose status moved. ClickUp, git and GitHub are
+// asked at the same time, and each phase's time goes to the log.
 //
 // Finding the lists: a project is set up from one ClickUp link — a list, a
 // saved view, a folder or a space (resolveProjectLink), or one task of the
@@ -57,6 +68,34 @@ const MAXIMUM_STATUS_MOVES = 2000;
 // Where the phases are kept is looked for again once a day at most.
 const DEADLINE_DISCOVERY_FRESH_MILLISECONDS = 24 * 60 * 60 * 1000;
 const MAXIMUM_ROADMAP_PARENTS = 12;
+// The whole lists are read again at least this often; in between only the
+// changed tasks are.
+const FULL_LIST_EVERY_MILLISECONDS = 60 * 60 * 1000;
+// "Changed since" reaches back this much further than the last read, so a
+// task changed while it ran (or a clock a little off) is not missed.
+const CHANGED_SINCE_OVERLAP_MILLISECONDS = 2 * 60 * 1000;
+
+// The last copy of a list with the tasks ClickUp says changed since: a
+// changed task replaces its old copy, a new one is added, and — when the
+// project leaves closed tasks out — one that was closed meanwhile drops out.
+export function mergeChangedTasks(previousTasks, changedTasks, { includeClosed = true } = {}) {
+  const changedById = new Map(changedTasks.map((task) => [task.id, task]));
+  const merged = previousTasks.map((task) => changedById.get(task.id) || task);
+  const known = new Set(previousTasks.map((task) => task.id));
+  merged.push(...changedTasks.filter((task) => !known.has(task.id)));
+  return includeClosed ? merged : merged.filter((task) => task.statusType !== "closed");
+}
+
+// The tasks whose time in status has to be asked for: the ones not asked
+// yet, and the ones whose status is not what it was at the last read.
+export function tasksNeedingHistory(tasks, previousTasks, previousHistory) {
+  const statusBefore = new Map((previousTasks || []).map((task) => [task.id, task.status]));
+  return tasks.filter((task) => !(previousHistory && previousHistory[task.id]) || statusBefore.get(task.id) !== task.status);
+}
+
+function seconds(milliseconds) {
+  return milliseconds >= 1000 ? `${(milliseconds / 1000).toFixed(1)} s` : `${Math.round(milliseconds)} ms`;
+}
 
 export class ProjectLinkError extends Error {
   constructor(key, values = {}) {
@@ -90,10 +129,14 @@ export function createProjectDataService({
   readSessionOpeningImplementation = () => null,
   fixturePath = process.env.CLAUDING_PROJECTS_FIXTURE || null,
   now = () => Date.now(),
-  log = () => {}
+  log = () => {},
+  // Told about every background refresh: { boardId, refreshing: true } when
+  // it starts, { boardId, refreshing: false, snapshot } when it ends.
+  onRefresh = () => {}
 }) {
   let clientPromise = null;
   const refreshesInFlight = new Map();
+  const snapshotRefreshesInFlight = new Map();
   const fixture = fixturePath ? readJsonQuietly(fixturePath) : null;
 
   // The first user messages of each session, for task linking (read from
@@ -134,11 +177,33 @@ export function createProjectDataService({
     return cached;
   }
 
-  function writeCache(boardId, data) {
+  function writeFileSafely(filePath, data) {
     fs.mkdirSync(cacheDirectory, { recursive: true });
-    const temporaryPath = `${cachePath(boardId)}.writing`;
+    const temporaryPath = `${filePath}.writing`;
     fs.writeFileSync(temporaryPath, JSON.stringify(data));
-    fs.renameSync(temporaryPath, cachePath(boardId));
+    fs.renameSync(temporaryPath, filePath);
+  }
+
+  function writeCache(boardId, data) {
+    writeFileSafely(cachePath(boardId), data);
+  }
+
+  function storedSnapshotPath(boardId) {
+    return path.join(cacheDirectory, `${boardId}.snapshot.json`);
+  }
+
+  // { savedAt, snapshot, repositoryResults, pullRequestResults } or null.
+  function readStoredSnapshot(boardId) {
+    const stored = readJsonQuietly(storedSnapshotPath(boardId));
+    return stored && stored.snapshot ? stored : null;
+  }
+
+  function storeSnapshot(boardId, snapshotData, { repositoryResults, pullRequestResults }) {
+    try {
+      writeFileSafely(storedSnapshotPath(boardId), { savedAt: now(), snapshot: snapshotData, repositoryResults, pullRequestResults });
+    } catch (error) {
+      log(`[projects] could not keep the snapshot of ${boardId}: ${error.message}`);
+    }
   }
 
   async function resolveLists(board, clickup) {
@@ -153,7 +218,30 @@ export function createProjectDataService({
     return { lists, changed };
   }
 
-  async function fetchClickup(board) {
+  // One list: only what changed since the last read, merged into it, when
+  // that copy is recent and complete; else the whole list.
+  async function readList(clickup, listId, { includeClosed, previousTasks, previousPages, changedSince }) {
+    if (previousTasks && Number.isFinite(changedSince)) {
+      const changed = await clickup.listTasks(listId, { includeClosed: true, updatedAfter: changedSince });
+      if (!changed.truncated) {
+        const tasks = mergeChangedTasks(previousTasks, changed, { includeClosed });
+        tasks.truncated = false;
+        return { tasks, whole: false, changed: changed.length, pages: previousPages || 1 };
+      }
+    }
+    const tasks = await clickup.listTasks(listId, { includeClosed, expectedPages: previousPages || 1 });
+    return { tasks, whole: true, changed: tasks.length, pages: tasks.pagesRead || 1 };
+  }
+
+  async function fetchClickup(board, timings = {}) {
+    const timed = async (name, work) => {
+      const startedAt = Date.now();
+      try {
+        return await work;
+      } finally {
+        timings[name] = Date.now() - startedAt;
+      }
+    };
     const clickup = await client();
     const { lists, changed } = await resolveLists(board, clickup);
     if (!lists.buildListId) {
@@ -162,9 +250,37 @@ export function createProjectDataService({
     // Every task and subtask, closed ones too unless the project turned
     // that off (Settings → General).
     const includeClosed = board.includeClosed !== false;
-    const buildTasks = await clickup.listTasks(lists.buildListId, { includeClosed });
+    const previous = readCache(board.id);
+    const listedAt = now();
+    // Only the changes, when the last copy is of the same lists, read the
+    // same way, complete, and its whole lists were read within the hour.
+    const previousLists = (previous && previous.lists) || {};
+    const canMerge = Boolean(
+      previous &&
+        !previous.gitOnly &&
+        Number.isFinite(previous.listedAt) &&
+        Number.isFinite(previous.wholeListsAt) &&
+        listedAt - previous.wholeListsAt < FULL_LIST_EVERY_MILLISECONDS &&
+        (previous.includeClosed !== false) === includeClosed &&
+        !(previous.truncated && (previous.truncated.buildTasks || previous.truncated.planningTasks))
+    );
+    const changedSince = canMerge ? previous.listedAt - CHANGED_SINCE_OVERLAP_MILLISECONDS : null;
+    const previousPages = (previous && previous.pages) || {};
+    const buildRead = timed(
+      "buildList",
+      readList(clickup, lists.buildListId, {
+        includeClosed,
+        previousTasks: canMerge && previousLists.buildListId === lists.buildListId ? previous.buildTasks : null,
+        previousPages: previousPages.buildTasks,
+        changedSince
+      })
+    );
     let planningChanged = false;
-    if (!lists.planningListId) {
+    const findPlanningList = async () => {
+      if (lists.planningListId) {
+        return;
+      }
+      const { tasks: buildTasks } = await buildRead;
       const dependencyIds = [...new Set(buildTasks.flatMap((task) => task.dependsOn).filter(Boolean))];
       const ownIds = new Set(buildTasks.map((task) => task.id));
       for (const dependencyId of dependencyIds.filter((candidate) => !ownIds.has(candidate)).slice(0, PLANNING_LOOKUPS)) {
@@ -181,54 +297,97 @@ export function createProjectDataService({
           break;
         }
       }
-    }
-    const planningTasks = lists.planningListId ? await clickup.listTasks(lists.planningListId, { includeClosed }) : [];
+    };
+    // The planning list is read alongside the build list when it is known.
+    const planningRead = timed(
+      "planningList",
+      findPlanningList().then(() =>
+        lists.planningListId
+          ? readList(clickup, lists.planningListId, {
+              includeClosed,
+              previousTasks: canMerge && previousLists.planningListId === lists.planningListId ? previous.planningTasks : null,
+              previousPages: previousPages.planningTasks,
+              changedSince
+            })
+          : { tasks: [], whole: true, changed: 0, pages: 0 }
+      )
+    );
+    // Waited on below, after the build list: a failed build list must not
+    // leave this one failing unheard.
+    planningRead.catch(() => {});
+    // "Me" is the owner of the token until the settings say otherwise.
+    const ownerRead = board.clickupUserId
+      ? Promise.resolve(null)
+      : clickup.getCurrentUser().catch((error) => {
+          log(`[projects] could not ask ClickUp who the token belongs to: ${error.message}`);
+          return null;
+        });
+    const build = await buildRead;
+    const buildTasks = build.tasks;
+    // When each build task entered each status: the queue's movement over
+    // time. Optional — without it the moves this app saw are used. A failed
+    // read keeps the last one instead of wiping it. Only the tasks whose
+    // status moved are asked for.
+    const historyRead = timed(
+      "timeInStatus",
+      (async () => {
+        const kept = previous && previous.statusHistory ? previous.statusHistory : {};
+        // Subtasks too: each one is a unit of work with its own hand-offs.
+        const counted = board.countSubtasks === false ? buildTasks.filter((task) => !task.parentId) : buildTasks;
+        const needed = tasksNeedingHistory(counted, previous && previous.buildTasks, kept);
+        timings.timeInStatusTasks = needed.length;
+        const history = {};
+        for (const task of counted) {
+          if (kept[task.id]) {
+            history[task.id] = kept[task.id];
+          }
+        }
+        if (needed.length === 0) {
+          return history;
+        }
+        try {
+          return { ...history, ...(await clickup.getStatusHistory(needed.map((task) => task.id))) };
+        } catch (error) {
+          log(`[projects] no time-in-status for ${board.name}: ${error.message}`);
+          return kept;
+        }
+      })()
+    );
+    // Deadlines likewise: a failed read keeps the last phases and where they
+    // came from, and stamps the attempt so it is not retried on every view.
+    const deadlinesRead = timed(
+      "deadlines",
+      (async () => {
+        const kept = {
+          items: previous && Array.isArray(previous.deadlineItems) ? previous.deadlineItems : [],
+          undated: previous ? previous.deadlineUndated || 0 : 0,
+          source: previous ? previous.deadlineSource || null : null,
+          discovery: previous ? previous.deadlineDiscovery || null : null
+        };
+        try {
+          return await readDeadlines(clickup, board, lists, buildTasks, kept.discovery);
+        } catch (error) {
+          log(`[projects] deadlines for ${board.name} could not be read: ${error.message}`);
+          return { ...kept, discovery: { candidates: [], chosenId: null, ...(kept.discovery || {}), at: now() } };
+        }
+      })()
+    );
+    const [planning, statusHistory, deadlines, owner] = await Promise.all([planningRead, historyRead, deadlinesRead, ownerRead]);
+    const planningTasks = planning.tasks;
     const update = {};
     if (changed || planningChanged) {
       update.clickup = lists;
     }
-    // "Me" is the owner of the token until the settings say otherwise.
-    if (!board.clickupUserId) {
-      try {
-        const owner = await clickup.getCurrentUser();
-        if (owner.id) {
-          update.clickupUserId = owner.id;
-        }
-      } catch (error) {
-        log(`[projects] could not ask ClickUp who the token belongs to: ${error.message}`);
-      }
+    if (owner && owner.id) {
+      update.clickupUserId = owner.id;
     }
     if (Object.keys(update).length > 0) {
       boardStore.updateBoard(board.id, update);
     }
-    const previous = readCache(board.id);
-    // When each build task entered each status: the queue's movement over
-    // time. Optional — without it the moves this app saw are used. A failed
-    // read keeps the last one instead of wiping it.
-    let statusHistory = previous && previous.statusHistory ? previous.statusHistory : {};
-    try {
-      // Subtasks too: each one is a unit of work with its own hand-offs.
-      const counted = board.countSubtasks === false ? buildTasks.filter((task) => !task.parentId) : buildTasks;
-      statusHistory = await clickup.getStatusHistory(counted.map((task) => task.id));
-    } catch (error) {
-      log(`[projects] no time-in-status for ${board.name}: ${error.message}`);
-    }
+    timings.buildListNote = build.whole ? `whole, ${build.pages} page${build.pages === 1 ? "" : "s"}` : `${build.changed} changed`;
+    timings.planningListNote = planning.whole ? `whole, ${planning.pages} page${planning.pages === 1 ? "" : "s"}` : `${planning.changed} changed`;
     const refreshedAt = now();
     const statusMoves = observedMoves(previous, buildTasks, refreshedAt);
-    // Deadlines likewise: a failed read keeps the last phases and where they
-    // came from, and stamps the attempt so it is not retried on every view.
-    let deadlines = {
-      items: previous && Array.isArray(previous.deadlineItems) ? previous.deadlineItems : [],
-      undated: previous ? previous.deadlineUndated || 0 : 0,
-      source: previous ? previous.deadlineSource || null : null,
-      discovery: previous ? previous.deadlineDiscovery || null : null
-    };
-    try {
-      deadlines = await readDeadlines(clickup, board, lists, buildTasks, deadlines.discovery);
-    } catch (error) {
-      log(`[projects] deadlines for ${board.name} could not be read: ${error.message}`);
-      deadlines = { ...deadlines, discovery: { candidates: [], chosenId: null, ...(deadlines.discovery || {}), at: now() } };
-    }
     return {
       buildTasks,
       planningTasks,
@@ -236,6 +395,9 @@ export function createProjectDataService({
       // A list longer than the pages read: the counts are "at least".
       truncated: { buildTasks: Boolean(buildTasks.truncated), planningTasks: Boolean(planningTasks.truncated) },
       refreshedAt,
+      listedAt,
+      wholeListsAt: build.whole && planning.whole ? listedAt : previous ? previous.wholeListsAt : listedAt,
+      pages: { buildTasks: build.pages, planningTasks: planning.pages },
       lists,
       statusHistory,
       statusMoves,
@@ -272,23 +434,22 @@ export function createProjectDataService({
         .sort((first, second) => second[1] - first[1])
         .slice(0, MAXIMUM_ROADMAP_PARENTS)
         .map(([parentId]) => parentId);
-      const read = [];
-      for (const parentId of wanted) {
-        try {
-          const answer = await clickup.getTaskWithSubtasks(parentId);
-          read.push(answer);
-        } catch (error) {
-          log(`[projects] roadmap candidate ${parentId} could not be read: ${error.message}`);
-        }
-      }
+      const answers = await Promise.all(
+        wanted.map((parentId) =>
+          clickup.getTaskWithSubtasks(parentId).catch((error) => {
+            log(`[projects] roadmap candidate ${parentId} could not be read: ${error.message}`);
+            return null;
+          })
+        )
+      );
+      const read = answers.filter(Boolean);
       candidates.push(...roadmapCandidates(read, projectNames).filter((candidate) => candidate.matchesName));
     }
     if (spaceId) {
       const spaceLists = await listsOfSpace(clickup, spaceId);
-      const withTasks = [];
-      for (const list of planLikeLists(spaceLists)) {
-        withTasks.push({ ...list, tasks: await clickup.listTasks(list.id, { maximumPages: 2 }) });
-      }
+      const withTasks = await Promise.all(
+        planLikeLists(spaceLists).map(async (list) => ({ ...list, tasks: await clickup.listTasks(list.id, { maximumPages: 2 }) }))
+      );
       candidates.push(...listCandidates(withTasks));
     }
     const chosen = chooseDeadlineSource(candidates);
@@ -335,11 +496,11 @@ export function createProjectDataService({
   }
 
   // One refresh per project at a time; a second ↻ joins the first.
-  function refreshClickup(board) {
+  function refreshClickup(board, timings = {}) {
     if (refreshesInFlight.has(board.id)) {
       return refreshesInFlight.get(board.id);
     }
-    const running = fetchClickup(board)
+    const running = fetchClickup(board, timings)
       .then((data) => {
         writeCache(board.id, data);
         return { data, error: null };
@@ -354,7 +515,7 @@ export function createProjectDataService({
     return running;
   }
 
-  async function clickupData(board, { refresh }) {
+  async function clickupData(board, { refresh, timings = {} }) {
     const cached = readCache(board.id);
     // A cache read without the closed tasks cannot answer for a project
     // that now wants them (Settings → General).
@@ -363,7 +524,7 @@ export function createProjectDataService({
     if (cached && fresh && !refresh) {
       return { data: cached, clickup: { ok: true, error: null, refreshedAt: cached.refreshedAt, fromCache: true } };
     }
-    const { data, error } = await refreshClickup(board);
+    const { data, error } = await refreshClickup(board, timings);
     if (data) {
       return { data, clickup: { ok: true, error: null, refreshedAt: data.refreshedAt, fromCache: false } };
     }
@@ -409,55 +570,29 @@ export function createProjectDataService({
     return { ok: true, error: null, refreshedAt: now(), fromCache: false, ...(input.clickup || {}) };
   }
 
-  async function snapshot(boardId, { refresh = false, fetchGit = false } = {}) {
-    const { board, input } = boardFor(boardId);
-    const agentState = getAgents();
-    const sessions = await getSessions();
-    if (fixture) {
-      return buildProjectSnapshot({
-        board,
-        buildTasks: (input.buildTasks || []).map(mapTask),
-        planningTasks: (input.planningTasks || []).map(mapTask),
-        sessions: input.sessions || sessions,
-        sessionAgents: input.sessionAgents || agentState.sessionAgents,
-        agents: input.agents || agentState.agents,
-        repositoryResults: input.repositoryResults || [],
-        pullRequestResults: input.pullRequestResults || [],
-        clickup: fixtureClickupState(input),
-        now: input.now || now()
-      });
-    }
-    if (!usesClickup(board)) {
-      return gitSnapshot(board, { sessions, agentState, fetchGit });
-    }
-    if (fetchGit) {
-      for (const repository of board.repositories) {
-        try {
-          await fetchRepositoryImplementation(repository);
-        } catch (error) {
-          log(`[projects] git fetch in ${repository.name} failed: ${error.message}`);
-        }
-      }
-    }
-    // ClickUp first: its task ids tell git which of the (often hundreds of)
-    // CU- branches belong to this project.
-    const [{ data, clickup }, pullRequestResults] = await Promise.all([
-      clickupData(board, { refresh }),
-      Promise.all(board.repositories.map((repository) => listPullRequestsImplementation(repository)))
-    ]);
-    const taskIds = new Set([...data.buildTasks, ...data.planningTasks].map((task) => String(task.id).toLowerCase()));
-    const repositoryResults = await Promise.all(
-      board.repositories.map((repository) => inspectRepositoryImplementation(repository, { taskIds }))
-    );
+  function fixtureSnapshot(board, input, { sessions, agentState }) {
     return buildProjectSnapshot({
-      board: boardStore.getBoard(boardId),
-      buildTasks: data.buildTasks,
-      planningTasks: data.planningTasks,
-      statusHistory: data.statusHistory || {},
-      statusMoves: data.statusMoves || [],
-      deadlineItems: data.deadlineItems || [],
-      deadlineInfo: { source: data.deadlineSource || null, undated: data.deadlineUndated || 0 },
-      truncated: data.truncated || null,
+      board,
+      buildTasks: (input.buildTasks || []).map(mapTask),
+      planningTasks: (input.planningTasks || []).map(mapTask),
+      sessions: input.sessions || sessions,
+      sessionAgents: input.sessionAgents || agentState.sessionAgents,
+      agents: input.agents || agentState.agents,
+      repositoryResults: input.repositoryResults || [],
+      pullRequestResults: input.pullRequestResults || [],
+      clickup: fixtureClickupState(input),
+      now: input.now || now()
+    });
+  }
+
+  // The view from ClickUp's copy (`raw`, see fetchClickup) and what git and
+  // GitHub said — no network.
+  function snapshotFromCopy(board, raw, { sessions, agentState, repositoryResults, pullRequestResults, clickup }) {
+    const common = {
+      board,
+      buildTasks: raw.buildTasks,
+      planningTasks: raw.planningTasks || [],
+      statusMoves: raw.statusMoves || [],
       sessions,
       sessionAgents: agentState.sessionAgents,
       agents: agentState.agents,
@@ -466,51 +601,203 @@ export function createProjectDataService({
       transcriptTextBySession: openingTexts(sessions),
       clickup,
       now: now()
+    };
+    if (raw.gitOnly) {
+      return buildProjectSnapshot({ ...common, mode: "git", branchTasks: branchTaskMap(raw.buildTasks, repositoryResults) });
+    }
+    return buildProjectSnapshot({
+      ...common,
+      statusHistory: raw.statusHistory || {},
+      deadlineItems: raw.deadlineItems || [],
+      deadlineInfo: { source: raw.deadlineSource || null, undated: raw.deadlineUndated || 0 },
+      truncated: raw.truncated || null
     });
+  }
+
+  // snapshot(boardId, options):
+  //   { cachedOnly: true }  the last stored snapshot as it was saved (null
+  //                         when there is none) — a file read, nothing else;
+  //   { local: true }       the view built again from the stored copies with
+  //                         the sessions and settings of now — no network,
+  //                         no git (null when nothing was ever read);
+  //   { refresh: true }     ClickUp, git and GitHub asked again;
+  //   {}                    ClickUp's copy when it is younger than five
+  //                         minutes, else asked again; git and GitHub asked.
+  async function snapshot(boardId, { refresh = false, fetchGit = false, cachedOnly = false, local = false } = {}) {
+    const { board, input } = boardFor(boardId);
+    if (cachedOnly && !fixture) {
+      const stored = readStoredSnapshot(boardId);
+      return stored ? stored.snapshot : null;
+    }
+    const agentState = getAgents();
+    const sessions = await getSessions();
+    if (fixture) {
+      return fixtureSnapshot(board, input, { sessions, agentState });
+    }
+    if (local) {
+      return localSnapshot(board, { sessions, agentState });
+    }
+    if (!usesClickup(board)) {
+      return gitSnapshot(board, { sessions, agentState, fetchGit });
+    }
+    const startedAt = Date.now();
+    const timings = {};
+    const timedSince = (name, since) => {
+      timings[name] = Date.now() - since;
+    };
+    // ClickUp's task ids tell git which of the (often hundreds of) CU-
+    // branches belong to this project. Git starts at once with the ids of
+    // the last copy, alongside ClickUp and GitHub; branches of tasks new
+    // since then are looked at afterwards.
+    const previous = readCache(board.id);
+    const idsOf = (data) => new Set([...(data.buildTasks || []), ...(data.planningTasks || [])].map((task) => String(task.id).toLowerCase()));
+    const knownIds = previous ? idsOf(previous) : new Set();
+    const gitStartedAt = Date.now();
+    const gitRead = Promise.all(
+      board.repositories.map(async (repository) => {
+        if (fetchGit) {
+          try {
+            await fetchRepositoryImplementation(repository);
+          } catch (error) {
+            log(`[projects] git fetch in ${repository.name} failed: ${error.message}`);
+          }
+        }
+        return inspectRepositoryImplementation(repository, { taskIds: knownIds });
+      })
+    ).finally(() => timedSince("git", gitStartedAt));
+    const pullRequestsStartedAt = Date.now();
+    const pullRequestsRead = Promise.all(board.repositories.map((repository) => listPullRequestsImplementation(repository))).finally(() =>
+      timedSince("pullRequests", pullRequestsStartedAt)
+    );
+    const clickupStartedAt = Date.now();
+    const [{ data, clickup }, firstRepositoryResults, pullRequestResults] = await Promise.all([
+      clickupData(board, { refresh, timings }).finally(() => timedSince("clickup", clickupStartedAt)),
+      gitRead,
+      pullRequestsRead
+    ]);
+    const newIds = new Set([...idsOf(data)].filter((taskId) => !knownIds.has(taskId)));
+    let repositoryResults = firstRepositoryResults;
+    if (newIds.size > 0) {
+      const newStartedAt = Date.now();
+      const extra = await Promise.all(board.repositories.map((repository) => inspectRepositoryImplementation(repository, { taskIds: newIds })));
+      repositoryResults = firstRepositoryResults.map((result, index) => ({
+        ...result,
+        available: result.available || Boolean(extra[index] && extra[index].available),
+        branchesByTask: { ...(result.branchesByTask || {}), ...((extra[index] && extra[index].branchesByTask) || {}) }
+      }));
+      timedSince("gitNewTasks", newStartedAt);
+    }
+    const buildStartedAt = Date.now();
+    const result = snapshotFromCopy(boardStore.getBoard(boardId), data, { sessions, agentState, repositoryResults, pullRequestResults, clickup });
+    timedSince("snapshot", buildStartedAt);
+    if (clickup.ok || !readStoredSnapshot(boardId)) {
+      storeSnapshot(boardId, result, { repositoryResults, pullRequestResults });
+    }
+    if (!clickup.fromCache || refresh) {
+      log(
+        `[projects] ${board.name} refreshed in ${seconds(Date.now() - startedAt)}: ClickUp ${seconds(timings.clickup || 0)} (build list ${seconds(timings.buildList || 0)}, ${timings.buildListNote || "cached"}; planning list ${seconds(timings.planningList || 0)}, ${timings.planningListNote || "cached"}; time in status ${seconds(timings.timeInStatus || 0)} for ${timings.timeInStatusTasks || 0} tasks; deadlines ${seconds(timings.deadlines || 0)}) · git ${seconds(timings.git || 0)}${fetchGit ? " with fetch" : ""}${timings.gitNewTasks ? ` + ${seconds(timings.gitNewTasks)} for ${newIds.size} new tasks` : ""} · pull requests ${seconds(timings.pullRequests || 0)} · view ${seconds(timings.snapshot || 0)}`
+      );
+    }
+    return result;
+  }
+
+  // The view again from what is on disk, with the sessions and settings of
+  // now: after a setting changed, and while the window stays open.
+  function localSnapshot(board, { sessions, agentState }) {
+    const raw = readCache(board.id);
+    const stored = readStoredSnapshot(board.id);
+    if (!raw) {
+      return stored ? stored.snapshot : null;
+    }
+    const storedClickup = stored && stored.snapshot.sources && stored.snapshot.sources.clickup;
+    const clickup = storedClickup
+      ? { ...storedClickup, fromCache: true }
+      : { ok: true, error: null, refreshedAt: raw.refreshedAt, fromCache: true, ...(raw.gitOnly ? { disabled: true } : {}) };
+    const result = snapshotFromCopy(board, raw, {
+      sessions,
+      agentState,
+      repositoryResults: (stored && stored.repositoryResults) || [],
+      pullRequestResults: (stored && stored.pullRequestResults) || [],
+      clickup
+    });
+    storeSnapshot(board.id, result, { repositoryResults: (stored && stored.repositoryResults) || [], pullRequestResults: (stored && stored.pullRequestResults) || [] });
+    return result;
+  }
+
+  // A refresh the window does not wait on: one per project at a time (a
+  // second request joins the first), announced through onRefresh when it
+  // starts and when its snapshot is ready. Never throws: a failure keeps the
+  // last snapshot on screen.
+  function refreshInBackground(boardId, { fetchGit = false } = {}) {
+    if (snapshotRefreshesInFlight.has(boardId)) {
+      return snapshotRefreshesInFlight.get(boardId);
+    }
+    onRefresh({ boardId, refreshing: true });
+    const running = snapshot(boardId, { refresh: true, fetchGit })
+      .catch((error) => {
+        log(`[projects] background refresh of ${boardId} failed: ${error.message}`);
+        return null;
+      })
+      .then((result) => {
+        snapshotRefreshesInFlight.delete(boardId);
+        onRefresh({ boardId, refreshing: false, snapshot: result });
+        return result;
+      });
+    snapshotRefreshesInFlight.set(boardId, running);
+    return running;
+  }
+
+  // Every project, one after the other (they share ClickUp's rate limit):
+  // on app start and every ten minutes (see main.js).
+  async function refreshAll() {
+    if (fixture) {
+      return;
+    }
+    for (const board of boardStore.getState().boards) {
+      await refreshInBackground(board.id);
+    }
   }
 
   // A project without ClickUp: its feature branches are its tasks
   // (lib/gitTasks.js). The answer is cached like ClickUp's, so the project
   // list on the left has its numbers without running git again.
   async function gitSnapshot(board, { sessions, agentState, fetchGit }) {
-    if (fetchGit) {
-      for (const repository of board.repositories) {
-        try {
-          await fetchRepositoryImplementation(repository);
-        } catch (error) {
-          log(`[projects] git fetch in ${repository.name} failed: ${error.message}`);
-        }
-      }
-    }
+    const startedAt = Date.now();
     const [repositoryResults, pullRequestResults] = await Promise.all([
-      Promise.all(board.repositories.map((repository) => inspectRepositoryImplementation(repository, { allBranches: true }))),
+      Promise.all(
+        board.repositories.map(async (repository) => {
+          if (fetchGit) {
+            try {
+              await fetchRepositoryImplementation(repository);
+            } catch (error) {
+              log(`[projects] git fetch in ${repository.name} failed: ${error.message}`);
+            }
+          }
+          return inspectRepositoryImplementation(repository, { allBranches: true });
+        })
+      ),
       Promise.all(board.repositories.map((repository) => listPullRequestsImplementation(repository, { allBranches: true })))
     ]);
     const refreshedAt = now();
     const buildTasks = tasksFromBranches({ repositoryResults, pullRequestResults, now: refreshedAt });
     const previous = readCache(board.id);
     const statusMoves = observedMoves(previous, buildTasks, refreshedAt);
+    const raw = { buildTasks, planningTasks: [], refreshedAt, statusMoves, gitOnly: true };
     try {
-      writeCache(board.id, { buildTasks, planningTasks: [], refreshedAt, statusMoves, gitOnly: true });
+      writeCache(board.id, raw);
     } catch (error) {
       log(`[projects] could not cache ${board.name}: ${error.message}`);
     }
-    return buildProjectSnapshot({
-      board: boardStore.getBoard(board.id),
-      buildTasks,
-      planningTasks: [],
-      statusMoves,
+    const result = snapshotFromCopy(boardStore.getBoard(board.id), raw, {
       sessions,
-      sessionAgents: agentState.sessionAgents,
-      agents: agentState.agents,
+      agentState,
       repositoryResults,
       pullRequestResults,
-      transcriptTextBySession: openingTexts(sessions),
-      clickup: { ok: true, error: null, refreshedAt, fromCache: false, disabled: true },
-      mode: "git",
-      branchTasks: branchTaskMap(buildTasks, repositoryResults),
-      now: refreshedAt
+      clickup: { ok: true, error: null, refreshedAt, fromCache: false, disabled: true }
     });
+    storeSnapshot(board.id, result, { repositoryResults, pullRequestResults });
+    log(`[projects] ${board.name} (git only) refreshed in ${seconds(Date.now() - startedAt)}`);
+    return result;
   }
 
   // The first user messages of every listed session, read once per session
@@ -994,6 +1281,8 @@ export function createProjectDataService({
 
   return {
     snapshot,
+    refreshInBackground,
+    refreshAll,
     summaries,
     taskDetail,
     resolveProjectLink,

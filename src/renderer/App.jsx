@@ -347,7 +347,17 @@ export default function App() {
 
   useEffect(() => {
     loadProjectSummaries();
-    return window.clauding.onBoardsChanged(() => loadProjectSummaries());
+    const stopBoards = window.clauding.onBoardsChanged(() => loadProjectSummaries());
+    // A background refresh moved a project's cache: the numbers on the left too.
+    const stopRefreshes = window.clauding.onBoardRefreshState((state) => {
+      if (state && !state.refreshing) {
+        loadProjectSummaries();
+      }
+    });
+    return () => {
+      stopBoards();
+      stopRefreshes();
+    };
   }, [loadProjectSummaries]);
 
   useEffect(() => {

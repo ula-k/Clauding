@@ -5566,31 +5566,44 @@ button.burn-down-number:hover b {
   height: 20px;
 }
 
+/* Every bar is solid: past ones dimmed, the current one in the accent,
+   future ones plain. */
 .phase-bar {
   position: absolute;
   top: 0;
   height: 20px;
   border-radius: 6px;
-  border: 1px solid var(--border-lavender);
-  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
   overflow: hidden;
   text-align: left;
-  padding: 0 6px;
+  padding: 0 7px;
   cursor: pointer;
 }
 
 .phase-bar.is-done {
-  background: rgba(169, 199, 164, 0.18);
-  border-color: rgba(169, 199, 164, 0.4);
+  background: rgba(169, 199, 164, 0.12);
+  border-color: rgba(169, 199, 164, 0.28);
+  opacity: 0.5;
 }
 
 .phase-bar.is-later {
-  background: transparent;
-  border-style: dashed;
+  border-color: rgba(230, 236, 230, 0.2);
+}
+
+.phase-bar.is-later .phase-bar-label,
+.phase-bar-outside.is-later {
+  color: var(--text);
 }
 
 .phase-bar.is-running {
-  border-color: var(--gold);
+  background: var(--accent-soft);
+  border-color: var(--border-lavender);
+}
+
+.phase-bar:hover,
+.phase-bar:focus-visible {
+  border-color: var(--accent);
 }
 
 .phase-bar-label {
@@ -5600,7 +5613,10 @@ button.burn-down-number:hover b {
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.phase-bar.is-running .phase-bar-label {
+  color: var(--text);
 }
 
 .phase-bar:hover .phase-bar-label {
@@ -5629,21 +5645,46 @@ button.burn-down-number:hover b {
   margin: 10px 14px 0;
 }
 
-.deadline-legend-item {
+.deadline-legend-group {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 0;
   font-size: 11.5px;
   color: var(--text-dim);
 }
 
-.deadline-legend-item b {
-  color: var(--text);
-  font-weight: 600;
+.deadline-legend-item {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
 
 .deadline-legend-item:hover {
   color: var(--accent);
+}
+
+.deadline-legend-separator {
+  color: var(--text-faint);
+  white-space: pre;
+}
+
+.deadline-legend-group .deadline-legend-diamond {
+  margin-right: 7px;
+}
+
+.deadline-legend-count {
+  margin-right: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.deadline-legend-group.is-hovered {
+  color: var(--text);
 }
 
 .deadline-legend-diamond {
@@ -5654,12 +5695,12 @@ button.burn-down-number:hover b {
   border-radius: 2px;
 }
 
-.deadline-legend-item.is-done .deadline-legend-diamond {
+.deadline-legend-group.is-done .deadline-legend-diamond {
   background: var(--sage);
   border-color: var(--sage);
 }
 
-.deadline-legend-item.is-next .deadline-legend-diamond {
+.deadline-legend-group.is-next .deadline-legend-diamond {
   background: var(--gold);
 }
 
@@ -5846,35 +5887,30 @@ button.burn-down-number:hover b {
   display: contents;
 }
 
+/* A name that does not fit its bar, right after the bar's end. */
 .phase-bar-outside {
   position: absolute;
   top: 0;
+  padding: 0;
+  border: none;
+  background: none;
   font-size: 10.5px;
   line-height: 20px;
   color: var(--text-dim);
   white-space: nowrap;
-  pointer-events: auto;
+  cursor: pointer;
 }
 
-.phase-bar-outside.is-left {
-  text-align: right;
+.phase-bar-outside.is-done {
+  opacity: 0.5;
 }
 
-.phase-bar-more {
-  position: absolute;
-  top: 1px;
-  width: 17px;
-  height: 18px;
-  border-radius: 5px;
-  font-size: 12px;
-  line-height: 14px;
-  color: var(--text-faint);
-  background: transparent;
-}
-
-.phase-bar-more:hover {
+.phase-bar-outside.is-running {
   color: var(--text);
-  background: var(--surface-hover);
+}
+
+.phase-bar-outside:hover {
+  color: var(--accent);
 }
 
 .settings-axis-items {
@@ -5905,13 +5941,6 @@ button.burn-down-number:hover b {
   font-size: 11px;
 }
 
-.phase-bar-label.has-more {
-  padding-right: 16px;
-}
-
-.phase-bar-more {
-  z-index: 1;
-}
 
 /* A card's subtasks: one summary line that opens the list. */
 .where-split {
@@ -6092,4 +6121,32 @@ button.burn-down-number:hover b {
 
 .link-chip.is-split.is-small .link-chip-external {
   padding: 2px 6px;
+}
+
+/* Diamonds that stand for several dates carry their count. */
+.deadline-diamond {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.deadline-count {
+  transform: rotate(-45deg);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+.deadline-milestone.is-next .deadline-count {
+  color: #1b1f1c;
+}
+
+.deadline-milestone.is-hovered .deadline-diamond {
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+
+/* "as of 14:05 · refreshing…": the refresh runs behind the snapshot shown. */
+.project-refreshing {
+  color: var(--text-faint);
 }

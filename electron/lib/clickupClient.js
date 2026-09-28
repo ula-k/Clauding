@@ -7,14 +7,20 @@
 // written to disk, never logged, never sent to the window. ClickUp takes the
 // raw token in the Authorization header, not "Bearer <token>".
 //
-// ClickUp allows about 100 requests a minute per token; requests go through
-// one queue with a small gap between them so a big list never trips it.
+// ClickUp allows about 100 requests a minute per token; requests start with
+// a small gap between them so a big list never trips it, and a few of them
+// may wait for their answers at once.
 import { execFile } from "node:child_process";
 
 export const CLICKUP_API_ROOT = "https://api.clickup.com/api";
 const KEYCHAIN_ACCOUNT = "clickup-api";
 const KEYCHAIN_SERVICE = "clickup-api-token";
+// Requests START at least this far apart (about 90 a minute, under
+// ClickUp's 100); up to MAXIMUM_REQUESTS_AT_ONCE of them may be waiting for
+// their answers at the same time, so a slow answer does not hold up the
+// ones behind it.
 const MINIMUM_GAP_MILLISECONDS = 650;
+const MAXIMUM_REQUESTS_AT_ONCE = 4;
 // 100 tasks a page: 200 pages is 20,000 tasks. A list longer than that
 // says so (tasks.truncated) instead of being cut off without a word.
 export const MAXIMUM_TASK_PAGES = 200;
@@ -81,11 +87,42 @@ export function createClickupClient({
   fetchImplementation = globalThis.fetch,
   apiRoot = CLICKUP_API_ROOT,
   minimumGapMilliseconds = MINIMUM_GAP_MILLISECONDS,
+  maximumRequestsAtOnce = MAXIMUM_REQUESTS_AT_ONCE,
   now = () => Date.now(),
   wait = sleep
 }) {
-  let queue = Promise.resolve();
-  let lastRequestAt = 0;
+  // When the next request may start, and the requests waiting for room.
+  let nextStartAt = 0;
+  let running = 0;
+  const waitingForRoom = [];
+
+  // A place among the requests in flight, first come first served; a
+  // finished request hands its place straight to the next one waiting.
+  function takePlace() {
+    if (running < maximumRequestsAtOnce) {
+      running += 1;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => waitingForRoom.push(resolve));
+  }
+
+  function givePlaceBack() {
+    const nextInLine = waitingForRoom.shift();
+    if (nextInLine) {
+      nextInLine();
+    } else {
+      running -= 1;
+    }
+  }
+
+  async function waitForTurn() {
+    const startAt = Math.max(now(), nextStartAt);
+    nextStartAt = startAt + minimumGapMilliseconds;
+    const waitFor = startAt - now();
+    if (waitFor > 0) {
+      await wait(waitFor);
+    }
+  }
 
   function get(pathAndQuery) {
     const call = `GET ${String(pathAndQuery).split("?")[0]}`;
@@ -94,11 +131,7 @@ export function createClickupClient({
         throw new ClickupError("No ClickUp token on this Mac.", { kind: "no-token", call });
       }
       const request = async () => {
-        const waitFor = lastRequestAt + minimumGapMilliseconds - now();
-        if (waitFor > 0) {
-          await wait(waitFor);
-        }
-        lastRequestAt = now();
+        await waitForTurn();
         try {
           return await fetchImplementation(`${apiRoot}${pathAndQuery}`, {
             method: "GET",
@@ -110,7 +143,8 @@ export function createClickupClient({
       };
       let response = await request();
       if (response.status === 429) {
-        await wait(rateLimitWait(response, now()));
+        // Every request waits for the reset, not only this one.
+        nextStartAt = Math.max(nextStartAt, now() + rateLimitWait(response, now()));
         response = await request();
       }
       if (response.status === 401) {
@@ -127,10 +161,38 @@ export function createClickupClient({
       }
       return response.json();
     };
-    const result = queue.then(run, run);
-    // A failed request must not jam the queue for the ones after it.
-    queue = result.catch(() => undefined);
-    return result;
+    // A failed request gives its place back too, so it never jams the rest.
+    return takePlace().then(() => run().finally(givePlaceBack));
+  }
+
+  // Tasks page after page until ClickUp says it was the last: the first
+  // `expectedPages` asked for at once, the rest one by one. Stopping at
+  // `maximumPages` with more left is said on the array (tasks.truncated),
+  // so the window can say "at least"; tasks.pagesRead is how many pages the
+  // list took.
+  async function readPages(readPage, { maximumPages, expectedPages }) {
+    const tasks = [];
+    let truncated = true;
+    const firstPages = Math.max(1, Math.min(maximumPages, Math.floor(expectedPages) || 1));
+    const answers = await Promise.all(Array.from({ length: firstPages }, (unused, page) => readPage(page)));
+    let page = 0;
+    let answer = answers[0];
+    while (answer) {
+      const pageTasks = answer.tasks || [];
+      tasks.push(...pageTasks.map(mapTask));
+      if (answer.last_page === true || pageTasks.length === 0) {
+        truncated = false;
+        break;
+      }
+      page += 1;
+      if (page >= maximumPages) {
+        break;
+      }
+      answer = page < answers.length ? answers[page] : await readPage(page);
+    }
+    tasks.truncated = truncated;
+    tasks.pagesRead = page + 1;
+    return tasks;
   }
 
   return {
@@ -164,24 +226,21 @@ export function createClickupClient({
     // (include_closed=true; without it ClickUp leaves out every task whose
     // status is of type "closed"). Descriptions come as plain text: the
     // markdown copy is not asked for.
-    async listTasks(listId, { maximumPages = MAXIMUM_TASK_PAGES, includeClosed = true } = {}) {
-      const tasks = [];
-      // Stopping at the page limit with more pages left is said on the
-      // array itself (tasks.truncated), so the window can say "at least".
-      let truncated = true;
-      for (let page = 0; page < maximumPages; page += 1) {
-        const answer = await get(
-          `/v2/list/${encodeURIComponent(listId)}/task?include_closed=${includeClosed ? "true" : "false"}&subtasks=true&include_markdown_description=false&page=${page}`
-        );
-        const pageTasks = answer.tasks || [];
-        tasks.push(...pageTasks.map(mapTask));
-        if (answer.last_page === true || pageTasks.length === 0) {
-          truncated = false;
-          break;
-        }
-      }
-      tasks.truncated = truncated;
-      return tasks;
+    //
+    // `updatedAfter` (ms) asks only for the tasks changed since then
+    // (date_updated_gt) — a refresh that merges them into the last copy.
+    // `expectedPages` asks for that many pages at once (how many the last
+    // full read had) instead of one after another; reading goes on page by
+    // page after them when the list has grown.
+    async listTasks(listId, { maximumPages = MAXIMUM_TASK_PAGES, includeClosed = true, updatedAfter = null, expectedPages = 1 } = {}) {
+      const since = Number.isFinite(updatedAfter) ? `&date_updated_gt=${Math.floor(updatedAfter)}` : "";
+      return readPages(
+        (page) =>
+          get(
+            `/v2/list/${encodeURIComponent(listId)}/task?include_closed=${includeClosed ? "true" : "false"}&subtasks=true&include_markdown_description=false${since}&page=${page}`
+          ),
+        { maximumPages, expectedPages }
+      );
     },
     // When each task entered each of its statuses (ClickUp's "time in
     // status"), 100 tasks per request: { "<task id>": [{ status, type,
@@ -209,21 +268,13 @@ export function createClickupClient({
     // Tasks of a whole workspace of the given task types (ClickUp's own
     // "milestone" is type 1), closed ones and subtasks included — for
     // finding where a project's phases and milestones are kept.
+    // The pages are few (five at most) and all asked for at once.
     async listWorkspaceTasksOfTypes(workspaceId, typeIds, { maximumPages = 5 } = {}) {
-      const tasks = [];
-      let truncated = true;
       const types = (typeIds || []).map((typeId) => `custom_items%5B%5D=${encodeURIComponent(typeId)}`).join("&");
-      for (let page = 0; page < maximumPages; page += 1) {
-        const answer = await get(`/v2/team/${encodeURIComponent(workspaceId)}/task?${types}&include_closed=true&subtasks=true&page=${page}`);
-        const pageTasks = answer.tasks || [];
-        tasks.push(...pageTasks.map(mapTask));
-        if (answer.last_page === true || pageTasks.length === 0) {
-          truncated = false;
-          break;
-        }
-      }
-      tasks.truncated = truncated;
-      return tasks;
+      return readPages((page) => get(`/v2/team/${encodeURIComponent(workspaceId)}/task?${types}&include_closed=true&subtasks=true&page=${page}`), {
+        maximumPages,
+        expectedPages: maximumPages
+      });
     },
     // A task with its subtasks mapped too (a roadmap task's phases).
     async getTaskWithSubtasks(taskId) {

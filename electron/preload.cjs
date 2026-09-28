@@ -124,10 +124,16 @@ contextBridge.exposeInMainWorld("clauding", {
   getBoardSummaries() {
     return ipcRenderer.invoke(CHANNELS.boardsSummaries);
   },
-  // Everything one project's view draws. `refresh` asks ClickUp again even
-  // when the cache is fresh; `fetchGit` runs git fetch first (↻ only).
+  // Everything one project's view draws. `cachedOnly`: the last stored
+  // snapshot as saved; `local`: built again from disk, no network;
+  // `refresh`: ClickUp, git and GitHub asked again (in the background, the
+  // answer is the new snapshot or null); `fetchGit` runs git fetch first.
   getBoardSnapshot(boardId, options) {
     return ipcRenderer.invoke(CHANNELS.boardsSnapshot, { boardId, options: options || {} });
+  },
+  // A project's background refresh started or ended (with its snapshot).
+  onBoardRefreshState(listener) {
+    return subscribe(CHANNELS.boardsRefreshState, listener);
   },
   getBoardSettingsData(boardId) {
     return ipcRenderer.invoke(CHANNELS.boardsSettingsData, { boardId });

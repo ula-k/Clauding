@@ -83,6 +83,9 @@ const CHANNELS = {
   boardsChanged: "boards:changed",
   boardsSummaries: "boards:summaries",
   boardsSnapshot: "boards:snapshot",
+  // A background refresh started ({ boardId, refreshing: true }) or ended
+  // ({ boardId, refreshing: false, snapshot }).
+  boardsRefreshState: "boards:refresh-state",
   boardsTaskDetail: "boards:task-detail",
   boardsSettingsData: "boards:settings-data",
   boardsBrowse: "boards:browse",
