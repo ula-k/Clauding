@@ -58,7 +58,8 @@ test("the list: groups in order, a bar, the nearest deadline and the queue", () 
   assert.deepEqual(groups.map((group) => group.name), ["Work", "Private"]);
   const [website, mobile] = groups[0].projects;
   // From the user's side: on her plate, waiting on others, closed.
-  assert.equal(website.inQueue, 11);
+  // Every task and subtask counts: 11 tasks and 1 subtask in the queue.
+  assert.equal(website.inQueue, 12);
   assert.equal(website.waiting, 4);
   assert.equal(website.closed, 4);
   assert.deepEqual(website.deadline, { key: "projects.deadlineInDays", values: { label: "Feature freeze", count: 18 }, soon: false });
@@ -135,7 +136,7 @@ test("the per-day line under the axis, and labels that would collide move down",
   const snapshot = await fixtureService().snapshot("website");
   const pace = dailyPaceText(snapshot.dailyPace);
   assert.equal(pace.key, "projects.paceLineWeekly", "under one a day it is said per week");
-  assert.deepEqual(pace.values, { label: "Feature freeze", tasks: 11, days: 14, range: "4" }, "the queue, not everything open");
+  assert.deepEqual(pace.values, { label: "Feature freeze", tasks: 12, days: 14, range: "4" }, "the queue, not everything open");
   assert.equal(pace.todayKey, "projects.handedOffTodayWeekly");
   assert.deepEqual(pace.todayDots, [true]);
   assert.equal(dailyPaceText(null), null);

@@ -14,6 +14,9 @@ import {
   moveInList,
   searchCards,
   statFilterLabel,
+  subtaskMatchesQuery,
+  subtaskMatchesStat,
+  subtaskSummaryParts,
   dailyPaceText,
   defaultSpecStage,
   filterChips,
@@ -361,6 +364,7 @@ export default function ProjectView({
                     snapshot={snapshot}
                     filter="stat"
                     statCards={searchCards(cardsForStat(snapshot, statFilter), query)}
+                    stat={statFilter}
                     now={now}
                     language={language}
                     expandedCardId={expandedCardId}
@@ -893,6 +897,12 @@ function StatsCards({ snapshot, activeStat, onStat }) {
       <section className="project-card stat-where" data-stats-buckets>
         <h3>
           {translate("projects.whereTasksAre", { count: stats.total })}
+          {stats.subtasks > 0 && (
+            <span className="where-split" data-where-split>
+              {" "}
+              {translate("projects.tasksAndSubtasks", { tasks: stats.topLevel, subtasks: stats.subtasks })}
+            </span>
+          )}
           {snapshot.sources.truncated && snapshot.sources.truncated.buildTasks && (
             <span className="truncated-note" title={translate("projects.truncatedHint")} data-truncated>
               {" "}
@@ -1018,6 +1028,7 @@ function CardList({
   snapshot,
   filter,
   statCards = null,
+  stat = null,
   now,
   language,
   expandedCardId,
@@ -1042,7 +1053,22 @@ function CardList({
   const notStarted = searchCards(listed.notStarted, query);
   const visible = showNotStarted || searching ? [...cards, ...notStarted] : cards;
   const upNextIds = (snapshot.filters && snapshot.filters.upNext) || [];
-  const cardProps = { now, language, pullRequestsAvailable, onOpenTask, onOpenExternal, onSelectSession, sessions, agents, repositories, actions, upNextIds, inUpNext: filter === "upNext" };
+  const cardProps = {
+    now,
+    language,
+    pullRequestsAvailable,
+    onOpenTask,
+    onOpenExternal,
+    onSelectSession,
+    sessions,
+    agents,
+    repositories,
+    actions,
+    upNextIds,
+    inUpNext: filter === "upNext",
+    query,
+    stat
+  };
   return (
     <div className="task-list" data-task-list={filter}>
       {visible.length === 0 && (
@@ -1211,7 +1237,9 @@ function TaskCard({
   repositories,
   actions,
   upNextIds,
-  inUpNext
+  inUpNext,
+  query,
+  stat
 }) {
   const { translate } = useTranslation();
   const needs = needsLabel(card.needs);
@@ -1221,7 +1249,7 @@ function TaskCard({
       className={expanded ? "task-card is-open" : "task-card"}
       data-task-card={card.id}
       onClick={(event) => {
-        if (!event.target.closest("button, a, input")) {
+        if (!event.target.closest("button, a, input, .subtask-block")) {
           onToggle();
         }
       }}
@@ -1247,8 +1275,12 @@ function TaskCard({
               {card.developerStatusField}: {card.developerStatus}
             </span>
           )}
-          {needs && <span className="needs-pill">● {translate(needs.key, needs.values)}</span>}
-          {card.subtaskCount > 0 && <span className="project-dim">{translate(card.subtaskCount === 1 ? "projects.subtaskOne" : "projects.subtasks", { count: card.subtaskCount })}</span>}
+          {needs && (
+            <span className="needs-pill" title={needs.subtaskName || undefined}>
+              ● {translate(needs.key, needs.values)}
+              {needs.subtaskName && <span className="needs-subtask">{translate("projects.needsInSubtask", { name: needs.subtaskName })}</span>}
+            </span>
+          )}
         </div>
       </div>
       <div className="task-card-pipelines">
@@ -1271,8 +1303,136 @@ function TaskCard({
         onOpenExternal={onOpenExternal}
         onSelectSession={onSelectSession}
       />
+      {(card.subtasks || []).length > 0 && (
+        <SubtaskBlock card={card} now={now} query={query} stat={stat} onOpenTask={onOpenTask} onOpenExternal={onOpenExternal} onSelectSession={onSelectSession} />
+      )}
       {expanded && <TaskDetails card={card} now={now} language={language} onSelectSession={onSelectSession} />}
     </article>
+  );
+}
+
+// A card's subtasks: one line with how many there are and where they stand
+// for the user, which opens the list — every subtask at every level, with
+// its status, developer status, assignees, and its own CU- task, branches
+// and sessions. Closed by default; open when a search or a number on top
+// matched one of them (those rows are marked).
+function SubtaskBlock({ card, now, query, stat, onOpenTask, onOpenExternal, onSelectSession }) {
+  const { translate } = useTranslation();
+  const [chosen, setChosen] = useState(null);
+  const searching = Boolean(String(query || "").trim());
+  const matched = new Set(
+    card.subtasks
+      .filter((subtask) => (searching && subtaskMatchesQuery(subtask, query)) || (stat && subtaskMatchesStat(subtask, stat)))
+      .map((subtask) => subtask.id)
+  );
+  const open = chosen === null ? matched.size > 0 : chosen;
+  const parts = subtaskSummaryParts(card);
+  const toneOf = { "projects.subtasksInQueue": "is-myQueue", "projects.subtasksWaiting": "is-waiting", "projects.subtasksClosed": "is-closed" };
+  return (
+    <div className={open ? "subtask-block is-open" : "subtask-block"} data-subtasks={card.id}>
+      <button type="button" className="subtask-summary" aria-expanded={open} onClick={() => setChosen(!open)} data-subtask-toggle>
+        <span className="subtask-caret" aria-hidden="true">
+          ▸
+        </span>
+        {parts.map((part, index) => (
+          <span key={part.key} className={index === 0 ? "subtask-part is-total" : `subtask-part ${toneOf[part.key] || ""}`}>
+            {index > 0 && <span className="subtask-dot" aria-hidden="true" />}
+            {translate(part.key, part.values)}
+          </span>
+        ))}
+      </button>
+      {open && (
+        <ul className="subtask-list" data-subtask-list={card.id}>
+          {card.subtasks.map((subtask) => (
+            <SubtaskRow
+              key={subtask.id}
+              subtask={subtask}
+              matched={matched.has(subtask.id)}
+              now={now}
+              onOpenTask={onOpenTask}
+              onOpenExternal={onOpenExternal}
+              onSelectSession={onSelectSession}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SubtaskRow({ subtask, matched, now, onOpenTask, onOpenExternal, onSelectSession }) {
+  const { translate } = useTranslation();
+  const needs = needsLabel(subtask.needs);
+  const color = BUCKET_COLORS[subtask.bucket] || BUCKET_COLORS.other;
+  const pullRequest = (subtask.pullRequests || [])[0] || null;
+  return (
+    <li
+      className={`subtask-row is-${subtask.perspective || "myQueue"}${matched ? " is-match" : ""}`}
+      style={{ "--subtask-depth": Math.max(subtask.depth - 1, 0) }}
+      data-subtask={subtask.id}
+    >
+      <span className="subtask-name" title={subtask.depth > 1 && subtask.parentTitle ? translate("projects.subtaskOf", { name: subtask.parentTitle }) : subtask.name}>
+        {subtask.depth > 1 && (
+          <span className="subtask-branch-mark" aria-hidden="true">
+            ↳
+          </span>
+        )}
+        {subtask.name}
+      </span>
+      <span className="subtask-facts">
+        <span className="task-status is-small" style={{ "--status-color": color }}>
+          {subtask.status || "—"}
+        </span>
+        {subtask.developerStatus && (
+          <span className="source-chip developer-status is-small" data-subtask-developer-status>
+            {subtask.developerStatus}
+          </span>
+        )}
+        {needs && <span className="needs-pill is-small">● {translate(needs.key, needs.values)}</span>}
+        <span className="subtask-people">
+          {(subtask.assignees || []).length === 0 ? (
+            <span className="person-avatar is-nobody is-small" title={translate("projects.nobody")}>
+              –
+            </span>
+          ) : (
+            subtask.assignees.slice(0, 3).map((person) => (
+              <span
+                key={person.id || person.name}
+                className="person-avatar is-small"
+                style={{ background: subtask.assignedToUser && person.id ? "var(--accent)" : person.color || "var(--project-color-2)" }}
+                title={person.name}
+              >
+                {person.initials}
+              </span>
+            ))
+          )}
+        </span>
+        <span className="link-chip is-split is-small">
+          <button type="button" onClick={() => onOpenTask(subtask.id, subtask.name)} title={translate("projects.openTaskHint")} data-clickup-chip={subtask.id}>
+            <b className="mono">CU-{subtask.id}</b>
+          </button>
+          <button type="button" className="link-chip-external" onClick={() => onOpenExternal(subtask.url)} title={translate("projects.openInClickup")}>
+            ↗
+          </button>
+        </span>
+        {(subtask.branches || []).map((branch) => (
+          <span key={`${branch.repository}-${branch.name}`} className="link-chip is-static is-small" title={translate("projects.branchHint")} data-branch-chip>
+            <span className="chip-glyph">⎇</span>
+            <span className="mono">{branch.name}</span>
+            <span>{branch.repository}</span>
+          </span>
+        ))}
+        {pullRequest && (
+          <button type="button" className={`link-chip is-small is-ci-${pullRequest.ci}`} onClick={() => onOpenExternal(pullRequest.url)} data-pull-request-chip>
+            <span className="chip-glyph">⇅</span>
+            <b>PR #{pullRequest.number}</b>
+          </button>
+        )}
+        {(subtask.sessions || []).map((session) => (
+          <SessionChip key={session.sessionId} session={session} role={session.role} now={now} onSelectSession={onSelectSession} />
+        ))}
+      </span>
+    </li>
   );
 }
 

@@ -248,6 +248,17 @@ function GeneralSection({ draft, change }) {
           ))}
         </span>
       </div>
+      <div className="settings-checks">
+        <label className="settings-check">
+          <input type="checkbox" checked={draft.countSubtasks !== false} onChange={(event) => change({ countSubtasks: event.target.checked })} data-count-subtasks />
+          {translate("projectSettings.countSubtasks")}
+        </label>
+        <label className="settings-check">
+          <input type="checkbox" checked={draft.includeClosed !== false} onChange={(event) => change({ includeClosed: event.target.checked })} data-include-closed />
+          {translate("projectSettings.includeClosed")}
+        </label>
+      </div>
+      <p className="sheet-hint">{translate("projectSettings.countingHint")}</p>
     </Section>
   );
 }

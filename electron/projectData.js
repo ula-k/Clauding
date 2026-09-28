@@ -159,7 +159,10 @@ export function createProjectDataService({
     if (!lists.buildListId) {
       throw new ClickupError("This project has no ClickUp list yet.", { kind: "no-list" });
     }
-    const buildTasks = await clickup.listTasks(lists.buildListId);
+    // Every task and subtask, closed ones too unless the project turned
+    // that off (Settings → General).
+    const includeClosed = board.includeClosed !== false;
+    const buildTasks = await clickup.listTasks(lists.buildListId, { includeClosed });
     let planningChanged = false;
     if (!lists.planningListId) {
       const dependencyIds = [...new Set(buildTasks.flatMap((task) => task.dependsOn).filter(Boolean))];
@@ -179,7 +182,7 @@ export function createProjectDataService({
         }
       }
     }
-    const planningTasks = lists.planningListId ? await clickup.listTasks(lists.planningListId) : [];
+    const planningTasks = lists.planningListId ? await clickup.listTasks(lists.planningListId, { includeClosed }) : [];
     const update = {};
     if (changed || planningChanged) {
       update.clickup = lists;
@@ -204,7 +207,9 @@ export function createProjectDataService({
     // read keeps the last one instead of wiping it.
     let statusHistory = previous && previous.statusHistory ? previous.statusHistory : {};
     try {
-      statusHistory = await clickup.getStatusHistory(buildTasks.filter((task) => !task.parentId).map((task) => task.id));
+      // Subtasks too: each one is a unit of work with its own hand-offs.
+      const counted = board.countSubtasks === false ? buildTasks.filter((task) => !task.parentId) : buildTasks;
+      statusHistory = await clickup.getStatusHistory(counted.map((task) => task.id));
     } catch (error) {
       log(`[projects] no time-in-status for ${board.name}: ${error.message}`);
     }
@@ -227,6 +232,7 @@ export function createProjectDataService({
     return {
       buildTasks,
       planningTasks,
+      includeClosed,
       // A list longer than the pages read: the counts are "at least".
       truncated: { buildTasks: Boolean(buildTasks.truncated), planningTasks: Boolean(planningTasks.truncated) },
       refreshedAt,
@@ -350,7 +356,10 @@ export function createProjectDataService({
 
   async function clickupData(board, { refresh }) {
     const cached = readCache(board.id);
-    const fresh = cached && now() - cached.refreshedAt < CACHE_FRESH_MILLISECONDS;
+    // A cache read without the closed tasks cannot answer for a project
+    // that now wants them (Settings → General).
+    const sameClosed = cached && (cached.includeClosed !== false) === (board.includeClosed !== false);
+    const fresh = cached && sameClosed && now() - cached.refreshedAt < CACHE_FRESH_MILLISECONDS;
     if (cached && fresh && !refresh) {
       return { data: cached, clickup: { ok: true, error: null, refreshedAt: cached.refreshedAt, fromCache: true } };
     }
@@ -738,14 +747,35 @@ export function createProjectDataService({
     return { items: [] };
   }
 
-  // The top-level tasks of a project, for "Search projects and tasks".
+  // Every task and subtask of a project, for "Search projects and tasks".
+  // A subtask carries its parent's name and the card it is listed on (its
+  // top-level task), which is the card a click opens.
   function taskIndexOf(cached) {
     if (!cached) {
       return [];
     }
-    return [...(cached.buildTasks || []), ...(cached.planningTasks || [])]
-      .filter((task) => !task.parentId)
-      .map((task) => ({ id: task.id, name: task.name, customId: task.customId || null, source: task.source || "clickup" }));
+    const everything = [...(cached.buildTasks || []), ...(cached.planningTasks || [])];
+    const byId = new Map(everything.map((task) => [task.id, task]));
+    const cardOf = (task) => {
+      let current = task;
+      const seen = new Set();
+      while (current.parentId && byId.has(current.parentId) && !seen.has(current.id)) {
+        seen.add(current.id);
+        current = byId.get(current.parentId);
+      }
+      return current.id;
+    };
+    return everything.map((task) => {
+      const parent = task.parentId ? byId.get(task.parentId) : null;
+      return {
+        id: task.id,
+        name: task.name,
+        customId: task.customId || null,
+        source: task.source || "clickup",
+        parentTitle: parent ? parent.name : null,
+        cardId: cardOf(task)
+      };
+    });
   }
 
   // For the list on the left: from the cache only, never the network, so

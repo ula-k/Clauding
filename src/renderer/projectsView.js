@@ -92,16 +92,41 @@ export function projectListModel(summaries) {
 // ---- filters ------------------------------------------------------------------
 
 // A build task nobody has started: no session, no branch, still open, not
-// pinned. Build and Everything fold these behind one line.
+// pinned — and none of its subtasks moved or worked on either (a task
+// still "open" whose subtasks are closed has been worked on). Build and
+// Everything fold these behind one line.
+function untouched(entry) {
+  return entry.bucket === "open" && (entry.sessions || []).length === 0 && (entry.branches || []).length === 0;
+}
+
 export function isNotStarted(card) {
-  return (
-    card.kind === "build" &&
-    card.bucket === "open" &&
-    card.sessions.length === 0 &&
-    card.branches.length === 0 &&
-    !card.upNext &&
-    !card.needs
-  );
+  return card.kind === "build" && untouched(card) && (card.subtasks || []).every(untouched) && !card.upNext && !card.needs;
+}
+
+// Whether the numbers count subtasks (Settings → General; on unless the
+// project turned it off).
+function subtasksCount(snapshot) {
+  return !(snapshot && snapshot.counting && snapshot.counting.subtasks === false);
+}
+
+// "12 subtasks · 7 in my queue · 3 waiting · 2 closed" — the line on a
+// collapsed card, as parts for translate(); places with none are left out.
+export function subtaskSummaryParts(card) {
+  const summary = card && card.subtaskSummary;
+  if (!summary || !summary.total) {
+    return [];
+  }
+  const parts = [{ key: summary.total === 1 ? "projects.subtaskOne" : "projects.subtasks", values: { count: summary.total } }];
+  if (summary.myQueue > 0) {
+    parts.push({ key: "projects.subtasksInQueue", values: { count: summary.myQueue } });
+  }
+  if (summary.waiting > 0) {
+    parts.push({ key: "projects.subtasksWaiting", values: { count: summary.waiting } });
+  }
+  if (summary.closed > 0) {
+    parts.push({ key: "projects.subtasksClosed", values: { count: summary.closed } });
+  }
+  return parts;
 }
 
 function sortNeedsFirst(cards) {
@@ -297,7 +322,9 @@ export function needsLabel(needs) {
     qa: "projects.needsQa",
     unpushed: "projects.needsUnpushed"
   };
-  return { key: keys[needs.kind] || "projects.needsSomething", values };
+  // A card waiting on the user because of one of its subtasks names it.
+  const label = { key: keys[needs.kind] || "projects.needsSomething", values };
+  return needs.subtaskName ? { ...label, subtaskName: needs.subtaskName } : label;
 }
 
 // ---- deadlines and numbers ----------------------------------------------------------
@@ -501,14 +528,30 @@ export function searchProjects(summaries, query) {
   return found;
 }
 
+// One subtask against the search box: its name, id (with or without
+// "CU-"), status, assignees and branches.
+export function subtaskMatchesQuery(subtask, query) {
+  return matchesQuery(
+    query,
+    subtask.name,
+    subtask.id,
+    `CU-${subtask.id}`,
+    subtask.customId,
+    subtask.status,
+    ...(subtask.assignees || []).map((person) => person.name),
+    ...(subtask.branches || []).map((branch) => branch.name)
+  );
+}
+
 // The search box above the task cards: a card matches by its name, its
 // task id (with or without "CU-"), its ClickUp status, its assignees, its
-// spec's name and its branch names.
+// spec's name and its branch names — or when one of its subtasks does.
 export function searchCards(cards, query) {
   if (!normalizeForSearch(query)) {
     return cards || [];
   }
   return (cards || []).filter((card) =>
+    (card.subtasks || []).some((subtask) => subtaskMatchesQuery(subtask, query)) ||
     matchesQuery(
       query,
       card.name,
@@ -534,20 +577,11 @@ export function cardsForStat(snapshot, stat) {
   }
   const cards = snapshot.cards || [];
   const build = cards.filter((card) => card.kind === "build");
-  if (stat.kind === "bucket") {
-    return build.filter((card) => (card.bucket || "other") === stat.bucket);
-  }
-  if (stat.kind === "person") {
-    return build.filter(
-      (card) =>
-        card.bucket !== "done" &&
-        (stat.personId === null
-          ? (card.assignees || []).length === 0
-          : (card.assignees || []).some((person) => String(person.id) === String(stat.personId)))
-    );
-  }
-  if (stat.kind === "perspective") {
-    return build.filter((card) => card.perspective === stat.perspective);
+  // A number that counts subtasks shows the cards they are listed on.
+  const withSubtasks = subtasksCount(snapshot);
+  const cardOrSubtask = (card) => subtaskMatchesStat(card, stat) || (withSubtasks && (card.subtasks || []).some((subtask) => subtaskMatchesStat(subtask, stat)));
+  if (stat.kind === "bucket" || stat.kind === "person" || stat.kind === "perspective") {
+    return build.filter(cardOrSubtask);
   }
   if (stat.kind === "specsToWrite") {
     return cards.filter((card) => card.planning && ["noSpec", "session", "draft"].includes(card.spec.steps[card.spec.index]));
@@ -559,6 +593,29 @@ export function cardsForStat(snapshot, stat) {
     return cards.filter((card) => (card.pullRequests || []).some((pull) => pull.state === "open" && pull.ci === "failing"));
   }
   return [];
+}
+
+// Whether one task or subtask is what a number counts (a bucket, a
+// person's open work, a place from the user's side).
+export function subtaskMatchesStat(entry, stat) {
+  if (!entry || !stat) {
+    return false;
+  }
+  if (stat.kind === "bucket") {
+    return (entry.bucket || "other") === stat.bucket;
+  }
+  if (stat.kind === "person") {
+    if (entry.perspective ? entry.perspective === "closed" : entry.bucket === "done") {
+      return false;
+    }
+    return stat.personId === null
+      ? (entry.assignees || []).length === 0
+      : (entry.assignees || []).some((person) => String(person.id) === String(stat.personId));
+  }
+  if (stat.kind === "perspective") {
+    return entry.perspective === stat.perspective;
+  }
+  return false;
 }
 
 export function statFilterLabel(stat) {

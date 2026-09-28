@@ -117,10 +117,11 @@ export default function ProjectsList({
                         type="button"
                         key={task.id}
                         className="project-task-match"
-                        onClick={() => onSelectTask(project.id, task.id, query)}
+                        onClick={() => onSelectTask(project.id, task.cardId || task.id, query)}
                         data-project-task-match={task.id}
                       >
                         {task.source !== "git" && <span className="mono">CU-{task.id}</span>} {task.name}
+                        {task.parentTitle && <span className="project-dim"> · {translate("projects.subtaskOf", { name: task.parentTitle })}</span>}
                       </button>
                     ))}
                     {match.hiddenMatches > 0 && (

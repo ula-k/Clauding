@@ -1601,6 +1601,28 @@ are **only read**; what the tab changes is its own file,
   holds the whole name, a bar too short for it has the name (with its end
   date) drawn next to it, and the lanes are packed around those names —
   two phases with the same dates always get two lanes.
+* **Every task and subtask counts.** The build list is read whole: every
+  task and every subtask at every level (`subtasks=true`), closed ones too
+  (`include_closed=true` — without it ClickUp leaves out every task in a
+  status of the "closed" type), page after page (up to 200 pages of 100;
+  a list longer than that says "at least"). Each task and each subtask is
+  a unit of work: "Where the N tasks are" (with "29 tasks + 164 subtasks"
+  next to it), my queue / waiting / closed, the pace and "handed off
+  today", who has what, the numbers as filters and both searches count
+  them all. The cards stay one per top-level task; its subtasks are listed
+  inside, folded behind one line — "18 subtasks · 18 in my queue" (with
+  waiting and closed when there are any) — that opens the list: each
+  subtask indented by its level, with its status, its developer status,
+  its assignees, its own `CU-<id>` (opens the task view; ↗ ClickUp) and
+  its own branches, pull request and sessions. A search or a number that
+  matched a subtask opens the list with that row marked. A subtask
+  waiting on you puts its card first ("waiting for your feedback · in
+  "…""), and a task still "open" whose subtasks moved is not folded away
+  as untouched. A subtask whose parent was not read (another list, or a
+  closed parent left out) is a card of its own. **Settings → Project** has
+  two switches, both on by default: **Count subtasks as tasks** (off: the
+  numbers count top-level tasks only; the cards still list subtasks) and
+  **Include closed tasks** (off: ClickUp is not asked for closed tasks).
 * **Your side of a task.** ClickUp's statuses say where a task is in the
   team's process; the view also says whether it is on your plate. Every
   status lands in one of three places: **my queue** (you must act: open, in

@@ -559,19 +559,28 @@ test("a whole project: cards, stages, filters, spec pipeline and numbers", () =>
   assert.equal(stageCount("review"), 1);
   assert.equal(stageCount("approved"), 2);
 
-  // Numbers on top count build tasks only, subtasks excluded.
-  assert.equal(snapshot.stats.total, 5);
+  // Numbers on top count every task and subtask: 5 tasks + 1 subtask.
+  assert.equal(snapshot.stats.total, 6);
+  assert.equal(snapshot.stats.topLevel, 5);
+  assert.equal(snapshot.stats.subtasks, 1);
   assert.equal(snapshot.stats.buckets.inStaging, 1);
+  assert.equal(snapshot.stats.buckets.inProgress, 2, "the task and its subtask");
   assert.equal(snapshot.stats.buckets.done, 1);
   // From the user's side: in progress, open and ready for prod are hers;
   // in staging and feedback wait on others; nothing is closed yet.
-  assert.equal(snapshot.stats.pace.leftToClose, 3);
-  assert.equal(snapshot.stats.inQueue, 3);
+  assert.equal(snapshot.stats.pace.leftToClose, 4);
+  assert.equal(snapshot.stats.inQueue, 4);
   assert.equal(snapshot.stats.waiting, 2);
   assert.equal(snapshot.stats.closed, 0);
   assert.equal(snapshot.stats.specsInReview, 1);
   assert.equal(snapshot.timeline.next.label, "Feature freeze");
-  assert.equal(snapshot.dailyPace.tasks, 3, "the queue over the work days to the next deadline");
+  assert.equal(snapshot.dailyPace.tasks, 4, "the queue over the work days to the next deadline");
+  // With subtasks switched off, only the five tasks count.
+  const topOnly = buildProjectSnapshot({ ...websiteFixture(), board: { ...websiteFixture().board, countSubtasks: false } });
+  assert.equal(topOnly.stats.total, 5);
+  assert.equal(topOnly.stats.inQueue, 3);
+  assert.equal(topOnly.dailyPace.tasks, 3);
+  assert.equal(topOnly.cards.find((entry) => entry.id === "abc123aa3").subtasks.length, 1, "still listed on its card");
   assert.equal(snapshot.summary.nextDeadline.daysLeft, 17);
 });
 

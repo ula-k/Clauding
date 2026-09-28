@@ -15,7 +15,9 @@ export const CLICKUP_API_ROOT = "https://api.clickup.com/api";
 const KEYCHAIN_ACCOUNT = "clickup-api";
 const KEYCHAIN_SERVICE = "clickup-api-token";
 const MINIMUM_GAP_MILLISECONDS = 650;
-const MAXIMUM_TASK_PAGES = 50;
+// 100 tasks a page: 200 pages is 20,000 tasks. A list longer than that
+// says so (tasks.truncated) instead of being cut off without a word.
+export const MAXIMUM_TASK_PAGES = 200;
 // After a 429 the request is tried once more, when ClickUp's
 // X-RateLimit-Reset says the minute is over (a minute when it says nothing,
 // never longer than that).
@@ -156,15 +158,20 @@ export function createClickupClient({
         }))
       };
     },
-    // Every task of a list, closed ones and subtasks included, page by page.
-    async listTasks(listId, { maximumPages = MAXIMUM_TASK_PAGES } = {}) {
+    // Every task of a list, page by page: subtasks at every level
+    // (subtasks=true; without it ClickUp answers with the top-level tasks
+    // only) and, unless the project says otherwise, closed ones too
+    // (include_closed=true; without it ClickUp leaves out every task whose
+    // status is of type "closed"). Descriptions come as plain text: the
+    // markdown copy is not asked for.
+    async listTasks(listId, { maximumPages = MAXIMUM_TASK_PAGES, includeClosed = true } = {}) {
       const tasks = [];
       // Stopping at the page limit with more pages left is said on the
       // array itself (tasks.truncated), so the window can say "at least".
       let truncated = true;
       for (let page = 0; page < maximumPages; page += 1) {
         const answer = await get(
-          `/v2/list/${encodeURIComponent(listId)}/task?include_closed=true&subtasks=true&page=${page}`
+          `/v2/list/${encodeURIComponent(listId)}/task?include_closed=${includeClosed ? "true" : "false"}&subtasks=true&include_markdown_description=false&page=${page}`
         );
         const pageTasks = answer.tasks || [];
         tasks.push(...pageTasks.map(mapTask));

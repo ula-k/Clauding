@@ -1,5 +1,5 @@
 # CL-27 · Projects · the tab, the project view, the settings
-Priority: P2 · Verified by: dry tests `test/projectsView.test.js`, `test/projectsData.test.js`, `test/projectsSetup.test.js` + manual (screenshots on the fixture and on a real project in its own `--user-data-dir`)
+Priority: P2 · Verified by: dry tests `test/projectsView.test.js`, `test/projectsData.test.js`, `test/projectsSetup.test.js`, `test/projectsSubtasks.test.js` + manual (screenshots on the fixture and on a real project in its own `--user-data-dir`)
 
 ## Goal
 A project — a ClickUp list (or the folder or space it lives in), the local
@@ -54,6 +54,11 @@ session is started for a task).
     **Refresh**.
 16. Open a local HTML page in the side panel, click into it, press ⌘+ twice;
     click the "125 %" in the address bar; open another local page.
+17. On a real project whose tasks have subtasks: look at "Where the N
+    tasks are"; search a task that has subtasks on Everything and click
+    its "N subtasks · …" line; then Settings → Project, switch off
+    **Count subtasks as tasks**, Save; switch it back on and switch off
+    **Include closed tasks**, Save.
 
 ## Expected state
 - Step 1: three tabs, **Sessions · Agents · Projects**, and "+" next to them.
@@ -106,6 +111,15 @@ session is started for a task).
   was; Refresh reads again (offline keeps the last copy and says so).
 - Step 16: the page grows to 125 % and the address bar says "125 %"; the
   click puts it back to 100 %; the other local page opens at 100 %.
+- Step 17: the total counts every task and subtask, with "(T tasks + S
+  subtasks)" next to it; my queue, waiting, closed, the pace, handed off
+  today and who has what count subtasks too. The card line says "N
+  subtasks · Q in my queue · W waiting · C closed" (places with none left
+  out) and opens the list: every subtask indented by level, with its
+  status, developer status, assignees, its own `CU-<id>` and its own
+  branches and sessions. Subtasks off: the numbers drop to the top-level
+  tasks, the cards still list their subtasks. Closed off: tasks in a
+  ClickUp status of the "closed" type are no longer read or counted.
 
 ## Evidence
 - `test/projectsSetup.test.js`: the link parser (task, list, list view,
@@ -127,6 +141,15 @@ session is started for a task).
   list, chips, cards, pipelines, statuses, the ClickUp client (GET only),
   git and gh, session linking, stages, numbers, a whole project, the store,
   cache and offline.
+- `test/projectsSubtasks.test.js`: subtasks two levels deep and closed
+  subtasks — counts per bucket and per place, who has what, one card per
+  top-level task listing its subtasks with depth and parent name, the
+  card's summary line in English, a subtask waiting on the user putting its
+  card first, an open task with closed subtasks not folded as untouched,
+  numbers and search finding cards through subtasks, both switches off
+  (each and together), an orphaned subtask as its own card, the list call's
+  parameters, paging and "stopped early", the left search's subtask
+  entries and the switches kept per project.
 - Screenshots on a real project in its own profile: add sheet (error, list
   link, space → pick), list with search, view, expanded card, task tab,
   specs pipeline, stat filter, task search, card menu, Up next, start a

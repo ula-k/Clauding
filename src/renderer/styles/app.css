@@ -5908,3 +5908,184 @@ button.burn-down-number:hover b {
 .phase-bar-more {
   z-index: 1;
 }
+
+/* A card's subtasks: one summary line that opens the list. */
+.where-split {
+  font-weight: 500;
+  color: var(--text-dim);
+  font-size: 0.85em;
+}
+
+.needs-subtask {
+  font-weight: 500;
+  opacity: 0.85;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtask-block {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+  cursor: default;
+}
+
+.subtask-summary {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 3px 8px 3px 4px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.subtask-summary:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.subtask-caret {
+  display: inline-block;
+  width: 14px;
+  font-size: 14px;
+  text-align: center;
+  color: var(--text-faint);
+  transition: transform 0.12s ease;
+}
+
+.subtask-block.is-open .subtask-caret {
+  transform: rotate(90deg);
+}
+
+.subtask-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subtask-part.is-total {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.subtask-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.subtask-part.is-myQueue .subtask-dot {
+  background: var(--accent);
+}
+
+.subtask-part.is-waiting .subtask-dot {
+  background: var(--gold);
+}
+
+.subtask-part.is-closed .subtask-dot {
+  background: transparent;
+  border: 1px dashed var(--text-faint);
+}
+
+.subtask-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.subtask-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 5px 8px 5px calc(8px + var(--subtask-depth, 0) * 18px);
+  border-radius: 8px;
+  border-left: 2px solid transparent;
+}
+
+.subtask-row:hover {
+  background: var(--surface-hover);
+}
+
+.subtask-row.is-myQueue {
+  border-left-color: var(--border-lavender);
+}
+
+.subtask-row.is-waiting {
+  border-left-color: rgba(214, 197, 143, 0.4);
+}
+
+.subtask-row.is-closed .subtask-name {
+  color: var(--text-faint);
+}
+
+.subtask-row.is-match {
+  background: var(--gold-soft);
+}
+
+.subtask-name {
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtask-branch-mark {
+  color: var(--text-faint);
+  margin-right: 5px;
+}
+
+.subtask-facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 5px;
+}
+
+.subtask-people {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.task-status.is-small,
+.needs-pill.is-small {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.source-chip.is-small {
+  padding: 1px 8px;
+  font-size: 10.5px;
+}
+
+.person-avatar.is-small {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.link-chip.is-small {
+  padding: 2px 7px;
+  font-size: 10.5px;
+}
+
+.link-chip.is-split.is-small {
+  padding: 0;
+}
+
+.link-chip.is-split.is-small button {
+  padding: 2px 6px 2px 7px;
+}
+
+.link-chip.is-split.is-small .link-chip-external {
+  padding: 2px 6px;
+}

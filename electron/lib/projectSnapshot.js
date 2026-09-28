@@ -53,9 +53,25 @@ function isAssignedTo(task, userId) {
   return (task.assignees || []).some((assignee) => String(assignee.id) === String(userId));
 }
 
+// The latest change on the card: the task, its sessions, and its subtasks
+// and their sessions.
 function lastActivityOf(card) {
   const times = [card.updatedAt || 0, ...card.sessions.map((session) => session.lastModified || 0)];
+  for (const subtask of card.subtasks || []) {
+    times.push(subtask.updatedAt || 0, ...subtask.sessions.map((session) => session.lastModified || 0));
+  }
   return Math.max(...times);
+}
+
+// "12 subtasks · 7 in my queue · 3 waiting · 2 closed" on a card.
+export function subtaskSummaryOf(subtasks) {
+  const summary = { total: (subtasks || []).length, myQueue: 0, waiting: 0, closed: 0 };
+  for (const subtask of subtasks || []) {
+    if (subtask.perspective in summary) {
+      summary[subtask.perspective] += 1;
+    }
+  }
+  return summary;
 }
 
 function planningSummary(planningTask) {
@@ -118,7 +134,16 @@ export function buildProjectSnapshot({
     from: perspectiveForStatus(move.fromStatus, move.fromType, bucketOf(move.fromStatus, move.fromType), perspectiveOverrides),
     to: perspectiveForStatus(move.toStatus, move.toType, bucketOf(move.toStatus, move.toType), perspectiveOverrides)
   }));
-  const topBuild = countableTasks(buildTasks).map((task) => {
+  // Every task and every subtask is a unit of work (board.countSubtasks,
+  // on unless the project turned it off): the numbers, the queue, the pace
+  // and who has what count them all. The cards stay one per top-level
+  // task, each listing its subtasks. Tasks ClickUp closed are read too
+  // unless the project turned that off (board.includeClosed); a cache read
+  // before the switch was flipped is filtered here the same way.
+  const countSubtasks = board.countSubtasks !== false;
+  const includeClosed = board.includeClosed !== false;
+  const keepTask = (task) => includeClosed || task.statusType !== "closed";
+  const placeTask = (task) => {
     const bucket = bucketOf(task.status, task.statusType);
     const placed = taskPerspective(
       { ...task, bucket },
@@ -138,19 +163,40 @@ export function buildProjectSnapshot({
       developerStatus: placed.developerStatus,
       path
     };
-  });
-  const topPlanning = countableTasks(planningTasks).map(withSpecUrl);
-  const planningById = new Map(topPlanning.map((task) => [task.id, task]));
-  const subtaskCounts = new Map();
-  for (const task of buildTasks) {
-    if (task.parentId) {
-      subtaskCounts.set(task.parentId, (subtaskCounts.get(task.parentId) || 0) + 1);
+  };
+  const placedBuild = buildTasks.filter(keepTask).map(placeTask);
+  const placedIds = new Set(placedBuild.map((task) => task.id));
+  // A subtask whose parent was not read (it lives in another list, or it
+  // was left out as closed) is a card of its own rather than lost.
+  const isTopLevel = (task) => !task.parentId || !placedIds.has(task.parentId);
+  const topBuild = placedBuild.filter(isTopLevel);
+  const nameById = new Map(placedBuild.map((task) => [task.id, task.name]));
+  const childrenOf = new Map();
+  for (const task of placedBuild) {
+    if (!isTopLevel(task)) {
+      if (!childrenOf.has(task.parentId)) {
+        childrenOf.set(task.parentId, []);
+      }
+      childrenOf.get(task.parentId).push(task);
     }
   }
+  // All of a task's subtasks, every level, depth first (a subtask right
+  // above its own subtasks), each with how deep it sits.
+  const descendantsOf = (taskId, depth = 1, seen = new Set([taskId])) =>
+    (childrenOf.get(taskId) || []).flatMap((child) => {
+      if (seen.has(child.id)) {
+        return [];
+      }
+      seen.add(child.id);
+      return [{ task: child, depth }, ...descendantsOf(child.id, depth + 1, seen)];
+    });
+  const units = countSubtasks ? placedBuild : topBuild;
+  const topPlanning = countableTasks(planningTasks.filter(keepTask)).map(withSpecUrl);
+  const planningById = new Map(topPlanning.map((task) => [task.id, task]));
 
   const sessionLinks = linkSessionsToTasks({
     sessions,
-    taskIds: [...topBuild.map((task) => task.id), ...topPlanning.map((task) => task.id)],
+    taskIds: [...placedBuild.map((task) => task.id), ...topPlanning.map((task) => task.id)],
     sessionAgents,
     agents,
     agentRoles: board.agentRoles || {},
@@ -160,6 +206,41 @@ export function buildProjectSnapshot({
   });
   const branchesByTask = mergeByTask(repositoryResults, "branchesByTask");
   const pullsByTask = mergeByTask(pullRequestResults, "byTask");
+
+  // One subtask as its card lists it: its status, where it stands for the
+  // user, its own branches, pull requests and sessions.
+  const subtaskEntry = (subtask, depth) => {
+    const sessionsOfSubtask = sessionLinks.get(subtask.id) || [];
+    const branches = branchesByTask[subtask.id] || [];
+    const pullRequests = pullsByTask[subtask.id] || [];
+    const assignedToUser = isAssignedTo(subtask, userId);
+    let needs = whatNeedsUser({ bucket: subtask.bucket, spec: null, sessions: sessionsOfSubtask, branches, pullRequests, assignedToUser });
+    if (needs && needs.kind === "qa" && subtask.perspective !== PERSPECTIVES.myQueue) {
+      needs = null;
+    }
+    return {
+      id: subtask.id,
+      customId: subtask.customId || null,
+      name: subtask.name,
+      url: subtask.url,
+      status: subtask.status,
+      statusColor: subtask.statusColor,
+      bucket: subtask.bucket,
+      perspective: subtask.perspective,
+      developerStatus: subtask.developerStatus,
+      assignees: subtask.assignees || [],
+      assignedToUser,
+      depth,
+      parentId: subtask.parentId,
+      parentTitle: nameById.get(subtask.parentId) || null,
+      dueDate: subtask.dueDate,
+      updatedAt: subtask.updatedAt,
+      sessions: sessionsOfSubtask,
+      branches,
+      pullRequests,
+      needs
+    };
+  };
 
   const usedPlanning = new Set();
   const cards = [];
@@ -189,6 +270,7 @@ export function buildProjectSnapshot({
     });
     const allSessions = dedupeSessions([...specSessions, ...builderSessions]);
     const assignedToUser = isAssignedTo(task, userId);
+    const subtasks = descendantsOf(task.id).map(({ task: subtask, depth }) => subtaskEntry(subtask, depth));
     const card = {
       id: task.id,
       kind: "build",
@@ -209,7 +291,9 @@ export function buildProjectSnapshot({
       assignedToUser,
       dueDate: task.dueDate,
       updatedAt: task.updatedAt,
-      subtaskCount: subtaskCounts.get(task.id) || 0,
+      subtaskCount: subtasks.length,
+      subtasks,
+      subtaskSummary: subtaskSummaryOf(subtasks),
       planning: planningSummary(planningTask),
       specUrl: planningTask ? planningTask.specUrl : task.specUrl,
       spec,
@@ -226,6 +310,14 @@ export function buildProjectSnapshot({
     // staging" for her.
     if (card.needs && card.needs.kind === "qa" && task.perspective !== PERSPECTIVES.myQueue) {
       card.needs = null;
+    }
+    // Nothing on the task itself: what one of its subtasks waits on, when
+    // subtasks count.
+    if (!card.needs && countSubtasks) {
+      const waitingSubtask = subtasks.find((subtask) => subtask.needs);
+      if (waitingSubtask) {
+        card.needs = { ...waitingSubtask.needs, subtaskId: waitingSubtask.id, subtaskName: waitingSubtask.name };
+      }
     }
     card.lastActivity = lastActivityOf(card);
     cards.push(card);
@@ -258,6 +350,8 @@ export function buildProjectSnapshot({
       dueDate: planningTask.dueDate,
       updatedAt: planningTask.updatedAt,
       subtaskCount: 0,
+      subtasks: [],
+      subtaskSummary: subtaskSummaryOf([]),
       planning: planningSummary(planningTask),
       specUrl: planningTask.specUrl,
       spec,
@@ -276,8 +370,17 @@ export function buildProjectSnapshot({
 
   // ---- filters ----
   const recentSince = now - RECENT_SESSION_DAYS * DAY_MILLISECONDS;
+  // With subtasks counted, a card is open while any of its subtasks is,
+  // and in the user's queue when any of them is.
+  const countedSubtasks = (card) => (countSubtasks ? card.subtasks || [] : []);
   const isOpenCard = (card) =>
-    card.kind === "build" ? card.perspective !== PERSPECTIVES.closed : card.spec.index < card.spec.steps.length - 1;
+    card.kind === "build"
+      ? card.perspective !== PERSPECTIVES.closed || countedSubtasks(card).some((subtask) => subtask.perspective !== PERSPECTIVES.closed)
+      : card.spec.index < card.spec.steps.length - 1;
+  const hasQueueWork = (card) =>
+    card.kind === "build" &&
+    (card.perspective === PERSPECTIVES.myQueue || countedSubtasks(card).some((subtask) => subtask.perspective === PERSPECTIVES.myQueue));
+  const everySession = (card) => [...card.sessions, ...countedSubtasks(card).flatMap((subtask) => subtask.sessions)];
   // My focus is the user's queue — build tasks on her plate — needing her
   // first; plus, by the project's rules (board.focusRules), anything else
   // waiting on her (a spec to approve, a session with a question), what is
@@ -286,10 +389,10 @@ export function buildProjectSnapshot({
   const inFocus = (card) =>
     isOpenCard(card) &&
     (rules.everythingOpen ||
-      (rules.myQueue && card.kind === "build" && card.perspective === PERSPECTIVES.myQueue) ||
+      (rules.myQueue && hasQueueWork(card)) ||
       (rules.upNext && card.upNext) ||
       (rules.needsMe && card.needs !== null) ||
-      (rules.recentSession && card.sessions.some((session) => (session.lastModified || 0) >= recentSince)));
+      (rules.recentSession && everySession(card).some((session) => (session.lastModified || 0) >= recentSince)));
   const sortForFocus = (first, second) => {
     if (Boolean(first.needs) !== Boolean(second.needs)) {
       return first.needs ? -1 : 1;
@@ -297,8 +400,12 @@ export function buildProjectSnapshot({
     return second.lastActivity - first.lastActivity;
   };
   const focus = cards.filter(inFocus).sort(sortForFocus);
+  // Untouched: open, no session, no branch — and none of its subtasks
+  // moved or worked on either (a task still "open" whose subtasks are
+  // closed has clearly been worked on).
+  const untouched = (entry) => entry.bucket === BUCKETS.open && entry.sessions.length === 0 && entry.branches.length === 0;
   const notStarted = cards.filter(
-    (card) => card.kind === "build" && card.bucket === BUCKETS.open && card.sessions.length === 0 && card.branches.length === 0 && !card.upNext && !card.needs
+    (card) => card.kind === "build" && untouched(card) && (card.subtasks || []).every(untouched) && !card.upNext && !card.needs
   );
   const upNextCards = upNext.map((taskId) => cards.find((card) => card.id === taskId)).filter(Boolean);
 
@@ -347,10 +454,14 @@ export function buildProjectSnapshot({
     keyDeadlineId: board.keyDeadlineId || null,
     projectStart: board.startDate || Math.min(...topBuild.map((task) => task.createdAt || now), now)
   });
-  const buildForStats = topBuild;
+  const buildForStats = units;
   const stats = {
     buckets: bucketCounts(buildForStats),
     total: buildForStats.length,
+    // How the total splits: the cards' own tasks and their subtasks.
+    topLevel: topBuild.length,
+    subtasks: buildForStats.length - topBuild.length,
+    subtasksRead: placedBuild.length - topBuild.length,
     people: peopleBreakdown(buildForStats, userId),
     // The same deadline as the line under the axis: the next one.
     pace: pace(buildForStats, { now, deadline: timeline.next ? timeline.next.date : null }),
@@ -371,6 +482,8 @@ export function buildProjectSnapshot({
     name: board.name,
     color: board.color || null,
     mode: gitMode ? "git" : "clickup",
+    // What the numbers count (Settings → General).
+    counting: { subtasks: countSubtasks, closed: includeClosed },
     sources: {
       buildList: board.clickup && board.clickup.buildListName ? board.clickup.buildListName : null,
       planningList: board.clickup && board.clickup.planningListName ? board.clickup.planningListName : null,

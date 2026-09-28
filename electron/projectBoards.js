@@ -41,7 +41,9 @@
 //         "developerStatusFieldName": null,        // null = detected
 //         "developerStatusMap": { "<field value>": "myQueue" | "waiting" | "closed" },
 //         "deadlineHidden": ["clickup-<task id>", …],  // not drawn on the axis
-//         "keyDeadlineId": "clickup-<task id>" | null  // what "Next" counts to
+//         "keyDeadlineId": "clickup-<task id>" | null, // what "Next" counts to
+//         "countSubtasks": true,   // every subtask is a unit of work in the numbers
+//         "includeClosed": true    // tasks ClickUp closed are read and counted
 //       }
 //     ]
 //   }
@@ -219,7 +221,11 @@ export function cleanBoard(raw) {
     // Deadline items (typed or from ClickUp, by id) left off the axis, and
     // the one pinned as the key deadline "Next" counts to.
     deadlineHidden: cleanStringList(raw.deadlineHidden, 200),
-    keyDeadlineId: cleanText(raw.keyDeadlineId, 120) || null
+    keyDeadlineId: cleanText(raw.keyDeadlineId, 120) || null,
+    // Settings → General: subtasks count as tasks, closed tasks are read.
+    // Both on unless the project turned them off.
+    countSubtasks: raw.countSubtasks !== false,
+    includeClosed: raw.includeClosed !== false
   };
 }
 
