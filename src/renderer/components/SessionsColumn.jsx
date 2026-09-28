@@ -348,6 +348,7 @@ export default function SessionsColumn({
           sessions={agentSessions || sessions}
           sessionAgents={sessionAgents}
           sessionColors={storedColors}
+          tagsForSession={(sessionId) => tagsForSession(sessionId, tagCatalogue, sessionTags)}
           hiddenSessionIds={groupState.hidden}
           selectedSessionId={selectedSessionId}
           onSelectSession={onSelectSession}

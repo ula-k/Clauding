@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
-import { relativeTime } from "../time.js";
 import { DotsIcon, PlusIcon, ReadIcon } from "./Icons.jsx";
 import PopupMenu, { MenuItem, MenuSeparator } from "./PopupMenu.jsx";
 import { AgentBadge } from "./AgentBadge.jsx";
-import { definitionFolderLabel, titleWithoutAgentEmoji } from "../agentConstants.js";
+import { SessionRowContent } from "./SessionRow.jsx";
+import { definitionFolderLabel } from "../agentConstants.js";
 import { sessionColorToken } from "../sessionColors.js";
 import { buildAgentSessionList } from "../sessionGrouping.js";
 
@@ -20,11 +20,12 @@ function statusName(session) {
   return "idle";
 }
 
-// One session this agent started, under its row: the same status dot, name
-// and right-aligned time as in the Sessions list, and the same click — the
-// session opens in a terminal exactly as it would over there.
-function AgentSessionRow({ session, isSelected, onSelect, now, colorToken }) {
-  const { translate } = useTranslation();
+// One session this agent started, under its row: the very same content as a
+// Sessions-list row (SessionRowContent — dot, name, NEEDS ANSWER and tags
+// wrapping under the name, time pinned to the first line), and the same
+// click — the session opens in a terminal exactly as it would over there.
+// The agent's emoji is left out: the agent is the row right above.
+function AgentSessionRow({ session, isSelected, onSelect, now, colorToken, tags }) {
   const classNames = ["session-row", "agent-session-row", `is-${statusName(session)}`];
   if (isSelected) {
     classNames.push("is-selected");
@@ -40,10 +41,7 @@ function AgentSessionRow({ session, isSelected, onSelect, now, colorToken }) {
       style={colorToken ? { "--session-color": `var(${colorToken})` } : undefined}
       onClick={() => onSelect(session.sessionId)}
     >
-      <span className="row-status-dot" />
-      <span className="row-title">{titleWithoutAgentEmoji(session.title, session.agent)}</span>
-      {session.needsAnswer && <span className="row-needs-answer">{translate("row.needsAnswer")}</span>}
-      <span className="row-time">{relativeTime(session.lastModified, translate, now)}</span>
+      <SessionRowContent session={session} tags={tags} now={now} />
     </button>
   );
 }
@@ -55,6 +53,7 @@ function AgentRow({
   agent,
   sessions,
   sessionColors,
+  tagsForSession,
   hiddenCount,
   selectedSessionId,
   onSelectSession,
@@ -187,6 +186,7 @@ function AgentRow({
               onSelect={onSelectSession}
               now={now}
               colorToken={sessionColorToken(session.sessionId, sessionColors)}
+              tags={tagsForSession ? tagsForSession(session.sessionId) : []}
             />
           ))}
           {hiddenCount > 0 && (
@@ -208,6 +208,7 @@ export default function AgentsTab({
   sessions,
   sessionAgents,
   sessionColors,
+  tagsForSession,
   hiddenSessionIds,
   selectedSessionId,
   onSelectSession,
@@ -274,6 +275,7 @@ export default function AgentsTab({
               agent={agent}
               sessions={own.sessions}
               sessionColors={sessionColors}
+              tagsForSession={tagsForSession}
               hiddenCount={own.hiddenCount}
               selectedSessionId={selectedSessionId}
               onSelectSession={onSelectSession}

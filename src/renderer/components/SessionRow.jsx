@@ -28,6 +28,33 @@ function statusName(session) {
   return "idle";
 }
 
+// What a session row shows, shared by the Sessions list and the session
+// rows under each agent in the Agents tab, so the two can never drift apart:
+// the status dot, the agent's emoji (when there is one to show), the name
+// with NEEDS ANSWER and the tags after it, and the time. The name and the
+// pills wrap as one block, so pills that do not fit go to a second line
+// under the name while the dot and the time stay on the first line
+// (.session-row in app.css).
+export function SessionRowContent({ session, agent = null, tags = [], now }) {
+  const { translate } = useTranslation();
+  return (
+    <>
+      <span className="row-status-dot" />
+      <AgentBadge agent={agent} />
+      <span className="row-main">
+        <span className="row-title">{titleWithoutAgentEmoji(session.title, session.agent)}</span>
+        {session.needsAnswer && <span className="row-needs-answer">{translate("row.needsAnswer")}</span>}
+        {tags.map((tag) => (
+          <span className="tag-pill" key={tag.id} style={{ "--tag-color": `var(${tag.color})` }} data-row-tag={tag.id}>
+            {tag.label}
+          </span>
+        ))}
+      </span>
+      <span className="row-time">{relativeTime(session.lastModified, translate, now)}</span>
+    </>
+  );
+}
+
 // One line: a status dot, the name, and a dim relative time. The folder is
 // only in the tooltip — names, not a second line of noise.
 //
@@ -163,18 +190,7 @@ export default function SessionRow({
         title={session.workingDirectoryShort || session.projectLabel || ""}
         style={colorToken ? { "--session-color": `var(${colorToken})` } : undefined}
       >
-        <span className="row-status-dot" />
-        <AgentBadge agent={session.agent} />
-        <span className="row-main">
-          <span className="row-title">{titleWithoutAgentEmoji(session.title, session.agent)}</span>
-          {session.needsAnswer && <span className="row-needs-answer">{translate("row.needsAnswer")}</span>}
-          {tags.map((tag) => (
-            <span className="tag-pill" key={tag.id} style={{ "--tag-color": `var(${tag.color})` }} data-row-tag={tag.id}>
-              {tag.label}
-            </span>
-          ))}
-        </span>
-        <span className="row-time">{relativeTime(session.lastModified, translate, now)}</span>
+        <SessionRowContent session={session} agent={session.agent} tags={tags} now={now} />
       </button>
       {hiddenVariant ? (
         <div className="row-hidden-actions">
