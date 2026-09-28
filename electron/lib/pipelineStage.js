@@ -12,6 +12,9 @@ import { BUCKETS, SPEC_STAGES, SPEC_STAGE_ORDER, specStageForStatus } from "./st
 import { SESSION_ROLES } from "./taskLinker.js";
 
 export const BUILD_STEPS = ["open", "builder", "branch", "pr", "staging", "qa", "prod"];
+// The user's part ends with staging: the steps after it (QA, prod) are
+// other people's, drawn for information only.
+export const HAND_OFF_STEP = "staging";
 export const SPEC_STEPS = SPEC_STAGE_ORDER;
 
 const STATE_NOW = "now";
@@ -43,7 +46,7 @@ export function specStage({ planningTask, specSessions = [], statusOverrides = {
 // `pullRequests` = its PRs across repos (pullRequests.js), newest first.
 export function buildStage({ bucket, builderSessions = [], branches = [], pullRequests = [], specApproved = true }) {
   if (!specApproved && bucket === BUCKETS.open && builderSessions.length === 0 && branches.length === 0) {
-    return { steps: BUILD_STEPS, index: -1, state: STATE_NOW };
+    return { steps: BUILD_STEPS, index: -1, state: STATE_NOW, handOffIndex: BUILD_STEPS.indexOf(HAND_OFF_STEP) };
   }
   let index = 0;
   if (builderSessions.length > 0) {
@@ -62,14 +65,13 @@ export function buildStage({ bucket, builderSessions = [], branches = [], pullRe
     index = Math.max(index, 5);
   }
   if (bucket === BUCKETS.done) {
-    return { steps: BUILD_STEPS, index: BUILD_STEPS.length - 1, state: STATE_DONE };
+    return { steps: BUILD_STEPS, index: BUILD_STEPS.length - 1, state: STATE_DONE, handOffIndex: BUILD_STEPS.indexOf(HAND_OFF_STEP) };
   }
   const waitsOnUser =
     bucket === BUCKETS.feedback ||
-    bucket === BUCKETS.inStaging ||
     builderSessions.some((session) => session.needsAnswer) ||
     pullRequests.some((pull) => pull.state === "open" && pull.ci === "failing");
-  return { steps: BUILD_STEPS, index, state: waitsOnUser ? STATE_WAIT : STATE_NOW };
+  return { steps: BUILD_STEPS, index, state: waitsOnUser ? STATE_WAIT : STATE_NOW, handOffIndex: BUILD_STEPS.indexOf(HAND_OFF_STEP) };
 }
 
 // The gold "● …" pill on a card: the one thing the task is waiting on the

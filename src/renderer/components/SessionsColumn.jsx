@@ -335,7 +335,10 @@ export default function SessionsColumn({
           loading={projects.loading}
           selectedBoardId={projects.selectedBoardId}
           onSelect={projects.onSelect}
+          onSelectTask={projects.onSelectTask}
           onAdd={projects.onAdd}
+          addRequest={projects.addRequest}
+          onAddRequestHandled={projects.onAddRequestHandled}
           readOnly={projects.readOnly}
         />
       ) : activeTab === "agents" ? (

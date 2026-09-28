@@ -129,6 +129,27 @@ contextBridge.exposeInMainWorld("clauding", {
   getBoardSnapshot(boardId, options) {
     return ipcRenderer.invoke(CHANNELS.boardsSnapshot, { boardId, options: options || {} });
   },
+  getBoardSettingsData(boardId) {
+    return ipcRenderer.invoke(CHANNELS.boardsSettingsData, { boardId });
+  },
+  // The settings sheet's list picker: workspaces → spaces → folders → lists.
+  browseClickup(place) {
+    return ipcRenderer.invoke(CHANNELS.boardsBrowse, { place: place || {} });
+  },
+  // "Start a session for this task": once the new terminal's session has an
+  // id, it is linked to the task by hand (project-boards.json only).
+  linkTerminalToTask(boardId, taskId, terminalId) {
+    return ipcRenderer.invoke(CHANNELS.boardsLinkTerminal, { boardId, taskId, terminalId });
+  },
+  // View → Zoom In / Out / Actual Size aimed at a side-panel page:
+  // { command: "in" | "out" | "reset", webContentsId }.
+  onPanelZoom(listener) {
+    return subscribe(CHANNELS.panelZoom, listener);
+  },
+  // Projects → Add a Project… / Project Settings… in the menu bar.
+  onBoardsMenu(listener) {
+    return subscribe(CHANNELS.boardsMenu, listener);
+  },
   getBoardTaskDetail(taskId) {
     return ipcRenderer.invoke(CHANNELS.boardsTaskDetail, { taskId });
   },

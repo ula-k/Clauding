@@ -15,6 +15,14 @@
 import { BUCKETS, SPEC_STAGES, SPEC_STAGE_ORDER, bucketForStatus } from "./statusBuckets.js";
 import { linkSessionsToTasks, SESSION_ROLES } from "./taskLinker.js";
 import { specUrlFrom } from "./clickupClient.js";
+import {
+  PERSPECTIVES,
+  developerStatusFieldOf,
+  fallbackPath,
+  perspectiveForStatus,
+  perspectivePath,
+  taskPerspective
+} from "./perspective.js";
 import { buildStage, specStage, whatNeedsUser } from "./pipelineStage.js";
 import {
   bucketCounts,
@@ -74,6 +82,11 @@ export function buildProjectSnapshot({
   repositoryResults = [],
   pullRequestResults = [],
   transcriptTextBySession = {},
+  statusHistory = {},
+  statusMoves = [],
+  deadlineItems = [],
+  deadlineInfo = { source: null, undated: 0 },
+  truncated = null,
   clickup = { ok: true, error: null, refreshedAt: null },
   now = Date.now()
 }) {
@@ -86,10 +99,40 @@ export function buildProjectSnapshot({
   // link it came with.
   const withSpecUrl = (task) =>
     Array.isArray(task.customFields) ? { ...task, specUrl: specUrlFrom(task.customFields, board.specUrlFieldName) } : task;
-  const topBuild = countableTasks(buildTasks).map((task) => ({
-    ...withSpecUrl(task),
-    bucket: bucketForStatus(task.status, task.statusType, statusOverrides)
+  // Where each build task stands from the user's side (lib/perspective.js),
+  // and its path through her queue over time: ClickUp's time in status when
+  // there is one, else the status changes this app saw.
+  const perspectiveOverrides = board.perspectiveOverrides || {};
+  const bucketOf = (statusName, statusType) => bucketForStatus(statusName, statusType, statusOverrides);
+  const buildFields = [...new Map(buildTasks.flatMap((task) => task.customFields || []).map((field) => [field.name, { name: field.name, type: field.type }])).values()];
+  const developerFieldName = developerStatusFieldOf(board, buildFields);
+  const observed = (statusMoves || []).map((move) => ({
+    taskId: move.taskId,
+    at: move.at,
+    from: perspectiveForStatus(move.fromStatus, move.fromType, bucketOf(move.fromStatus, move.fromType), perspectiveOverrides),
+    to: perspectiveForStatus(move.toStatus, move.toType, bucketOf(move.toStatus, move.toType), perspectiveOverrides)
   }));
+  const topBuild = countableTasks(buildTasks).map((task) => {
+    const bucket = bucketOf(task.status, task.statusType);
+    const placed = taskPerspective(
+      { ...task, bucket },
+      { overrides: perspectiveOverrides, developerFieldName, developerStatusMap: board.developerStatusMap || {} }
+    );
+    const history = statusHistory ? statusHistory[task.id] : null;
+    let path = history && history.length > 0 ? perspectivePath(history, { bucketOf, overrides: perspectiveOverrides }) : fallbackPath(task, placed.perspective, observed);
+    // The developer field can place a task elsewhere than its status: the
+    // path ends where the task is now.
+    if (path.length > 0 && path[path.length - 1].perspective !== placed.perspective) {
+      path = [...path, { at: Math.max(task.updatedAt || now, path[path.length - 1].at), perspective: placed.perspective }];
+    }
+    return {
+      ...withSpecUrl(task),
+      bucket,
+      perspective: placed.perspective,
+      developerStatus: placed.developerStatus,
+      path
+    };
+  });
   const topPlanning = countableTasks(planningTasks).map(withSpecUrl);
   const planningById = new Map(topPlanning.map((task) => [task.id, task]));
   const subtaskCounts = new Map();
@@ -149,6 +192,9 @@ export function buildProjectSnapshot({
       status: task.status,
       statusColor: task.statusColor,
       bucket: task.bucket,
+      perspective: task.perspective,
+      developerStatus: task.developerStatus,
+      developerStatusField: task.developerStatus ? developerFieldName : null,
       assignees: task.assignees,
       assignedToUser,
       dueDate: task.dueDate,
@@ -166,6 +212,11 @@ export function buildProjectSnapshot({
       upNext: upNext.includes(task.id)
     };
     card.needs = whatNeedsUser({ bucket: task.bucket, spec, sessions: allSessions, branches, pullRequests, assignedToUser });
+    // Waiting on others means nothing is on the user now: no "QA on
+    // staging" for her.
+    if (card.needs && card.needs.kind === "qa" && task.perspective !== PERSPECTIVES.myQueue) {
+      card.needs = null;
+    }
     card.lastActivity = lastActivityOf(card);
     cards.push(card);
   }
@@ -189,6 +240,9 @@ export function buildProjectSnapshot({
       status: planningTask.status,
       statusColor: planningTask.statusColor,
       bucket: null,
+      perspective: null,
+      developerStatus: null,
+      developerStatusField: null,
       assignees: planningTask.assignees,
       assignedToUser,
       dueDate: planningTask.dueDate,
@@ -212,13 +266,20 @@ export function buildProjectSnapshot({
 
   // ---- filters ----
   const recentSince = now - RECENT_SESSION_DAYS * DAY_MILLISECONDS;
-  const isOpenCard = (card) => (card.kind === "build" ? card.bucket !== BUCKETS.done : card.spec.index < card.spec.steps.length - 1);
+  const isOpenCard = (card) =>
+    card.kind === "build" ? card.perspective !== PERSPECTIVES.closed : card.spec.index < card.spec.steps.length - 1;
+  // My focus is the user's queue — build tasks on her plate — needing her
+  // first; plus, by the project's rules (board.focusRules), anything else
+  // waiting on her (a spec to approve, a session with a question), what is
+  // pinned to Up next and what a session worked on this week.
+  const rules = { myQueue: true, needsMe: true, recentSession: true, upNext: true, everythingOpen: false, ...(board.focusRules || {}) };
   const inFocus = (card) =>
     isOpenCard(card) &&
-    (card.upNext ||
-      (card.assignedToUser && (card.bucket !== BUCKETS.open || card.sessions.length > 0)) ||
-      card.needs !== null ||
-      card.sessions.some((session) => (session.lastModified || 0) >= recentSince));
+    (rules.everythingOpen ||
+      (rules.myQueue && card.kind === "build" && card.perspective === PERSPECTIVES.myQueue) ||
+      (rules.upNext && card.upNext) ||
+      (rules.needsMe && card.needs !== null) ||
+      (rules.recentSession && card.sessions.some((session) => (session.lastModified || 0) >= recentSince)));
   const sortForFocus = (first, second) => {
     if (Boolean(first.needs) !== Boolean(second.needs)) {
       return first.needs ? -1 : 1;
@@ -227,7 +288,7 @@ export function buildProjectSnapshot({
   };
   const focus = cards.filter(inFocus).sort(sortForFocus);
   const notStarted = cards.filter(
-    (card) => card.kind === "build" && card.bucket === BUCKETS.open && card.sessions.length === 0 && card.branches.length === 0 && !inFocus(card)
+    (card) => card.kind === "build" && card.bucket === BUCKETS.open && card.sessions.length === 0 && card.branches.length === 0 && !card.upNext && !card.needs
   );
   const upNextCards = upNext.map((taskId) => cards.find((card) => card.id === taskId)).filter(Boolean);
 
@@ -251,7 +312,26 @@ export function buildProjectSnapshot({
   });
 
   // ---- numbers on top ----
-  const timeline = deadlineTimeline(board.deadlines || [], {
+  // A deadline that follows a ClickUp task takes that task's due date now
+  // (it moves when the task moves); one whose task has no date is left off
+  // the axis until it gets one.
+  const everyTask = [...buildTasks, ...planningTasks];
+  const taskById = new Map(everyTask.map((task) => [task.id, task]));
+  const deadlines = (board.deadlines || [])
+    .map((deadline) => {
+      if (deadline.source !== "task") {
+        return deadline;
+      }
+      const task = taskById.get(deadline.taskId);
+      return { ...deadline, date: task && task.dueDate ? task.dueDate : deadline.date, taskMissing: !task };
+    })
+    .filter((deadline) => Number.isFinite(deadline.date));
+  // Phases and dates read from ClickUp (the project's deadline source), and
+  // the ones typed in the app unless the project says to leave them out.
+  const source = board.deadlineSource || { mode: "auto", includeManual: true };
+  const typed = source.mode === "manual" || source.includeManual !== false ? deadlines : [];
+  const fromClickup = source.mode === "manual" ? [] : deadlineItems || [];
+  const timeline = deadlineTimeline([...typed, ...fromClickup], {
     now,
     projectStart: board.startDate || Math.min(...topBuild.map((task) => task.createdAt || now), now)
   });
@@ -260,11 +340,17 @@ export function buildProjectSnapshot({
     buckets: bucketCounts(buildForStats),
     total: buildForStats.length,
     people: peopleBreakdown(buildForStats, userId),
-    pace: pace(buildForStats, { now, lastDeadline: timeline.end }),
+    // The same deadline as the line under the axis: the next one.
+    pace: pace(buildForStats, { now, deadline: timeline.next ? timeline.next.date : null }),
     specsToWrite: specPipeline
       .filter((stage) => [SPEC_STAGES.noSpec, SPEC_STAGES.session, SPEC_STAGES.draft].includes(stage.stage))
       .reduce((sum, stage) => sum + stage.count, 0),
     specsInReview: specPipeline.find((stage) => stage.stage === SPEC_STAGES.review).count,
+    // From the user's side: on her plate, waiting on others, closed.
+    inQueue: buildForStats.filter((task) => task.perspective === PERSPECTIVES.myQueue).length,
+    waiting: buildForStats.filter((task) => task.perspective === PERSPECTIVES.waiting).length,
+    closed: buildForStats.filter((task) => task.perspective === PERSPECTIVES.closed).length,
+    closedInClickup: buildForStats.filter((task) => task.bucket === BUCKETS.done).length,
     redPullRequests: Object.values(pullsByTask).flat().filter((pull) => pull.state === "open" && pull.ci === "failing").length
   };
 
@@ -276,32 +362,51 @@ export function buildProjectSnapshot({
       buildList: board.clickup && board.clickup.buildListName ? board.clickup.buildListName : null,
       planningList: board.clickup && board.clickup.planningListName ? board.clickup.planningListName : null,
       repositories: (board.repositories && board.repositories.length > 0
-        ? board.repositories.map((repository, index) => ({ name: repository.name, result: repositoryResults[index] || null }))
-        : repositoryResults.map((result) => ({ name: result.repository, result }))
-      ).map(({ name, result }) => ({
+        ? board.repositories.map((repository, index) => ({ name: repository.name, localPath: repository.localPath || null, result: repositoryResults[index] || null }))
+        : repositoryResults.map((result) => ({ name: result.repository, localPath: null, result }))
+      ).map(({ name, localPath, result }) => ({
         name,
+        localPath,
         available: result ? result.available !== false : null,
         error: result ? result.error || null : null
       })),
+      // Lists longer than the pages read: counts are "at least".
+      truncated: { buildTasks: Boolean(truncated && truncated.buildTasks), planningTasks: Boolean(truncated && truncated.planningTasks) },
       pullRequests: pullRequestResults.map((result) => ({ available: result.available, reason: result.reason || null })),
       clickup
     },
     timeline,
+    // Where dates could come from, for an honest empty axis: how many of the
+    // project's tasks carry a due date, and how many are milestones.
+    dateSources: {
+      dueDates: [...topBuild, ...topPlanning].filter((task) => task.dueDate).length,
+      milestones: [...topBuild, ...topPlanning].filter((task) => task.isMilestone).length,
+      deadlinesSet: (board.deadlines || []).length,
+      fromSource: (deadlineItems || []).length,
+      undatedInSource: deadlineInfo && deadlineInfo.undated ? deadlineInfo.undated : 0,
+      source: deadlineInfo ? deadlineInfo.source : null
+    },
     dailyPace: dailyPace(buildForStats, { now, deadline: timeline.next }),
     stats,
     cards,
     filters: {
       focus: focus.map((card) => card.id),
       upNext: upNextCards.map((card) => card.id),
-      specs: specCards.filter((card) => card.spec.index < card.spec.steps.length - 1).map((card) => card.id),
+      // Every spec in the pipeline, all five stages: the chip's count is
+      // the pipeline's total, the same the stage counters add up to.
+      specs: specCards.map((card) => card.id),
       build: cards.filter((card) => card.kind === "build").map((card) => card.id),
       everything: cards.map((card) => card.id),
       hiddenNotStarted: notStarted.length
     },
     specPipeline,
     // For the project list on the left (variant B): status bar, next deadline, % closed.
+    developerStatusField: developerFieldName,
     summary: {
       leftToClose: stats.pace.leftToClose,
+      inQueue: stats.inQueue,
+      waiting: stats.waiting,
+      closed: stats.closed,
       closedFraction: stats.pace.closedFraction,
       buckets: stats.buckets,
       nextDeadline: timeline.next ? { label: timeline.next.label, daysLeft: timeline.next.daysLeft } : null

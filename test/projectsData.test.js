@@ -374,7 +374,8 @@ test("build stage follows builder → branch → PR → staging → QA", () => {
   assert.equal(step(buildStage({ bucket: BUCKETS.inProgress, branches: [{ inStaging: true }] })), "staging");
   const qa = buildStage({ bucket: BUCKETS.inStaging, branches: [{ inStaging: true }] });
   assert.equal(step(qa), "qa");
-  assert.equal(qa.state, "wait");
+  assert.equal(qa.state, "now", "QA is other people's step: nothing waits on the user");
+  assert.equal(qa.steps[qa.handOffIndex], "staging", "the user's part is handed off at staging");
   assert.equal(buildStage({ bucket: BUCKETS.open, specApproved: false }).index, -1);
 });
 
@@ -521,12 +522,14 @@ test("a whole project: cards, stages, filters, spec pipeline and numbers", () =>
   assert.equal(card("abc123aa3").subtaskCount, 1);
   assert.equal(card("def456aa3").kind, "spec");
 
-  // Search page: planning → spec URL, merged PR, in staging → QA waits on the user.
+  // Search page: planning → spec URL, merged PR, in staging → the QA step,
+  // which is other people's: the task waits on others, nothing on the user.
   const leaderboards = card("abc123aa1");
   assert.equal(leaderboards.specUrl, "https://app.clickup.com/999999/v/dc/doc-1/page-1");
   assert.equal(leaderboards.spec.state, "done");
   assert.equal(leaderboards.build.steps[leaderboards.build.index], "qa");
-  assert.equal(leaderboards.needs.kind, "qa");
+  assert.equal(leaderboards.perspective, "waiting");
+  assert.equal(leaderboards.needs, null);
 
   // User profile: builder by branch, unpushed branch.
   const friends = card("abc123aa3");
@@ -546,7 +549,8 @@ test("a whole project: cards, stages, filters, spec pipeline and numbers", () =>
   // My focus: things waiting on the user first; Up next is kept as pinned.
   assert.equal(snapshot.filters.focus[0] === "abc123aa5" || snapshot.cards.find((entry) => entry.id === snapshot.filters.focus[0]).needs !== null, true);
   assert.ok(snapshot.filters.focus.includes("abc123opn"), "pinned to Up next");
-  assert.ok(!snapshot.filters.focus.includes("abc123don"), "closed tasks never in focus");
+  assert.ok(snapshot.filters.focus.includes("abc123don"), "ready for prod is the user's own work again (the deploy)");
+  assert.ok(!snapshot.filters.focus.includes("abc123aa1"), "waiting on others is not in focus");
   assert.deepEqual(snapshot.filters.upNext, ["abc123opn"]);
 
   // Spec pipeline counts by stage.
@@ -559,10 +563,15 @@ test("a whole project: cards, stages, filters, spec pipeline and numbers", () =>
   assert.equal(snapshot.stats.total, 5);
   assert.equal(snapshot.stats.buckets.inStaging, 1);
   assert.equal(snapshot.stats.buckets.done, 1);
-  assert.equal(snapshot.stats.pace.leftToClose, 4);
+  // From the user's side: in progress, open and ready for prod are hers;
+  // in staging and feedback wait on others; nothing is closed yet.
+  assert.equal(snapshot.stats.pace.leftToClose, 3);
+  assert.equal(snapshot.stats.inQueue, 3);
+  assert.equal(snapshot.stats.waiting, 2);
+  assert.equal(snapshot.stats.closed, 0);
   assert.equal(snapshot.stats.specsInReview, 1);
   assert.equal(snapshot.timeline.next.label, "Feature freeze");
-  assert.equal(snapshot.dailyPace.tasks, 4);
+  assert.equal(snapshot.dailyPace.tasks, 3, "the queue over the work days to the next deadline");
   assert.equal(snapshot.summary.nextDeadline.daysLeft, 17);
 });
 
@@ -668,5 +677,6 @@ test("the service finds both lists from one task, caches ClickUp and survives go
   // The left list reads the cache only.
   const [summary] = service.summaries();
   assert.equal(summary.name, "Website");
-  assert.equal(summary.summary.leftToClose, 1);
+  assert.equal(summary.summary.inQueue, 0, "in staging is not on the user's plate");
+  assert.equal(summary.summary.waiting, 1);
 });

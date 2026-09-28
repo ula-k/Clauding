@@ -53,12 +53,14 @@ test("the fixture supplies its own projects and never touches the store", async 
   assert.equal(sourceState(noToken).kind, "noToken");
 });
 
-test("the list: groups in order, a bar, the nearest deadline and % closed", () => {
+test("the list: groups in order, a bar, the nearest deadline and the queue", () => {
   const groups = projectListModel(fixtureService().summaries());
   assert.deepEqual(groups.map((group) => group.name), ["Work", "Private"]);
   const [website, mobile] = groups[0].projects;
-  assert.equal(website.leftToClose, 14);
-  assert.equal(website.closedPercent, 26);
+  // From the user's side: on her plate, waiting on others, closed.
+  assert.equal(website.inQueue, 11);
+  assert.equal(website.waiting, 4);
+  assert.equal(website.closed, 4);
   assert.deepEqual(website.deadline, { key: "projects.deadlineInDays", values: { label: "Feature freeze", count: 18 }, soon: false });
   assert.ok(Math.abs(website.segments.reduce((sum, segment) => sum + segment.fraction, 0) - 1) < 1e-9);
   assert.equal(mobile.loaded, false);
@@ -81,7 +83,7 @@ test("bucket segments drop empty buckets and keep the drawing order", () => {
 test("filter chips carry the counts of the snapshot's lists", async () => {
   const snapshot = await fixtureService().snapshot("website");
   const chips = Object.fromEntries(filterChips(snapshot).map((chip) => [chip.id, chip.count]));
-  assert.deepEqual(chips, { focus: 8, upNext: 3, specs: 6, build: 19, everything: 23 });
+  assert.deepEqual(chips, { focus: 14, upNext: 3, specs: 10, build: 19, everything: 23 }, "My focus is the whole queue; Specs pipeline counts every stage");
   const focus = cardsForFilter(snapshot, "focus").cards;
   assert.ok(focus[0].needs, "needs me first");
   assert.deepEqual(cardsForFilter(snapshot, "upNext").cards.map((card) => card.id), ["web0008", "web0007", "web0010"], "pinned order kept");
@@ -132,8 +134,9 @@ test("session state: needs answer, working, idle for days", () => {
 test("the per-day line under the axis, and labels that would collide move down", async () => {
   const snapshot = await fixtureService().snapshot("website");
   const pace = dailyPaceText(snapshot.dailyPace);
-  assert.equal(pace.key, "projects.paceLine");
-  assert.deepEqual(pace.values, { label: "Feature freeze", tasks: 14, days: 14, range: "1" });
+  assert.equal(pace.key, "projects.paceLineWeekly", "under one a day it is said per week");
+  assert.deepEqual(pace.values, { label: "Feature freeze", tasks: 11, days: 14, range: "4" }, "the queue, not everything open");
+  assert.equal(pace.todayKey, "projects.handedOffTodayWeekly");
   assert.deepEqual(pace.todayDots, [true]);
   assert.equal(dailyPaceText(null), null);
   const milestones = axisMilestones(snapshot.timeline);

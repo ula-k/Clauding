@@ -3803,10 +3803,10 @@ input:focus-visible {
 
 .project-sources {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-  flex-shrink: 1;
-  overflow: hidden;
+  flex: 1 1 0;
 }
 
 .source-chip {
@@ -4006,8 +4006,13 @@ input:focus-visible {
 .deadlines-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   margin-bottom: 14px;
+}
+
+.deadlines-head > * {
+  white-space: nowrap;
 }
 
 .deadlines-head b {
@@ -5070,4 +5075,608 @@ button.detail-row:hover b {
   margin-left: 20px;
   padding-left: 0;
   white-space: normal;
+}
+
+/* ---- Projects: search, clickable numbers, card menu, settings ---- */
+.projects-search {
+  margin: 2px 4px 8px;
+}
+
+.project-task-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -2px 0 8px 28px;
+}
+
+.project-task-match {
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 3px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-task-match:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.project-task-match .mono {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.project-task-more {
+  font-size: 11.5px;
+  padding: 2px 6px;
+}
+
+.task-search {
+  flex: 0 1 220px;
+  min-width: 140px;
+  margin: 0;
+}
+
+.stat-filter-row {
+  display: flex;
+  gap: 8px;
+  margin: -4px 0 2px;
+}
+
+.stat-filter-clear {
+  margin-left: 2px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+button.bucket-legend-item,
+button.stat-counter,
+button.person-row {
+  text-align: left;
+  border-radius: 8px;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  cursor: pointer;
+}
+
+button.bucket-legend-item:hover,
+button.stat-counter:hover,
+button.person-row:hover,
+.bucket-legend-item.is-active,
+.person-row.is-active {
+  background: var(--surface-hover);
+}
+
+button.deadline-milestone {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
+button.deadline-milestone:hover .deadline-label {
+  color: var(--accent);
+}
+
+.deadlines-edit {
+  font-size: 12px;
+}
+
+.deadlines.is-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.task-card {
+  position: relative;
+  padding-right: 40px;
+}
+
+.row-menu-button.task-card-menu {
+  top: 10px;
+  right: 8px;
+  transform: none;
+  opacity: 0.55;
+}
+
+.task-card:hover .row-menu-button.task-card-menu,
+.row-menu-button.task-card-menu:focus-visible {
+  opacity: 1;
+  background: var(--surface-raised);
+}
+
+.up-next-mark {
+  font-size: 12px;
+}
+
+.task-card-pills {
+  flex-wrap: wrap;
+}
+
+.project-sources .source-chip {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-settings {
+  max-height: calc(100vh - 80px);
+  position: relative;
+}
+
+.project-settings-body {
+  overflow-y: auto;
+  min-height: 0;
+  margin: 0 -20px;
+  padding: 0 20px;
+}
+
+.settings-section {
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-section h4 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.settings-section.is-danger h4 {
+  color: var(--coral);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.settings-grid .sheet-label {
+  margin: 0;
+}
+
+.settings-colors {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.settings-color.is-selected {
+  border-color: var(--text);
+}
+
+.settings-lists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.settings-list-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  font-size: 12.5px;
+  min-width: 0;
+}
+
+.settings-list-value > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-table {
+  display: grid;
+  gap: 6px 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.settings-repositories {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 24px;
+}
+
+.settings-column-head {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.settings-remove {
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 2px 5px;
+  border-radius: 5px;
+}
+
+.settings-remove:hover {
+  color: var(--coral);
+  background: var(--surface-hover);
+}
+
+.deadline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.settings-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.settings-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.settings-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.settings-up-next {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 3px 0;
+}
+
+.settings-up-next-place {
+  width: 18px;
+  color: var(--text-faint);
+}
+
+.settings-up-next-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-status-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.settings-status-row.is-three {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.settings-status-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.3fr);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.settings-status-name {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+
+.settings-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+}
+
+.settings-link-chip.is-unlinked {
+  border-style: dashed;
+  color: var(--text-faint);
+}
+
+.list-picker {
+  position: absolute;
+  inset: 40px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-lavender);
+  box-shadow: var(--shadow-soft);
+  z-index: 5;
+}
+
+.list-picker-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.list-picker-trail {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.list-picker-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.list-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.list-picker-item:hover {
+  background: var(--surface-hover);
+}
+
+.list-picker-item.is-list {
+  color: var(--accent);
+}
+
+.deadline-sheet .deadline-row {
+  margin: 4px 0 8px;
+}
+
+/* The list and repository chips take the room between the name and
+   "refreshed …", wrapping onto a second line rather than into a column. */
+.project-header > .project-header-spacer {
+  flex: 0 0 0;
+}
+
+/* A narrow middle column (the side panel open): the chips go under the
+   project's name as one row instead of a column beside it. */
+@container (max-width: 1100px) {
+  .project-header {
+    flex-wrap: wrap;
+  }
+
+  .project-header > .project-sources {
+    order: 10;
+    flex: 1 0 100%;
+  }
+
+  .project-header > .project-header-spacer {
+    flex: 1 1 0;
+  }
+}
+
+/* ---- Projects: the user's queue ---- */
+button.burn-down-number {
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+button.burn-down-number:hover b {
+  color: var(--accent);
+}
+
+.burn-down[data-my-queue] {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.queue-others {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  flex: 1 0 100%;
+}
+
+.perspective-tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.perspective-tag.is-myQueue {
+  border-color: var(--border-lavender);
+  color: var(--accent);
+}
+
+.perspective-tag.is-closed {
+  border-style: dashed;
+  color: var(--text-faint);
+}
+
+.developer-status {
+  font-size: 11px;
+}
+
+/* After staging the work is other people's: QA and prod are drawn faint,
+   and the staging dot carries a small bar that marks the hand-off. */
+.pipeline-step.is-others {
+  opacity: 0.45;
+}
+
+.pipeline-step.is-hand-off .pipeline-node {
+  box-shadow: 4px 0 0 -1px var(--gold);
+}
+
+.pipeline-step.is-hand-off .pipeline-caption {
+  color: var(--gold);
+}
+
+/* ---- Projects: phases under the deadline axis ---- */
+.phase-lanes {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 14px 0;
+}
+
+.phase-lane {
+  position: relative;
+  height: 20px;
+}
+
+.phase-bar {
+  position: absolute;
+  top: 0;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--border-lavender);
+  background: var(--accent-soft);
+  overflow: hidden;
+  text-align: left;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.phase-bar.is-done {
+  background: rgba(169, 199, 164, 0.18);
+  border-color: rgba(169, 199, 164, 0.4);
+}
+
+.phase-bar.is-later {
+  background: transparent;
+  border-style: dashed;
+}
+
+.phase-bar.is-running {
+  border-color: var(--gold);
+}
+
+.phase-bar-label {
+  display: block;
+  font-size: 10.5px;
+  line-height: 18px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phase-bar:hover .phase-bar-label {
+  color: var(--text);
+}
+
+.phase-today {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--text);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.deadline-source {
+  margin: 8px 14px 0;
+  font-size: 11.5px;
+}
+
+.deadline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 10px 14px 0;
+}
+
+.deadline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.deadline-legend-item b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.deadline-legend-item:hover {
+  color: var(--accent);
+}
+
+.deadline-legend-diamond {
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  border: 1.5px solid var(--gold);
+  border-radius: 2px;
+}
+
+.deadline-legend-item.is-done .deadline-legend-diamond {
+  background: var(--sage);
+  border-color: var(--sage);
+}
+
+.deadline-legend-item.is-next .deadline-legend-diamond {
+  background: var(--gold);
+}
+
+/* The side panel's zoom, when a tab is not at 100 %: plain text in the
+   address bar; a click puts the tab back to 100 %. */
+.panel-zoom-label {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.panel-zoom-label:hover {
+  background: var(--surface-hover);
+}
+
+.truncated-note {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--gold);
 }

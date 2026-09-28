@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../i18n.js";
-import { projectListModel } from "../projectsView.js";
+import { projectListModel, searchProjects } from "../projectsView.js";
+import { SearchIcon } from "./Icons.jsx";
 
 // The Projects tab of the left column (variant B): one row per project with
 // its color, name, how many tasks are left, a thin bar of where the tasks
@@ -9,55 +10,108 @@ import { projectListModel } from "../projectsView.js";
 // that was never opened says so instead of showing zeros.
 //
 // "Add a project…" is a link, not a button: it opens a small sheet that
-// asks for a name, one ClickUp task link and the local repositories — the
-// lists are found from the task. Nothing is written to ClickUp.
-export default function ProjectsList({ summaries, loading, selectedBoardId, onSelect, onAdd, readOnly }) {
+// asks for a name, one ClickUp link (list, view, folder or space) and the
+// local repositories — the lists are found from the link. Nothing is
+// written to ClickUp. The search box finds projects by name and their
+// tasks by name or id (from the cached ClickUp answer).
+export default function ProjectsList({ summaries, loading, selectedBoardId, onSelect, onSelectTask, onAdd, readOnly, addRequest, onAddRequestHandled }) {
   const { translate } = useTranslation();
   const [addOpen, setAddOpen] = useState(false);
-  const groups = useMemo(() => projectListModel(summaries), [summaries]);
+  const [query, setQuery] = useState("");
+  const found = useMemo(() => searchProjects(summaries, query), [summaries, query]);
+  const groups = useMemo(() => projectListModel(found), [found]);
+  const matchesById = useMemo(() => new Map(found.map((entry) => [entry.id, entry])), [found]);
+
+  // Projects → Add a Project… in the menu bar.
+  useEffect(() => {
+    if (addRequest) {
+      setAddOpen(true);
+      if (onAddRequestHandled) {
+        onAddRequestHandled();
+      }
+    }
+  }, [addRequest, onAddRequestHandled]);
 
   return (
     <div className="session-list projects-list" data-projects-list>
+      {summaries.length > 0 && (
+        <div className="search-box projects-search">
+          <SearchIcon />
+          <input
+            type="search"
+            value={query}
+            placeholder={translate("projects.searchPlaceholder")}
+            onChange={(event) => setQuery(event.target.value)}
+            spellCheck={false}
+            data-projects-search
+          />
+        </div>
+      )}
       {loading && summaries.length === 0 && <div className="list-note">{translate("list.loading")}</div>}
       {!loading && summaries.length === 0 && (
         <div className="projects-empty" data-projects-empty>
           <p>{translate("projects.emptyList")}</p>
-          <button type="button" className="text-link" onClick={() => setAddOpen(true)} data-add-project>
-            {translate("projects.addProject")}
-          </button>
+          {!readOnly && (
+            <button type="button" className="text-link" onClick={() => setAddOpen(true)} data-add-project>
+              {translate("projects.addProject")}
+            </button>
+          )}
         </div>
       )}
+      {summaries.length > 0 && found.length === 0 && <div className="list-note">{translate("projects.searchNothing")}</div>}
       {groups.map((group) => (
         <section key={group.name} className="projects-group">
           <div className="projects-group-title">{group.name}</div>
-          {group.projects.map((project) => (
-            <button
-              type="button"
-              key={project.id}
-              className={project.id === selectedBoardId ? "project-line is-selected" : "project-line"}
-              onClick={() => onSelect(project.id)}
-              data-project-row={project.id}
-            >
-              <span className="project-line-top">
-                <span className="project-ring" style={{ borderColor: project.color }} />
-                <span className="project-line-name">{project.name}</span>
-                {project.loaded && (
-                  <span className="project-line-meta">{translate("projects.leftCount", { count: project.leftToClose })}</span>
+          {group.projects.map((project) => {
+            const match = matchesById.get(project.id);
+            return (
+              <div key={project.id} className="project-line-wrap">
+                <button
+                  type="button"
+                  className={project.id === selectedBoardId ? "project-line is-selected" : "project-line"}
+                  onClick={() => onSelect(project.id)}
+                  data-project-row={project.id}
+                >
+                  <span className="project-line-top">
+                    <span className="project-ring" style={{ borderColor: project.color }} />
+                    <span className="project-line-name">{project.name}</span>
+                    {project.loaded && (
+                      <span className="project-line-meta">{translate("projects.inQueueCount", { count: project.inQueue })}</span>
+                    )}
+                  </span>
+                  <span className="thin-bar">
+                    {project.segments.map((segment) => (
+                      <span key={segment.bucket} style={{ width: `${segment.fraction * 100}%`, background: segment.color }} />
+                    ))}
+                  </span>
+                  <span className="project-line-under">
+                    <span className={project.deadline.soon ? "is-soon" : ""}>
+                      {project.loaded ? translate(project.deadline.key, project.deadline.values) : translate("projects.notLoaded")}
+                    </span>
+                    {project.loaded && <span>{translate("projects.waitingClosed", { waiting: project.waiting, closed: project.closed })}</span>}
+                  </span>
+                </button>
+                {match && match.matchingTasks.length > 0 && (
+                  <div className="project-task-matches" data-project-task-matches={project.id}>
+                    {match.matchingTasks.map((task) => (
+                      <button
+                        type="button"
+                        key={task.id}
+                        className="project-task-match"
+                        onClick={() => onSelectTask(project.id, task.id, query)}
+                        data-project-task-match={task.id}
+                      >
+                        <span className="mono">CU-{task.id}</span> {task.name}
+                      </button>
+                    ))}
+                    {match.hiddenMatches > 0 && (
+                      <span className="project-dim project-task-more">{translate("projects.searchMoreTasks", { count: match.hiddenMatches })}</span>
+                    )}
+                  </div>
                 )}
-              </span>
-              <span className="thin-bar">
-                {project.segments.map((segment) => (
-                  <span key={segment.bucket} style={{ width: `${segment.fraction * 100}%`, background: segment.color }} />
-                ))}
-              </span>
-              <span className="project-line-under">
-                <span className={project.deadline.soon ? "is-soon" : ""}>
-                  {project.loaded ? translate(project.deadline.key, project.deadline.values) : translate("projects.notLoaded")}
-                </span>
-                {project.loaded && <span>{translate("projects.closedPercent", { count: project.closedPercent })}</span>}
-              </span>
-            </button>
-          ))}
+              </div>
+            );
+          })}
         </section>
       ))}
       {summaries.length > 0 && !readOnly && (
@@ -70,11 +124,12 @@ export default function ProjectsList({ summaries, loading, selectedBoardId, onSe
           readOnly={readOnly}
           onClose={() => setAddOpen(false)}
           onAdd={async (draft) => {
-            const board = await onAdd(draft);
-            setAddOpen(false);
-            if (board && board.id) {
-              onSelect(board.id);
+            const answer = await onAdd(draft);
+            if (answer && answer.board) {
+              setAddOpen(false);
+              onSelect(answer.board.id);
             }
+            return answer;
           }}
         />
       )}
@@ -82,16 +137,22 @@ export default function ProjectsList({ summaries, loading, selectedBoardId, onSe
   );
 }
 
-// Only what stage 1 needs to start a project: a name, one task link, and
-// the repositories to look for CU- branches in (one folder per line). The
-// full settings sheet (lists, people, deadlines, status map) is stage 2.
+// A new project: a name, one ClickUp link — a list, a saved view, a folder
+// or a space — and, if the user wants, one task link that settles which
+// list is the build list; plus the repositories to look for CU- branches in
+// (one folder per line). When the lists of a folder or space cannot be told
+// apart, the sheet asks which one is the build list. Everything else
+// (branches, people, deadlines, the status map) is in the settings sheet.
 function AddProjectSheet({ onClose, onAdd, readOnly }) {
   const { translate } = useTranslation();
   const [name, setName] = useState("");
-  const [seedLink, setSeedLink] = useState("");
+  const [projectLink, setProjectLink] = useState("");
+  const [taskLink, setTaskLink] = useState("");
   const [repositoryText, setRepositoryText] = useState("");
   const [failure, setFailure] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [choice, setChoice] = useState(null);
+  const [chosenListId, setChosenListId] = useState("");
   const sheetRef = useRef(null);
 
   useEffect(() => {
@@ -112,14 +173,29 @@ function AddProjectSheet({ onClose, onAdd, readOnly }) {
       .map((line) => line.trim())
       .filter(Boolean)
       .map((folder) => ({ name: folder.split(/[\\/]/).filter(Boolean).pop() || folder, localPath: folder }));
+    const draft = { name: name.trim(), projectLink: projectLink.trim() || null, taskLink: taskLink.trim() || null, repositories };
+    if (choice) {
+      const chosen = choice.candidates.find((candidate) => candidate.id === chosenListId);
+      if (!chosen) {
+        setFailure({ key: "projects.linkError.pickList", values: {} });
+        return;
+      }
+      draft.clickup = { ...choice.clickup, buildListId: chosen.id, buildListName: chosen.name };
+    }
     setSaving(true);
     setFailure(null);
     try {
-      await onAdd({ name: name.trim(), seedLink: seedLink.trim() || null, repositories });
+      const answer = await onAdd(draft);
+      if (answer && answer.errorKey) {
+        setFailure({ key: answer.errorKey, values: answer.values || {} });
+      } else if (answer && answer.candidates) {
+        setChoice({ candidates: answer.candidates, clickup: answer.clickup || {} });
+        setChosenListId(answer.candidates[0] ? answer.candidates[0].id : "");
+      }
     } catch (error) {
-      setFailure(String(error && error.message ? error.message : error).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
-      setSaving(false);
+      setFailure({ key: "projects.linkError.clickupFailed", values: { message: String(error && error.message ? error.message : error).replace(/^Error invoking remote method '[^']+': (Error: )?/, "") } });
     }
+    setSaving(false);
   }
 
   return (
@@ -148,20 +224,63 @@ function AddProjectSheet({ onClose, onAdd, readOnly }) {
               autoFocus
               placeholder={translate("projects.fieldNamePlaceholder")}
               onChange={(event) => setName(event.target.value)}
+              data-add-project-name
             />
-            <label className="sheet-label" htmlFor="add-project-seed">
-              {translate("projects.fieldSeed")}
+            <label className="sheet-label" htmlFor="add-project-link">
+              {translate("projects.fieldProjectLink")}
             </label>
             <input
-              id="add-project-seed"
+              id="add-project-link"
               type="text"
               className="agent-form-input"
-              value={seedLink}
+              value={projectLink}
+              spellCheck={false}
+              placeholder="https://app.clickup.com/…/v/li/…"
+              onChange={(event) => {
+                setProjectLink(event.target.value);
+                setChoice(null);
+              }}
+              data-add-project-link
+            />
+            <p className="sheet-hint">{translate("projects.fieldProjectLinkHint")}</p>
+            <label className="sheet-label" htmlFor="add-project-task">
+              {translate("projects.fieldTaskLink")}
+            </label>
+            <input
+              id="add-project-task"
+              type="text"
+              className="agent-form-input"
+              value={taskLink}
               spellCheck={false}
               placeholder="https://app.clickup.com/t/…"
-              onChange={(event) => setSeedLink(event.target.value)}
+              onChange={(event) => {
+                setTaskLink(event.target.value);
+                setChoice(null);
+              }}
+              data-add-project-task
             />
-            <p className="sheet-hint">{translate("projects.fieldSeedHint")}</p>
+            <p className="sheet-hint">{translate("projects.fieldTaskLinkHint")}</p>
+            {choice && (
+              <>
+                <label className="sheet-label" htmlFor="add-project-choice">
+                  {translate("projects.pickBuildList")}
+                </label>
+                <select
+                  id="add-project-choice"
+                  className="sheet-agent-select"
+                  value={chosenListId}
+                  onChange={(event) => setChosenListId(event.target.value)}
+                  data-add-project-choice
+                >
+                  {choice.candidates.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.folderName ? `${candidate.folderName} › ${candidate.name}` : candidate.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="sheet-hint">{translate("projects.pickBuildListHint")}</p>
+              </>
+            )}
             <label className="sheet-label" htmlFor="add-project-repositories">
               {translate("projects.fieldRepositories")}
             </label>
@@ -173,9 +292,14 @@ function AddProjectSheet({ onClose, onAdd, readOnly }) {
               spellCheck={false}
               placeholder={translate("projects.fieldRepositoriesPlaceholder")}
               onChange={(event) => setRepositoryText(event.target.value)}
+              data-add-project-repositories
             />
-            <p className="sheet-hint">{translate("projects.stageTwoHint")}</p>
-            {failure && <p className="sheet-hint is-problem">{failure}</p>}
+            <p className="sheet-hint">{translate("projects.settingsLaterHint")}</p>
+            {failure && (
+              <p className="sheet-hint is-problem" data-add-project-problem>
+                {translate(failure.key, failure.values)}
+              </p>
+            )}
           </>
         )}
         <div className="sheet-actions">
@@ -183,8 +307,8 @@ function AddProjectSheet({ onClose, onAdd, readOnly }) {
             {translate("projects.cancel")}
           </button>
           {!readOnly && (
-            <button type="submit" className="button is-primary" disabled={!name.trim() || saving}>
-              {translate("projects.addConfirm")}
+            <button type="submit" className="button is-primary" disabled={!name.trim() || saving} data-add-project-confirm>
+              {saving ? translate("projects.addChecking") : translate("projects.addConfirm")}
             </button>
           )}
         </div>

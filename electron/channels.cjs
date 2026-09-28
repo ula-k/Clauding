@@ -84,6 +84,12 @@ const CHANNELS = {
   boardsSummaries: "boards:summaries",
   boardsSnapshot: "boards:snapshot",
   boardsTaskDetail: "boards:task-detail",
+  boardsSettingsData: "boards:settings-data",
+  boardsBrowse: "boards:browse",
+  boardsLinkTerminal: "boards:link-terminal",
+  boardsMenu: "boards:menu",
+  // View → Zoom In / Out / Actual Size while a side-panel page has the focus.
+  panelZoom: "panel:zoom",
   projectsRecent: "projects:recent",
   projectsPick: "projects:pick",
   terminalOpen: "terminal:open",

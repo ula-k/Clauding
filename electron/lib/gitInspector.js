@@ -1,7 +1,8 @@
 // Projects view: what the user's own checkouts say about each task's branch.
 //
 // Branches are named CU-<ClickUp task id>, sometimes with a suffix
-// (CU-abc123aa1-1, CU-abc123aa1-fix). For every configured repo
+// (CU-abc123aa1-1, CU-abc123aa1-team-dashboard), in any case (cu-…, Cu-…),
+// and sometimes under a folder (someone/CU-abc123aa1). For every configured repo
 // this reads, locally and without touching anything:
 //   - which CU- branches exist, locally and on origin
 //   - which of them are checked out in a worktree, and whether that
@@ -14,12 +15,13 @@
 // remote-tracking refs, never the user's branches or files.
 import { execFile } from "node:child_process";
 
-const BRANCH_PATTERN = /^CU-([0-9a-zA-Z]+)(?:-[0-9A-Za-z]+)?$/;
+const BRANCH_PATTERN = /^CU-([0-9a-z]+)(?:[-_][0-9a-z_.-]*)?$/i;
 const GIT_TIMEOUT_MILLISECONDS = 20000;
 
 export function taskIdFromBranch(branchName) {
   const shortName = String(branchName || "").replace(/^refs\/(heads|remotes\/[^/]+)\//, "");
-  const match = shortName.match(BRANCH_PATTERN);
+  const lastPart = shortName.split("/").pop();
+  const match = lastPart.match(BRANCH_PATTERN);
   return match ? match[1].toLowerCase() : null;
 }
 
@@ -126,6 +128,21 @@ async function referenceExists(repositoryPath, reference, options) {
 //   { available, error, branchesByTask: { "<taskId>": [branchInfo…] } }
 // branchInfo = { repository, name, local, remote, pushed, aheadOfBase,
 //                inStaging, worktreePath, uncommitted }
+// Every branch (local and on the remote) already inside `targetReference`,
+// in one git call — asking branch by branch takes minutes in a repository
+// with a thousand CU- branches.
+async function branchesMergedInto(repositoryPath, targetReference, remoteName, options) {
+  const output = await runGit(
+    repositoryPath,
+    ["for-each-ref", `--merged=${targetReference}`, "--format=%(refname)", "refs/heads", `refs/remotes/${remoteName}`],
+    options
+  );
+  return new Set(output.split("\n").map((line) => line.trim()).filter(Boolean));
+}
+
+// `options.taskIds` (a Set of lower-case ids), when given, limits the work
+// to the branches of those tasks: the rest of the repository is not this
+// project's business.
 export async function inspectRepository(repository, options = {}) {
   const {
     name,
@@ -157,8 +174,20 @@ export async function inspectRepository(repository, options = {}) {
   const stagingReference = `${remoteName}/${stagingBranch}`;
   const hasBase = await referenceExists(localPath, baseReference, options);
   const hasStaging = await referenceExists(localPath, stagingReference, options);
+  let mergedIntoStaging = null;
+  if (hasStaging) {
+    try {
+      mergedIntoStaging = await branchesMergedInto(localPath, stagingReference, remoteName, options);
+    } catch (error) {
+      mergedIntoStaging = null;
+    }
+  }
+  const wantedTasks = options.taskIds || null;
 
   for (const branch of parseBranchRefs(refsOutput, remoteName)) {
+    if (wantedTasks && !wantedTasks.has(branch.taskId)) {
+      continue;
+    }
     // The local branch is what the user works on; fall back to origin's
     // copy for a branch that only exists there.
     const reference = branch.local ? branch.name : `${remoteName}/${branch.name}`;
@@ -170,7 +199,11 @@ export async function inspectRepository(repository, options = {}) {
       remote: branch.remote,
       pushed: branch.remote,
       aheadOfBase: hasBase ? await commitsAhead(localPath, reference, baseReference, options) : null,
-      inStaging: hasStaging ? await isAncestor(localPath, reference, stagingReference, options) : null,
+      inStaging: !hasStaging
+        ? null
+        : mergedIntoStaging
+          ? mergedIntoStaging.has(branch.local ? `refs/heads/${branch.name}` : `refs/remotes/${remoteName}/${branch.name}`)
+          : await isAncestor(localPath, reference, stagingReference, options),
       worktreePath: worktree && worktree.path !== localPath ? worktree.path : null,
       checkedOutInMain: Boolean(worktree && worktree.path === localPath),
       uncommitted: worktree ? await hasUncommittedChanges(worktree.path, options) : null

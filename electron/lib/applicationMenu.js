@@ -1,6 +1,7 @@
 // The menu bar, as a value.
 //
-// It is the same menu everywhere — Clauding / Edit / Skills / View / Window —
+// It is the same menu everywhere — Clauding / Edit / Skills / Projects / View /
+// Window —
 // but macOS and Windows disagree about what belongs in the first one. macOS
 // puts Services, Hide, Hide Others, Show All and Quit into the application
 // menu and draws it at the top of the screen; Windows has none of those
@@ -34,6 +35,15 @@ export function applicationMenuTemplate({
   findLabel = "Find in conversation…",
   pasteLabel = "Paste",
   skillsMenu = { label: "Skills", submenu: [] },
+  // The Projects tab's two sheets: a new project, and the settings of the
+  // project on screen.
+  // View → Zoom In / Zoom Out / Actual Size: when main.js hands a handler
+  // in, it decides what is zoomed (the side panel's page when it has the
+  // focus, else the window); without one they stay Electron's roles.
+  onZoom = null,
+  zoomLabels = { in: "Zoom In", out: "Zoom Out", reset: "Actual Size" },
+  onAddProject = () => {},
+  onProjectSettings = () => {},
   onCheckForUpdate = () => {},
   onShowSettings = () => {},
   onFindInConversation = () => {},
@@ -89,6 +99,13 @@ export function applicationMenuTemplate({
     },
     skillsMenu,
     {
+      label: "Projects",
+      submenu: [
+        { label: "Add a Project…", click: onAddProject },
+        { label: "Project Settings…", click: onProjectSettings }
+      ]
+    },
+    {
       label: "View",
       submenu: [
         { label: findLabel, accelerator: FIND_ACCELERATOR, click: onFindInConversation },
@@ -97,9 +114,15 @@ export function applicationMenuTemplate({
         { role: "forceReload" },
         { role: "toggleDevTools" },
         { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        ...(onZoom
+          ? [
+              { label: zoomLabels.reset, accelerator: "CommandOrControl+0", click: () => onZoom("reset") },
+              { label: zoomLabels.in, accelerator: "CommandOrControl+Plus", click: () => onZoom("in") },
+              // ⌘= is the same key as ⌘+ without Shift; both zoom in.
+              { label: zoomLabels.in, accelerator: "CommandOrControl+=", click: () => onZoom("in"), visible: false, acceleratorWorksWhenHidden: true },
+              { label: zoomLabels.out, accelerator: "CommandOrControl+-", click: () => onZoom("out") }
+            ]
+          : [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }]),
         { type: "separator" },
         { role: "togglefullscreen" }
       ]

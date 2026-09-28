@@ -789,6 +789,18 @@ across restarts too. The rules:
 The **width** is one setting for the whole window (`localStorage`), because a
 column that changed size on every click would be unusable.
 
+**Zoom is per tab, and never sticks.** Electron remembers a page's zoom per
+origin, and every local file shares the one `file://` origin — so a zoom once
+applied used to stick to all local pages, survive a reload, and show nowhere.
+Now every panel page starts at 100 % (the `<webview>` is attached with
+`zoomFactor: 1`), the panel keeps a zoom per tab in memory
+(`src/renderer/panelZoom.js`: Chromium's steps, 50 %–300 %), puts it back on
+the page whenever it loads or its tab comes to the front, and — whenever a
+tab is not at 100 % — shows it as a small "125 %" in the address bar; a click
+on it puts the tab back to 100 %. **View → Zoom In ⌘+ / Zoom Out ⌘− / Actual
+Size ⌘0** act on the panel's page while that page has the focus, and on the
+window otherwise (as before). A local page gets the panel's real width.
+
 **Dragging a handle** (both the left one and the panel's) uses pointer
 events, not mouse events: the handle takes `setPointerCapture`, the window
 listens for `pointermove` / `pointerup`, and for the length of the drag a
@@ -1424,56 +1436,134 @@ badge on its row.
 The third tab of the left column, next to Sessions and Agents. A project
 follows one ClickUp list (plus, when there is one, the list its specs are
 planned in), the CU- branches in your local checkouts, their pull requests,
-and the Claude Code sessions that work on its tasks. Everything is **read
-only**: ClickUp, git and GitHub are read, never written.
+and the Claude Code sessions that work on its tasks. ClickUp, git and GitHub
+are **only read**; what the tab changes is its own file,
+`project-boards.json` (and a terminal, when you start a session for a task).
 
-* **The list (left)**: one row per project, grouped (Work / Private) — its
-  color, name, how many tasks are left, a thin bar of where the tasks are,
-  the nearest deadline ("Feature freeze in 18 d") and how much is closed. The
-  numbers come from the last ClickUp answer on disk, so the list draws at
-  once. "Add a project…" is a text link that opens a small sheet: a name, one
-  ClickUp task link (the lists are found from it) and the local repositories.
-  Because three tabs share the top row, "+ New" is now the "+" alone (its name
-  is in the tooltip).
-* **The view (middle)**: selecting a project covers the middle column the way
-  the skill reader does. The terminals are **not** closed or unmounted — they
-  stay in the terminal stack underneath; Sessions or Agents (or clicking a
-  session chip) brings the terminal back as it was. From the top: the header
-  (name, the ClickUp lists and repositories as text chips, "refreshed … ago",
-  **Refresh** — ClickUp, `git fetch` in the repositories and GitHub again —
-  and Show / Hide panel), the **deadline axis** with a Today marker and, under
-  it, a line marked **Computed** ("To make Feature freeze: 14 tasks in 14 work
-  days → about 1 a day") — a suggestion, not a goal anyone set; the
-  **numbers** (tasks per status bucket, left to close with a small burn-down,
-  the pace needed and the pace of the last two weeks, specs to write / in
-  review / PRs with red CI, and who has what); the **filter chips** with counts
-  (My focus · Up next · Specs pipeline · Build · Everything); and the **task
-  cards**: title, ClickUp status, what waits on you, two rows of dots (Spec:
-  no spec → session → draft → review → approved; Build: open → builder →
-  branch → PR → staging → QA → prod) and link chips — the task (`CU-<id>`),
-  its spec, the spec and builder sessions, the branch per repository with how
-  far ahead it is and whether it has uncommitted work, and the PR with its CI.
-  A click on a card opens its details in place (description, fields, comments
-  count, assignee, sessions, code). Under **Specs pipeline** the view shows the
-  five stage counters with the list of one stage under them.
+* **Adding a project** — "Add a project…" under the list, or **Projects →
+  Add a Project…** in the menu bar. Paste the **project link** from
+  ClickUp's address bar: a list (`…/v/li/<id>`), a saved view of it
+  (`…/v/l/<view>`, `…/v/b/<view>` — ClickUp is asked which list it shows),
+  a folder (`…/v/f/<id>`) or a space (`…/v/s/<id>`); a bare list id or task
+  id works too. With a folder or a space every list in it is read once and
+  the **build list** is the one whose tasks "depend on" tasks of another
+  list; the **specs list** is found the same way, through the build tasks'
+  dependencies. When nothing depends on anything, the sheet asks which list
+  is the build list instead of guessing. An optional task link settles it
+  too. Every message in the sheet is in the app's language.
+* **The list (left)**: a search box ("Search projects and tasks" — project
+  names, and task names or `CU-` ids from the last ClickUp answer, with the
+  matching tasks listed under their project; a click opens the task's card),
+  then one row per project, grouped (Work / Private): its color, name, **how
+  many tasks are in your queue**, a thin bar of the ClickUp buckets, the
+  nearest deadline, and "M waiting · K closed".
+* **The view (middle)** covers the middle column the way the skill reader
+  does; the terminals stay mounted underneath. From the top: the header
+  (name, the lists and repositories as chips, "refreshed … ago", **Refresh**
+  — ClickUp, `git fetch` in the repositories and GitHub again —,
+  **Settings**, Show / Hide panel); the **deadline axis** with Today, where a
+  click on a deadline edits it and "+ Add a deadline" adds one (with no
+  deadline the axis says why, honestly: "no dates in ClickUp yet", or how
+  many tasks carry a due date a deadline could follow); under it the line
+  marked **Computed** — your queue over the work days to the next deadline,
+  "about N a day" — and **Handed off today: N**; the **numbers**: tasks per
+  ClickUp bucket, **My queue** with its line over the last weeks, the pace
+  needed and the pace of the last two weeks (tasks handed off per week),
+  waiting-on-others and closed as separate numbers, specs to write / in
+  review, PRs with red CI, and who has what. **Every number is a filter**:
+  a click shows exactly those tasks (a chip says so, ✕ goes back). Then the
+  **filter chips** (My focus · Up next · Specs pipeline · Build · Everything)
+  with a search box for the tasks, and the **task cards**: title, ClickUp
+  status, where it stands for you (my queue / waiting on others / closed),
+  the developer-status field when the tasks carry one, what waits on you,
+  two rows of dots (Spec: no spec → session → draft → review → approved;
+  Build: open → builder → branch → PR → **staging** → QA → prod — staging is
+  marked as where your part is handed off, QA and prod are drawn faint:
+  they are other people's), and link chips (the task, its spec, the spec and
+  builder sessions, each branch with how far ahead it is, the PR and its
+  CI). A click on a card opens its details in place (fields with drop-down
+  values as ClickUp shows them, description, comments count, sessions,
+  code). The card's **"…"** menu: pin to / unpin from Up next (and move it up
+  or down there), link a session to the task, unlink one, and **Start a
+  session for this task** — a terminal in one of the project's repositories,
+  as the agent whose name fits (a spec card: the spec agent; a build card:
+  the builder) or with none, whose first message is the task link; the
+  session is linked to the task as soon as it has an id.
+* **Phases and deadlines from ClickUp.** Where a team keeps its plan is a
+  setting (**Deadline source**): found automatically, a chosen task whose
+  subtasks are the phases and milestones, a chosen list's dated tasks, or
+  only the deadlines typed in the app (which can be shown alongside the
+  others). Finding it, read-only: ClickUp's own "milestone" task type is
+  looked up across the workspace, and the tasks those milestones hang under
+  are candidates — one whose name carries the project's name is the one;
+  lists of the project's space named like a plan (roadmap, timeline, phases,
+  releases, project management) with dated tasks are candidates too. With
+  exactly one clear candidate it is used; otherwise the settings list them
+  to pick from. Found places are remembered for a day. On the axis a phase
+  (start and end) is a bar in a lane under it — done, running (gold edge) or
+  later (dashed) —, a single date is a diamond, several on the same day are
+  one; with more than three, their names go in a row under the axis. A click
+  opens the task in the panel. "Next" is the nearest end still ahead.
+* **Your side of a task.** ClickUp's statuses say where a task is in the
+  team's process; the view also says whether it is on your plate. Every
+  status lands in one of three places: **my queue** (you must act: open, in
+  progress, issues found, ready for prod — the deploy is yours again),
+  **waiting on others** (feedback, in staging, QA, a release candidate) and
+  **closed** (in prod, released, closed). Staging is not "done": a task can
+  come back from it. The numbers count tasks **leaving your queue** —
+  "handed off" — and a task that comes back re-enters it. The movement comes
+  from ClickUp's time in status (read with GET, for the build list's
+  tasks); a workspace without that ClickApp falls back on the status changes
+  the app sees between two refreshes, kept in the cache.
+* **Settings** (Settings in the header, or **Projects → Project Settings…**):
+  name, group and color; the build and specs lists (picked from the
+  workspace → space → folder → list tree) and the field that holds a spec
+  link ("Spec URL" by default; a field whose name starts with it counts, so
+  "Spec URL (Automation)" is found); the repositories with their base and
+  staging branches; who "me" is in ClickUp (the token's owner unless you
+  pick someone); the deadlines (typed by hand, or following a ClickUp
+  task's due date — it moves when the task moves; removing one asks
+  first); what My focus shows (your queue, whatever waits on you, what a
+  session touched this week, Up next, or everything open); Up next's order;
+  the **status map** — the real status names read from ClickUp, each with
+  its bucket and its place on your side (automatic, or your choice); the
+  **developer-status field** (a drop-down whose name mentions "dev", else
+  one whose name ends in "status" and is not QA's — the detected name is
+  shown — and which of its values put a task in your queue, waiting or
+  closed); which agent writes specs and which builds; the session links
+  made by hand; and **Remove project…**, which asks before forgetting the
+  project (nothing in ClickUp, git or the sessions is touched).
+* **Sessions ↔ tasks.** A session belongs to a task when you linked it by
+  hand, when its branch or folder carries `CU-<id>`, when its title or
+  first prompt carries the task link or `CU-<id>`, or — read once per
+  session from the head of its transcript — when one of its first three
+  messages does (an agent usually gets the task link after its
+  instructions, past the 200 characters the session list keeps).
+* **Branches**: `CU-<id>` in any case, with any suffix
+  (`CU-<id>-team-dashboard`), also under a folder (`someone/CU-<id>`). Only
+  the project's own tasks' branches are inspected, and "in staging" is read
+  in one `git for-each-ref --merged` call, so a repository with a thousand
+  CU- branches answers in seconds.
 * **The side panel** is keyed `project:<id>`, so every project keeps its own
   tabs. The `CU-…` chip opens the app's **own** view of the task (status,
-  fields, description, comments, read by the app) as a panel tab — not a
-  webview, where ClickUp would be signed out; "Open in ClickUp ↗" takes the
-  real page to your browser. The small ↗ on the chip does that directly.
+  fields, description, comments) as a panel tab; "Open in ClickUp ↗" takes
+  the real page to your browser. The small ↗ on the chip does that directly.
 * **States**: a skeleton while the first answer loads; "No ClickUp token"
-  with how to set one; offline (the last copy, "as of …"); an error with the
-  request that failed; "no ClickUp list yet".
+  with how to set one; offline (the last copy, "as of …"); an error in your
+  language with the request that failed; "no ClickUp list yet" (pick one in
+  the settings); PRs "gh not signed in" when `gh` is not logged in — the
+  rest works.
 
 **Where it is kept.** `~/Library/Application Support/Clauding/project-boards.json`
-holds the projects (name, color, group, the lists, the repositories with their
-`baseBranch` — `main` by default — and `stagingBranch` — `staging` by default,
-the ClickUp field that holds a spec link, `specUrlFieldName`, `"Spec URL"` by
-default and matched without regard to case, deadlines, Up next, manual
-session links); `project-cache/<id>.json` next to it holds the last ClickUp
-answer. Deadlines, Up next and the other settings are edited in that file for
-now; the settings sheet, pinning, manual links and starting a session for a
-task are stage 2.
+holds the projects (name, color, group, the lists and the link they came
+from, the repositories with `baseBranch` — `main` by default — and
+`stagingBranch` — `staging` by default —, `specUrlFieldName`, deadlines, Up
+next, `focusRules`, `statusOverrides`, `specStatusOverrides`,
+`perspectiveOverrides`, `developerStatusFieldName`, `developerStatusMap`,
+`deadlineSource`, manual session links, agent roles). `project-cache/<id>.json`
+next to it holds the last ClickUp answer, the time in status, the status
+changes seen between refreshes, the phases read from the deadline source and
+where they were found.
 
 **The token.** Your personal ClickUp API token, from the macOS Keychain
 (`security add-generic-password -a clickup-api -s clickup-api-token -w <token>`)
@@ -1978,7 +2068,14 @@ CLAUDING_SCREENSHOT_CLICK='[data-agents-tab]>>[data-add-agent]' ...
                                                          # cannot photograph: picking several
                                                          # session rows out of the list — a plain
                                                          # click there opens a terminal, a
-                                                         # modifier click only selects
+                                                         # modifier click only selects. An entry
+                                                         # can also be `wait:<ms>` (a sheet reading
+                                                         # ClickUp), `scroll:<selector>`,
+                                                         # `fill:<selector>::<text>` (typed the way
+                                                         # React hears it) or
+                                                         # `select:<selector>::<value>` — so a whole
+                                                         # flow (add a project from a link, edit its
+                                                         # settings) can be walked for a picture
 
 CLAUDING_SMOKE_EMOJI=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the agent form's emoji field, without spawning a single `claude`: opens

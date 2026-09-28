@@ -15,6 +15,7 @@ import {
   harvestSkillsTaskPrompt,
   newAgentSessionName
 } from "./metaPrompts.js";
+import { taskKickoffMessage } from "./projectsView.js";
 import { assignmentPlan, definitionLoadsOnNextResume } from "./assignmentPlan.js";
 import { bulkSessionPlan, confirmationTitles, selectionPlan, selectionWithin } from "./selectionPlan.js";
 import { flagsChangePlan } from "./sessionFlagsPlan.js";
@@ -238,6 +239,12 @@ export default function App() {
   const [projectSummaries, setProjectSummaries] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [selectedBoardId, setSelectedBoardId] = useState(null);
+  // Projects → Add a Project… / Project Settings… (the menu bar), and a task
+  // picked from the search on the left: counters and requests the Projects
+  // components react to.
+  const [projectAddRequest, setProjectAddRequest] = useState(false);
+  const [projectSettingsRequest, setProjectSettingsRequest] = useState(false);
+  const [projectSearchRequest, setProjectSearchRequest] = useState(null);
   const loadedCountRef = useRef(0);
   // terminalId -> groupId for a session opened from a group header's "+":
   // the group is set the moment the CLI registers its session id.
@@ -318,6 +325,17 @@ export default function App() {
   useEffect(() => {
     loadProjectSummaries();
     return window.clauding.onBoardsChanged(() => loadProjectSummaries());
+  }, [loadProjectSummaries]);
+
+  useEffect(() => {
+    return window.clauding.onBoardsMenu((request) => {
+      setLeftTab("projects");
+      if (request && request.action === "add") {
+        setProjectAddRequest(true);
+      } else {
+        setProjectSettingsRequest(true);
+      }
+    });
   }, [loadProjectSummaries]);
 
   // Entering the Projects tab with nothing picked opens the first project,
@@ -1832,9 +1850,34 @@ export default function App() {
   );
 
   const addProject = useCallback(async (draft) => {
-    const board = await window.clauding.addBoard(draft);
-    return board;
+    return window.clauding.addBoard(draft);
   }, []);
+
+  const selectProjectTask = useCallback((boardId, taskId, query) => {
+    setSelectedBoardId(boardId);
+    setProjectSearchRequest({ boardId, taskId, query, at: Date.now() });
+  }, []);
+
+  // "Start a session for this task": a new terminal in the repository's
+  // folder, as the agent that fits the task (or none), whose first message
+  // is the task link; once its session has an id it is linked to the task.
+  const startSessionForTask = useCallback(
+    async ({ boardId, card, repository, agent }) => {
+      const kickoffMessage = agent
+        ? `${taskKickoffMessage(card)}\n\n${agentStartKickoffMessage(agent.name)}`
+        : taskKickoffMessage(card);
+      setLeftTab("sessions");
+      const record = await openTerminal({
+        workingDirectory: repository.localPath,
+        agentId: agent ? agent.id : null,
+        kickoffMessage
+      });
+      if (record) {
+        window.clauding.linkTerminalToTask(boardId, card.id, record.terminalId).catch((error) => console.error("Could not link the session", error));
+      }
+    },
+    [openTerminal]
+  );
 
   const windowToolsNode = (
     <WindowTools
@@ -1906,7 +1949,10 @@ export default function App() {
             loading: projectsLoading,
             selectedBoardId: projectViewBoardId,
             onSelect: setSelectedBoardId,
+            onSelectTask: selectProjectTask,
             onAdd: addProject,
+            addRequest: projectAddRequest,
+            onAddRequestHandled: () => setProjectAddRequest(false),
             readOnly: false
           }}
         />
@@ -1945,6 +1991,17 @@ export default function App() {
                 panelOpen={panelOpen}
                 onTogglePanel={() => setPanelVisible(!panelOpen)}
                 windowTools={windowToolsNode}
+                sessions={allSessions}
+                agents={agentState.agents}
+                settingsRequest={projectSettingsRequest}
+                onSettingsRequestHandled={() => setProjectSettingsRequest(false)}
+                searchRequest={projectSearchRequest}
+                onSearchRequestHandled={() => setProjectSearchRequest(null)}
+                onStartSession={startSessionForTask}
+                onRemoved={() => {
+                  setSelectedBoardId(null);
+                  loadProjectSummaries();
+                }}
               />
             ) : null
           }

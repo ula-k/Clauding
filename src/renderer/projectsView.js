@@ -78,6 +78,9 @@ export function projectListModel(summaries) {
       color: entry.color ? `var(${entry.color})` : "var(--project-color-0)",
       loaded: Boolean(summary),
       leftToClose: summary ? summary.leftToClose : null,
+      inQueue: summary ? (summary.inQueue !== undefined ? summary.inQueue : summary.leftToClose) : null,
+      waiting: summary ? summary.waiting || 0 : null,
+      closed: summary ? summary.closed || 0 : null,
       closedPercent: summary ? Math.round((summary.closedFraction || 0) * 100) : null,
       segments: summary ? bucketSegments(summary.buckets) : [],
       deadline: summary ? deadlineLabel(summary.nextDeadline) : deadlineLabel(null)
@@ -118,8 +121,8 @@ export function filterChips(snapshot) {
 
 // The cards one chip shows: the focus list keeps its own order (needs me
 // first, then latest activity), Up next keeps the pinned order, the rest
-// are sorted the focus way. Build and Everything return the not-started
-// ones separately so they can be folded away.
+// are sorted the focus way. My focus, Build and Everything return the
+// not-started ones separately so they can be folded away.
 export function cardsForFilter(snapshot, filterId) {
   if (!snapshot) {
     return { cards: [], notStarted: [] };
@@ -127,11 +130,11 @@ export function cardsForFilter(snapshot, filterId) {
   const byId = new Map(snapshot.cards.map((card) => [card.id, card]));
   const ids = (snapshot.filters && snapshot.filters[filterId]) || [];
   const cards = ids.map((cardId) => byId.get(cardId)).filter(Boolean);
-  if (filterId === "focus" || filterId === "upNext") {
+  if (filterId === "upNext") {
     return { cards, notStarted: [] };
   }
-  const sorted = sortNeedsFirst(cards);
-  if (filterId === "build" || filterId === "everything") {
+  const sorted = filterId === "focus" ? cards : sortNeedsFirst(cards);
+  if (filterId === "focus" || filterId === "build" || filterId === "everything") {
     return { cards: sorted.filter((card) => !isNotStarted(card)), notStarted: sorted.filter(isNotStarted) };
   }
   return { cards: sorted, notStarted: [] };
@@ -168,7 +171,9 @@ export function pipelineDots(stage) {
     } else if (index === stage.index) {
       state = stage.state === "wait" ? "wait" : "now";
     }
-    return { step, state };
+    // After the hand-off step (staging) the work is other people's.
+    const others = Number.isInteger(stage.handOffIndex) && index > stage.handOffIndex;
+    return { step, state, others, handOff: Number.isInteger(stage.handOffIndex) && index === stage.handOffIndex };
   });
 }
 
@@ -302,12 +307,21 @@ export function dailyPaceText(dailyPace) {
       ? String(Math.max(dailyPace.perDayHigh, 1))
       : `${dailyPace.perDayLow}–${dailyPace.perDayHigh}`;
   const todayTarget = Math.max(dailyPace.todayTarget || 0, 1);
+  const handedOff = dailyPace.handedOffToday !== undefined ? dailyPace.handedOffToday : dailyPace.closedToday || 0;
+  // Less than one a day reads better per week ("about 3 a week").
+  const weekly = Number.isFinite(dailyPace.perDay) && dailyPace.perDay < 1;
+  const perWeek = Number.isFinite(dailyPace.perWeek) ? dailyPace.perWeek : Math.round(dailyPace.perDay * 50) / 10;
+  const weekRange = String(Math.max(Math.round(perWeek), 1));
   return {
-    key: "projects.paceLine",
-    values: { label: dailyPace.deadlineLabel, tasks: dailyPace.tasks, days: dailyPace.workDays, range },
+    key: weekly ? "projects.paceLineWeekly" : "projects.paceLine",
+    values: { label: dailyPace.deadlineLabel, tasks: dailyPace.tasks, days: dailyPace.workDays, range: weekly ? weekRange : range },
+    weekly,
+    todayKey: weekly ? "projects.handedOffTodayWeekly" : "projects.handedOffToday",
+    todayTargetText: weekly ? weekRange : String(todayTarget),
     todayTarget,
-    closedToday: dailyPace.closedToday,
-    todayDots: Array.from({ length: Math.max(todayTarget, Math.min(dailyPace.closedToday, 8)) }, (unused, index) => index < dailyPace.closedToday)
+    handedOffToday: handedOff,
+    closedToday: handedOff,
+    todayDots: Array.from({ length: Math.max(todayTarget, Math.min(handedOff, 8)) }, (unused, index) => index < handedOff)
   };
 }
 
@@ -317,9 +331,21 @@ export function axisMilestones(timeline, { minimumGap = 0.2 } = {}) {
   if (!timeline || !Array.isArray(timeline.deadlines)) {
     return [];
   }
+  // Single dates only (phases are drawn as bars, see phaseLanes); several
+  // on the same day become one marker that names them all.
+  const merged = [];
+  for (const deadline of timeline.deadlines.filter((entry) => !Number.isFinite(entry.start))) {
+    const sameDay = merged.find((entry) => new Date(entry.date).toDateString() === new Date(deadline.date).toDateString());
+    if (sameDay) {
+      sameDay.label = `${sameDay.label} · ${deadline.label}`;
+      sameDay.together = (sameDay.together || 1) + 1;
+      continue;
+    }
+    merged.push({ ...deadline });
+  }
   let lastAt = -1;
   let lastRow = 1;
-  return timeline.deadlines.map((deadline) => {
+  return merged.map((deadline) => {
     const next = timeline.next && timeline.next.id === deadline.id && timeline.next.date === deadline.date;
     let row = 0;
     if (lastAt >= 0 && deadline.at - lastAt < minimumGap) {
@@ -329,6 +355,22 @@ export function axisMilestones(timeline, { minimumGap = 0.2 } = {}) {
     lastRow = row;
     return { ...deadline, state: deadline.passed ? "done" : next ? "next" : "later", row };
   });
+}
+
+// Phases (start → end) as bars in lanes under the axis: a phase goes in the
+// first lane where it does not overlap the one before.
+export function phaseLanes(timeline) {
+  const phases = ((timeline && timeline.deadlines) || []).filter((deadline) => Number.isFinite(deadline.start));
+  const lanes = [];
+  for (const phase of [...phases].sort((first, second) => first.start - second.start)) {
+    let lane = lanes.find((candidate) => candidate[candidate.length - 1].date < phase.start);
+    if (!lane) {
+      lane = [];
+      lanes.push(lane);
+    }
+    lane.push({ ...phase, state: phase.passed ? "done" : phase.running ? "running" : "later" });
+  }
+  return lanes;
 }
 
 // The small burn-down line: open tasks per week, as SVG points in a box of
@@ -365,5 +407,202 @@ export function sourceState(snapshot) {
   if (clickup.error === "network") {
     return { kind: "offline", refreshedAt: clickup.refreshedAt };
   }
-  return { kind: "error", refreshedAt: clickup.refreshedAt, message: clickup.message || "", call: clickup.call || "" };
+  return {
+    kind: "error",
+    refreshedAt: clickup.refreshedAt,
+    message: clickup.message || "",
+    call: clickup.call || "",
+    error: clickupErrorLabel(clickup.error, clickup.status)
+  };
+}
+
+// A ClickUp failure, as a sentence of the locale files.
+export function clickupErrorLabel(kind, status) {
+  const keys = {
+    "not-found": "projects.clickupError.notFound",
+    "rate-limited": "projects.clickupError.rateLimited",
+    network: "projects.clickupError.network",
+    unauthorized: "projects.clickupError.unauthorized",
+    "no-token": "projects.clickupError.noToken"
+  };
+  return { key: keys[kind] || "projects.clickupError.http", values: { status: status || "?" } };
+}
+
+// ---- search ---------------------------------------------------------------------
+
+function normalizeForSearch(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
+function matchesQuery(query, ...texts) {
+  const wanted = normalizeForSearch(query);
+  if (!wanted) {
+    return true;
+  }
+  return texts.some((text) => normalizeForSearch(text).includes(wanted));
+}
+
+// "Search projects and tasks" on the left: every project whose name
+// matches, and every project with tasks that match (at most a few of them
+// listed under it, from the cached ClickUp answer). An empty query keeps
+// the whole list.
+export const SEARCH_TASKS_PER_PROJECT = 5;
+
+export function searchProjects(summaries, query) {
+  const list = summaries || [];
+  if (!normalizeForSearch(query)) {
+    return list.map((summary) => ({ ...summary, matchingTasks: [], hiddenMatches: 0 }));
+  }
+  const found = [];
+  for (const summary of list) {
+    const nameMatches = matchesQuery(query, summary.name);
+    const tasks = (summary.tasks || []).filter((task) =>
+      matchesQuery(query, task.name, task.id, `CU-${task.id}`, task.customId)
+    );
+    if (nameMatches || tasks.length > 0) {
+      found.push({
+        ...summary,
+        matchingTasks: tasks.slice(0, SEARCH_TASKS_PER_PROJECT),
+        hiddenMatches: Math.max(tasks.length - SEARCH_TASKS_PER_PROJECT, 0)
+      });
+    }
+  }
+  return found;
+}
+
+// The search box above the task cards: a card matches by its name, its
+// task id (with or without "CU-"), its ClickUp status, its assignees, its
+// spec's name and its branch names.
+export function searchCards(cards, query) {
+  if (!normalizeForSearch(query)) {
+    return cards || [];
+  }
+  return (cards || []).filter((card) =>
+    matchesQuery(
+      query,
+      card.name,
+      card.id,
+      `CU-${card.id}`,
+      card.customId,
+      card.status,
+      card.planning ? card.planning.name : "",
+      ...(card.assignees || []).map((person) => person.name),
+      ...(card.branches || []).map((branch) => branch.name)
+    )
+  );
+}
+
+// ---- a click on a number ----------------------------------------------------------
+
+// The numbers on top are filters too: a bucket, a person, the spec counters
+// and red CI each narrow the cards to the ones they count. The answer names
+// the filter for the chip that says it is on ({ key, values }).
+export function cardsForStat(snapshot, stat) {
+  if (!snapshot || !stat) {
+    return [];
+  }
+  const cards = snapshot.cards || [];
+  const build = cards.filter((card) => card.kind === "build");
+  if (stat.kind === "bucket") {
+    return build.filter((card) => (card.bucket || "other") === stat.bucket);
+  }
+  if (stat.kind === "person") {
+    return build.filter(
+      (card) =>
+        card.bucket !== "done" &&
+        (stat.personId === null
+          ? (card.assignees || []).length === 0
+          : (card.assignees || []).some((person) => String(person.id) === String(stat.personId)))
+    );
+  }
+  if (stat.kind === "perspective") {
+    return build.filter((card) => card.perspective === stat.perspective);
+  }
+  if (stat.kind === "specsToWrite") {
+    return cards.filter((card) => card.planning && ["noSpec", "session", "draft"].includes(card.spec.steps[card.spec.index]));
+  }
+  if (stat.kind === "specsInReview") {
+    return cards.filter((card) => card.planning && card.spec.steps[card.spec.index] === "review");
+  }
+  if (stat.kind === "redCi") {
+    return cards.filter((card) => (card.pullRequests || []).some((pull) => pull.state === "open" && pull.ci === "failing"));
+  }
+  return [];
+}
+
+export function statFilterLabel(stat) {
+  if (!stat) {
+    return null;
+  }
+  if (stat.kind === "bucket") {
+    return { key: "projects.statFilter.bucket", values: { name: `projects.bucket.${stat.bucket}` }, translateName: true };
+  }
+  if (stat.kind === "person") {
+    return { key: "projects.statFilter.person", values: { name: stat.name || "" }, translateName: false };
+  }
+  if (stat.kind === "perspective") {
+    return { key: "projects.statFilter.bucket", values: { name: `projects.perspective.${stat.perspective}` }, translateName: true };
+  }
+  return { key: `projects.statFilter.${stat.kind}`, values: {}, translateName: false };
+}
+
+// ---- deadlines --------------------------------------------------------------------
+
+// Why the deadline axis is empty, honestly: the project has no deadline of
+// its own, and ClickUp has no dates to offer either — or it has some (due
+// dates, milestones) that a deadline could follow.
+export function emptyDeadlineReason(snapshot) {
+  const sources = (snapshot && snapshot.dateSources) || { dueDates: 0, milestones: 0, deadlinesSet: 0 };
+  if (sources.deadlinesSet > 0) {
+    return { key: "projects.deadlinesWithoutDates", values: { count: sources.deadlinesSet } };
+  }
+  if (sources.dueDates === 0 && sources.milestones === 0) {
+    return { key: "projects.noDatesInClickup", values: {} };
+  }
+  return { key: "projects.datesInClickup", values: { dueDates: sources.dueDates, milestones: sources.milestones } };
+}
+
+// ---- the settings sheet -----------------------------------------------------------
+
+// A day typed into a date field ("2026-10-15") → the time the store keeps
+// (local noon, so no time zone moves it to another day), and back.
+export function dateInputToTime(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0).getTime();
+}
+
+export function timeToDateInput(time) {
+  if (!Number.isFinite(time)) {
+    return "";
+  }
+  const day = new Date(time);
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
+// Up next, reordered: the task moves one place up (-1) or down (+1).
+export function moveInList(list, itemId, step) {
+  const items = [...(list || [])];
+  const index = items.indexOf(itemId);
+  const target = index + step;
+  if (index === -1 || target < 0 || target >= items.length) {
+    return items;
+  }
+  [items[index], items[target]] = [items[target], items[index]];
+  return items;
+}
+
+// The first message of a session started for a task: the link comes first,
+// so it is inside the short first prompt the session list keeps, and the
+// task is linked to the session by the ordinary "mention" rule as well.
+export function taskKickoffMessage(card) {
+  const link = card.url || `https://app.clickup.com/t/${card.id}`;
+  return `${link}\n\n${card.kind === "spec" ? "Spec task" : "Task"}: ${card.name}`;
 }

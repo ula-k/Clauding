@@ -15,7 +15,8 @@
 //         "clickup": {
 //           "buildListId": "901…", "buildListName": "Web build list",
 //           "planningListId": "901…", "planningListName": "…",
-//           "seedTaskId": "abc123aa1"        // how the lists were found
+//           "seedTaskId": "abc123aa1",       // a task link, when one was given
+//           "projectLink": "https://app.clickup.com/…/v/li/901…" // the link it was set up from
 //         },
 //         "clickupUserId": "123456",
 //         "specUrlFieldName": "Spec URL",   // the custom field holding the spec link
@@ -33,7 +34,12 @@
 //         "manualLinks": { "<taskId>": { "sessionIds": [], "unlinkedSessionIds": [] } },
 //         "agentRoles": { "<agentId>": "spec" | "builder" | "other" },
 //         "statusOverrides": { "<status name>": "<bucket>" },
-//         "specStatusOverrides": { "<status name>": "<spec stage>" }
+//         "specStatusOverrides": { "<status name>": "<spec stage>" },
+//         "focusRules": { "myQueue": true, "needsMe": true, "recentSession": true,
+//                         "upNext": true, "everythingOpen": false },
+//         "perspectiveOverrides": { "<status name>": "myQueue" | "waiting" | "closed" },
+//         "developerStatusFieldName": null,        // null = detected
+//         "developerStatusMap": { "<field value>": "myQueue" | "waiting" | "closed" }
 //       }
 //     ]
 //   }
@@ -45,11 +51,27 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { BUCKETS, SPEC_STAGE_ORDER } from "./lib/statusBuckets.js";
+import { cleanDeadlineSource } from "./lib/deadlineSources.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 200;
 const MAXIMUM_NAME_LENGTH = 60;
 const MAXIMUM_UP_NEXT = 50;
 const ROLES = ["spec", "builder", "other"];
+// What "My focus" shows; each can be switched off in the settings sheet.
+export const DEFAULT_FOCUS_RULES = { myQueue: true, needsMe: true, recentSession: true, upNext: true, everythingOpen: false };
+const PERSPECTIVE_CHOICES = ["myQueue", "waiting", "closed"];
+
+function cleanFocusRules(raw) {
+  const rules = { ...DEFAULT_FOCUS_RULES };
+  if (raw && typeof raw === "object") {
+    for (const key of Object.keys(DEFAULT_FOCUS_RULES)) {
+      if (typeof raw[key] === "boolean") {
+        rules[key] = raw[key];
+      }
+    }
+  }
+  return rules;
+}
 export const DEFAULT_BASE_BRANCH = "main";
 export const DEFAULT_STAGING_BRANCH = "staging";
 export const DEFAULT_SPEC_URL_FIELD_NAME = "Spec URL";
@@ -100,14 +122,17 @@ function cleanDeadline(raw) {
     return null;
   }
   const label = cleanText(raw.label, 80);
-  const date = Number(raw.date);
-  if (!label || !Number.isFinite(date)) {
+  // A deadline that follows a task may have no date of its own yet: the
+  // snapshot takes the task's due date (and it moves with the task).
+  const date = raw.date === null || raw.date === undefined || raw.date === "" ? null : Number(raw.date);
+  const followsTask = raw.source === "task" && cleanId(raw.taskId);
+  if (!label || (!followsTask && !Number.isFinite(date))) {
     return null;
   }
   return {
     id: cleanId(raw.id) || randomUUID(),
     label,
-    date,
+    date: Number.isFinite(date) ? date : null,
     source: raw.source === "task" ? "task" : "manual",
     taskId: raw.source === "task" ? cleanId(raw.taskId) : null
   };
@@ -164,7 +189,8 @@ export function cleanBoard(raw) {
       buildListName: cleanText(clickup.buildListName, 120) || null,
       planningListId: cleanId(clickup.planningListId),
       planningListName: cleanText(clickup.planningListName, 120) || null,
-      seedTaskId: cleanId(clickup.seedTaskId)
+      seedTaskId: cleanId(clickup.seedTaskId),
+      projectLink: cleanText(clickup.projectLink, 400) || null
     },
     clickupUserId: cleanId(raw.clickupUserId),
     specUrlFieldName: cleanText(raw.specUrlFieldName, 120) || DEFAULT_SPEC_URL_FIELD_NAME,
@@ -175,7 +201,16 @@ export function cleanBoard(raw) {
     manualLinks: cleanManualLinks(raw.manualLinks),
     agentRoles: cleanMap(raw.agentRoles, ROLES),
     statusOverrides: cleanMap(raw.statusOverrides, Object.values(BUCKETS)),
-    specStatusOverrides: cleanMap(raw.specStatusOverrides, SPEC_STAGE_ORDER)
+    specStatusOverrides: cleanMap(raw.specStatusOverrides, SPEC_STAGE_ORDER),
+    focusRules: cleanFocusRules(raw.focusRules),
+    // Where each status lands from the user's side (lib/perspective.js).
+    perspectiveOverrides: cleanMap(raw.perspectiveOverrides, PERSPECTIVE_CHOICES),
+    // The developer-status custom field (null = detected) and which of its
+    // values put a task in the queue, waiting or closed.
+    developerStatusFieldName: cleanText(raw.developerStatusFieldName, 120) || null,
+    developerStatusMap: cleanMap(raw.developerStatusMap, PERSPECTIVE_CHOICES),
+    // Where the phases and deadlines come from (lib/deadlineSources.js).
+    deadlineSource: cleanDeadlineSource(raw.deadlineSource)
   };
 }
 

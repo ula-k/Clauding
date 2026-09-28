@@ -9,15 +9,24 @@ import {
   burnDownPoints,
   cardLinks,
   cardsForFilter,
+  cardsForStat,
+  emptyDeadlineReason,
+  moveInList,
+  searchCards,
+  statFilterLabel,
   dailyPaceText,
   defaultSpecStage,
   filterChips,
   needsLabel,
+  phaseLanes,
   pipelineDots,
   sessionStateLabel,
   sessionTone,
   sourceState
 } from "../projectsView.js";
+import ProjectSettingsSheet, { DeadlineRow, blankDeadline, usableDeadlines } from "./ProjectSettingsSheet.jsx";
+import PopupMenu, { MenuItem, MenuLabel, MenuSeparator, MenuSubmenu } from "./PopupMenu.jsx";
+import { DotsIcon, SearchIcon } from "./Icons.jsx";
 
 // The middle column while a project is selected in the Projects tab. It
 // replaces the terminal only on screen: MiddleColumn keeps the terminal
@@ -26,14 +35,23 @@ import {
 // Top to bottom: the header (name, where the data comes from, Refresh),
 // the deadline axis with the computed "per day" line, the numbers, the
 // filter chips, and the task cards — or, under "Specs pipeline", the stage
-// counters with the list of one stage. Everything is read-only: the only
-// things a click changes are what this view shows, the side panel (the
-// app's own ClickUp task view) and which session is on screen.
+// counters with the list of one stage. ClickUp, git and GitHub are only
+// read: what a click can change is what this view shows, the side panel
+// (the app's own ClickUp task view), which session is on screen, and this
+// project's own settings in project-boards.json (Up next, links made by
+// hand, deadlines — through the settings sheet, the deadline sheet or a
+// card's "…" menu). "Start a session for this task" opens a terminal.
 
 const AUTO_REFRESH_MILLISECONDS = 5 * 60 * 1000;
 const ROLE_EMOJI = { spec: "✍️", builder: "🔨", other: "💬" };
 const BURN_DOWN_WIDTH = 150;
 const BURN_DOWN_HEIGHT = 36;
+// How many of the newest sessions "Link a session…" offers.
+const SESSIONS_IN_LINK_MENU = 15;
+// About how wide one label under the deadline axis is.
+const AXIS_LABEL_PIXELS = 330;
+// …and one date alone ("Apr 12").
+const AXIS_DATE_PIXELS = 90;
 
 function cleanErrorMessage(error) {
   return String(error && error.message ? error.message : error).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
@@ -60,7 +78,15 @@ export default function ProjectView({
   onLoaded,
   panelOpen,
   onTogglePanel,
-  windowTools
+  windowTools,
+  sessions,
+  agents,
+  settingsRequest,
+  onSettingsRequestHandled,
+  searchRequest,
+  onSearchRequestHandled,
+  onStartSession,
+  onRemoved
 }) {
   const { translate, language } = useTranslation();
   const [snapshot, setSnapshot] = useState(null);
@@ -70,6 +96,10 @@ export default function ProjectView({
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [specStage, setSpecStage] = useState(null);
   const [showNotStarted, setShowNotStarted] = useState(false);
+  const [statFilter, setStatFilter] = useState(null);
+  const [query, setQuery] = useState("");
+  const [settingsSection, setSettingsSection] = useState(null);
+  const [deadlineEditing, setDeadlineEditing] = useState(null);
   const boardRef = useRef(boardId);
   const chipsRef = useRef(null);
   const onLoadedRef = useRef(onLoaded);
@@ -112,6 +142,10 @@ export default function ProjectView({
     setExpandedCardId(null);
     setSpecStage(null);
     setShowNotStarted(false);
+    setStatFilter(null);
+    setQuery("");
+    setSettingsSection(null);
+    setDeadlineEditing(null);
     load();
     // Every five minutes while the view is open; the main process only
     // asks ClickUp again when its cache is older than that.
@@ -119,8 +153,83 @@ export default function ProjectView({
     return () => clearInterval(timer);
   }, [boardId, load]);
 
+  // Projects → Project Settings… in the menu bar.
+  useEffect(() => {
+    if (settingsRequest) {
+      setSettingsSection("general");
+      onSettingsRequestHandled();
+    }
+  }, [settingsRequest, onSettingsRequestHandled]);
+
+  // A task found by the search on the left: its name in the search box
+  // here, on Everything, so the card is on screen.
+  useEffect(() => {
+    if (searchRequest && searchRequest.boardId === boardId) {
+      setQuery(searchRequest.query || "");
+      setFilter("everything");
+      setStatFilter(null);
+      setShowNotStarted(true);
+      setExpandedCardId(searchRequest.taskId || null);
+      onSearchRequestHandled();
+    }
+  }, [searchRequest, boardId, onSearchRequestHandled]);
+
+  // This project's own settings, changed from the view (pin, links,
+  // deadlines): read the board, change it, save it, draw again.
+  const changeBoard = useCallback(
+    async (mutate) => {
+      const state = await window.clauding.getBoards();
+      const board = (state.boards || []).find((candidate) => candidate.id === boardId);
+      if (!board) {
+        return;
+      }
+      await window.clauding.updateBoard(boardId, mutate(board));
+      await load();
+    },
+    [boardId, load]
+  );
+
+  const cardActions = useMemo(
+    () => ({
+      pin: (card) => changeBoard((board) => ({ upNext: [...(board.upNext || []).filter((taskId) => taskId !== card.id), card.id] })),
+      unpin: (card) => changeBoard((board) => ({ upNext: (board.upNext || []).filter((taskId) => taskId !== card.id) })),
+      move: (card, step) => changeBoard((board) => ({ upNext: moveInList(board.upNext || [], card.id, step) })),
+      link: (card, sessionId) =>
+        changeBoard((board) => {
+          const links = { ...(board.manualLinks || {}) };
+          const link = links[card.id] || { sessionIds: [], unlinkedSessionIds: [] };
+          links[card.id] = {
+            sessionIds: [...new Set([...link.sessionIds, sessionId])],
+            unlinkedSessionIds: link.unlinkedSessionIds.filter((candidate) => candidate !== sessionId)
+          };
+          return { manualLinks: links };
+        }),
+      unlink: (card, sessionId) =>
+        changeBoard((board) => {
+          const links = { ...(board.manualLinks || {}) };
+          const link = links[card.id] || { sessionIds: [], unlinkedSessionIds: [] };
+          links[card.id] = {
+            sessionIds: link.sessionIds.filter((candidate) => candidate !== sessionId),
+            unlinkedSessionIds: [...new Set([...link.unlinkedSessionIds, sessionId])]
+          };
+          return { manualLinks: links };
+        }),
+      start: (card, repository, agent) => onStartSession && onStartSession({ boardId, card, repository, agent })
+    }),
+    [changeBoard, onStartSession, boardId]
+  );
+
+  function chooseStat(stat) {
+    setStatFilter(stat);
+    setExpandedCardId(null);
+    if (chipsRef.current) {
+      chipsRef.current.scrollIntoView({ block: "start" });
+    }
+  }
+
   function chooseFilter(filterId) {
     setFilter(filterId);
+    setStatFilter(null);
     setExpandedCardId(null);
     // Picking a list is asking to read it: the chips go to the top of the
     // view (they stay there, sticky) with the list right under them.
@@ -161,6 +270,9 @@ export default function ProjectView({
         >
           {translate("projects.refresh")}
         </button>
+        <button type="button" className="text-link" onClick={() => setSettingsSection("general")} data-project-settings-open>
+          {translate("projects.settings")}
+        </button>
         {onTogglePanel && (
           <button type="button" className="text-link" onClick={onTogglePanel} data-project-panel-toggle>
             {panelOpen ? translate("panel.hide") : translate("panel.show")}
@@ -179,8 +291,15 @@ export default function ProjectView({
         {snapshot && <SourceBanner state={state} />}
         {snapshot && (
           <>
-            <DeadlineCard snapshot={snapshot} now={now} language={language} />
-            {snapshot.cards.length > 0 && <StatsCards snapshot={snapshot} />}
+            <DeadlineCard
+              snapshot={snapshot}
+              now={now}
+              language={language}
+              onEdit={(deadlineId) => setDeadlineEditing(deadlineId || "new")}
+              onEditAll={() => setSettingsSection("deadlines")}
+              onOpenTask={onOpenTask}
+            />
+            {snapshot.cards.length > 0 && <StatsCards snapshot={snapshot} activeStat={statFilter} onStat={chooseStat} />}
             {snapshot.cards.length === 0 && state.kind === "ok" && (
               <div className="project-banner" data-project-state="empty">
                 {translate("projects.noTasks")}
@@ -202,13 +321,60 @@ export default function ProjectView({
                     </button>
                   ))}
                   <span className="project-header-spacer" />
-                  {filter !== "specs" && filter !== "upNext" && <span className="project-sorted">{translate("projects.sortedNeedsFirst")}</span>}
+                  <span className="search-box task-search">
+                    <SearchIcon />
+                    <input
+                      type="search"
+                      value={query}
+                      placeholder={translate("projects.searchTasks")}
+                      onChange={(event) => setQuery(event.target.value)}
+                      spellCheck={false}
+                      data-task-search
+                    />
+                  </span>
                 </div>
-                {filter === "specs" ? (
+                {statFilter && (
+                  <div className="stat-filter-row" data-stat-filter={statFilter.kind}>
+                    <span className="filter-chip is-active">
+                      {(() => {
+                        const label = statFilterLabel(statFilter);
+                        return translate(label.key, label.translateName ? { name: translate(label.values.name) } : label.values);
+                      })()}
+                      <span className="filter-chip-count">{searchCards(cardsForStat(snapshot, statFilter), query).length}</span>
+                      <button type="button" className="stat-filter-clear" onClick={() => setStatFilter(null)} title={translate("projects.clearFilter")} data-stat-filter-clear>
+                        ✕
+                      </button>
+                    </span>
+                  </div>
+                )}
+                {!statFilter && filter !== "specs" && filter !== "upNext" && <div className="project-sorted">{translate("projects.sortedNeedsFirst")}</div>}
+                {statFilter ? (
+                  <CardList
+                    snapshot={snapshot}
+                    filter="stat"
+                    statCards={searchCards(cardsForStat(snapshot, statFilter), query)}
+                    now={now}
+                    language={language}
+                    expandedCardId={expandedCardId}
+                    onToggle={(cardId) => setExpandedCardId(expandedCardId === cardId ? null : cardId)}
+                    showNotStarted
+                    onShowNotStarted={() => {}}
+                    pullRequestsAvailable={pullRequestsAvailable}
+                    onOpenTask={onOpenTask}
+                    onOpenExternal={onOpenExternal}
+                    onSelectSession={onSelectSession}
+                    sessions={sessions}
+                    agents={agents}
+                    repositories={snapshot.sources.repositories}
+                    actions={cardActions}
+                    query={query}
+                  />
+                ) : filter === "specs" ? (
                   <SpecPipeline
                     snapshot={snapshot}
                     stage={specStage || defaultSpecStage(snapshot.specPipeline)}
                     onStage={setSpecStage}
+                    query={query}
                     now={now}
                     onOpenTask={onOpenTask}
                     onSelectSession={onSelectSession}
@@ -227,12 +393,125 @@ export default function ProjectView({
                     onOpenTask={onOpenTask}
                     onOpenExternal={onOpenExternal}
                     onSelectSession={onSelectSession}
+                    sessions={sessions}
+                    agents={agents}
+                    repositories={snapshot.sources.repositories}
+                    actions={cardActions}
+                    query={query}
                   />
                 )}
               </>
             )}
           </>
         )}
+      </div>
+      {settingsSection && (
+        <ProjectSettingsSheet
+          boardId={boardId}
+          snapshot={snapshot}
+          sessions={sessions}
+          agents={agents}
+          initialSection={settingsSection}
+          onClose={() => setSettingsSection(null)}
+          onSaved={() => {
+            setSettingsSection(null);
+            load({ refresh: true });
+          }}
+          onRemoved={(removedId) => {
+            setSettingsSection(null);
+            if (onRemoved) {
+              onRemoved(removedId);
+            }
+          }}
+        />
+      )}
+      {deadlineEditing && (
+        <DeadlineSheet
+          boardId={boardId}
+          deadlineId={deadlineEditing === "new" ? null : deadlineEditing}
+          snapshot={snapshot}
+          onClose={() => setDeadlineEditing(null)}
+          onSaved={() => {
+            setDeadlineEditing(null);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// One deadline, from a click on the axis (or "+ Add a deadline"): the same
+// row the settings sheet has, saved on its own.
+function DeadlineSheet({ boardId, deadlineId, snapshot, onClose, onSaved }) {
+  const { translate } = useTranslation();
+  const [board, setBoard] = useState(null);
+  const [deadline, setDeadline] = useState(null);
+  const [datedTasks, setDatedTasks] = useState([]);
+  const sheetRef = useRef(null);
+  const cardsById = useMemo(() => new Map(((snapshot && snapshot.cards) || []).map((card) => [card.id, card])), [snapshot]);
+
+  useEffect(() => {
+    let canceled = false;
+    window.clauding.getBoards().then((state) => {
+      if (canceled) {
+        return;
+      }
+      const found = (state.boards || []).find((candidate) => candidate.id === boardId) || null;
+      setBoard(found);
+      const existing = found && deadlineId ? (found.deadlines || []).find((candidate) => candidate.id === deadlineId) : null;
+      setDeadline(existing ? { ...existing } : blankDeadline());
+    });
+    window.clauding
+      .getBoardSettingsData(boardId)
+      .then((answer) => {
+        if (!canceled) {
+          setDatedTasks(answer.datedTasks || []);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, [boardId, deadlineId]);
+
+  async function save(remove = false) {
+    const others = (board.deadlines || []).filter((candidate) => candidate.id !== deadline.id);
+    const deadlines = remove ? others : usableDeadlines([...others, deadline]);
+    await window.clauding.updateBoard(boardId, { deadlines });
+    onSaved();
+  }
+
+  const usable = deadline && usableDeadlines([deadline]).length === 1;
+  return (
+    <div
+      className="sheet-backdrop"
+      onMouseDown={(event) => {
+        if (sheetRef.current && !sheetRef.current.contains(event.target)) {
+          onClose();
+        }
+      }}
+    >
+      <div className="sheet is-wide deadline-sheet" ref={sheetRef} data-deadline-sheet={deadlineId || "new"}>
+        <div className="sheet-title">{translate(deadlineId ? "projects.editDeadline" : "projects.addDeadline")}</div>
+        <p className="sheet-hint">{translate("projectSettings.deadlinesHint")}</p>
+        {deadline && (
+          <DeadlineRow
+            deadline={deadline}
+            datedTasks={datedTasks}
+            cardsById={cardsById}
+            onChange={(patch) => setDeadline({ ...deadline, ...patch })}
+            onRemove={() => (deadlineId ? save(true) : onClose())}
+          />
+        )}
+        <div className="sheet-actions">
+          <button type="button" className="button is-ghost" onClick={onClose}>
+            {translate("projects.cancel")}
+          </button>
+          <button type="button" className="button is-primary" disabled={!board || !usable} onClick={() => save(false)} data-deadline-save>
+            {translate("projectSettings.save")}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -302,7 +581,7 @@ function SourceBanner({ state }) {
     return (
       <div className="project-banner is-error" data-project-state="error">
         <b>{translate("projects.errorTitle")}</b>
-        <span>{state.message}</span>
+        <span>{state.error ? translate(state.error.key, state.error.values) : state.message}</span>
         {state.call && <code className="project-banner-code">{state.call}</code>}
       </div>
     );
@@ -327,19 +606,52 @@ function ProjectSkeleton() {
 
 // ---- deadlines (variant A) ---------------------------------------------------
 
-function DeadlineCard({ snapshot, now, language }) {
+function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }) {
   const { translate } = useTranslation();
   const shortDate = useShortDate(language);
   const timeline = snapshot.timeline;
+  const axisRef = useRef(null);
+  const [axisWidth, setAxisWidth] = useState(0);
+  useEffect(() => {
+    const axis = axisRef.current;
+    if (!axis || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const observer = new ResizeObserver(() => setAxisWidth(axis.getBoundingClientRect().width));
+    observer.observe(axis);
+    return () => observer.disconnect();
+  });
   if (!timeline || timeline.deadlines.length === 0) {
+    // No numbers are made up: the axis says why it is empty (no deadline
+    // here, and whether ClickUp has any dates a deadline could follow).
+    const reason = emptyDeadlineReason(snapshot);
     return (
       <section className="project-card deadlines is-empty" data-deadlines="none">
         <b>{translate("projects.deadlines")}</b>
-        <span className="project-dim">{translate("projects.noDeadlinesYet")}</span>
+        <span className="project-dim" data-deadlines-empty-reason>
+          {translate(reason.key, reason.values)}
+        </span>
+        <span className="project-header-spacer" />
+        <button type="button" className="text-link" onClick={() => onEdit(null)} data-add-deadline-axis>
+          + {translate("projects.addDeadline")}
+        </button>
       </section>
     );
   }
-  const milestones = axisMilestones(timeline);
+  // Labels alternate above and below when two would touch: how close is
+  // "touching" depends on how wide the axis is on screen right now.
+  // Many single dates do not fit as labels on the axis: the axis keeps the
+  // diamonds and their dates, and the names go in a row under it.
+  const compactMarkers = axisMilestones(timeline).length > 3;
+  const labelPixels = compactMarkers ? AXIS_DATE_PIXELS : AXIS_LABEL_PIXELS;
+  const minimumGap = axisWidth > 0 ? Math.min(0.6, Math.max(0.04, labelPixels / axisWidth)) : 0.2;
+  const milestones = axisMilestones(timeline, { minimumGap });
+  const lanes = phaseLanes(timeline);
+  const sources = snapshot.dateSources || {};
+  const sourceNote =
+    sources.source && sources.source.name
+      ? translate("projects.deadlineSourceNote", { name: sources.source.name, count: sources.fromSource || 0, undated: sources.undatedInSource || 0 })
+      : null;
   const pace = dailyPaceText(snapshot.dailyPace);
   const next = timeline.next;
   return (
@@ -350,6 +662,12 @@ function DeadlineCard({ snapshot, now, language }) {
           {shortDate(timeline.start)} → {shortDate(timeline.end)}
           {timeline.daysLeft > 0 ? ` · ${translate("projects.daysLeft", { count: timeline.daysLeft })}` : ""}
         </span>
+        <button type="button" className="text-link deadlines-edit" onClick={onEditAll} data-edit-deadlines>
+          {translate("projects.editDeadlines")}
+        </button>
+        <button type="button" className="text-link deadlines-edit" onClick={() => onEdit(null)} data-add-deadline-axis>
+          + {translate("projects.addDeadline")}
+        </button>
         <span className="project-header-spacer" />
         {next && (
           <span className="pill is-gold">
@@ -359,26 +677,76 @@ function DeadlineCard({ snapshot, now, language }) {
           </span>
         )}
       </div>
-      <div className="deadline-axis">
+      <div className="deadline-axis" ref={axisRef}>
         <div className="deadline-track" />
         <div className="deadline-elapsed" style={{ width: `${timeline.elapsedFraction * 100}%` }} />
         <div className="deadline-today" style={{ left: `${timeline.elapsedFraction * 100}%` }}>
           <span>{translate("projects.today")}</span>
         </div>
         {milestones.map((milestone) => (
-          <div
+          <button
+            type="button"
             key={milestone.id || milestone.label}
             className={`deadline-milestone is-${milestone.state}${milestone.row ? " is-lower" : ""}${milestone.at < 0.08 ? " is-start" : ""}${milestone.at > 0.92 ? " is-end" : ""}`}
             style={{ left: `${milestone.at * 100}%` }}
-            title={`${milestone.label} · ${shortDate(milestone.date)}`}
+            title={`${milestone.label} · ${shortDate(milestone.date)} — ${translate("projects.editDeadline")}`}
+            onClick={() => (milestone.source === "clickup" ? onOpenTask(milestone.taskId, milestone.label) : onEdit(milestone.id))}
+            data-deadline-milestone={milestone.id}
           >
             <span className="deadline-diamond" />
-            <span className="deadline-label">
-              {milestone.label} · <b>{shortDate(milestone.date)}</b>
-            </span>
-          </div>
+            {compactMarkers ? (
+              <span className="deadline-label">
+                <b>{shortDate(milestone.date)}</b>
+              </span>
+            ) : (
+              <span className="deadline-label">
+                {milestone.source === "task" || milestone.source === "clickup" ? "⧉ " : ""}
+                {milestone.label} · <b>{shortDate(milestone.date)}</b>
+              </span>
+            )}
+          </button>
         ))}
       </div>
+      {compactMarkers && (
+        <div className="deadline-legend" data-deadline-legend>
+          {milestones.map((milestone) => (
+            <button
+              type="button"
+              key={milestone.id || milestone.label}
+              className={`deadline-legend-item is-${milestone.state}`}
+              onClick={() => (milestone.source === "clickup" ? onOpenTask(milestone.taskId, milestone.label) : onEdit(milestone.id))}
+            >
+              <span className="deadline-legend-diamond" />
+              <b>{shortDate(milestone.date)}</b> {milestone.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {lanes.length > 0 && (
+        <div className="phase-lanes" data-phase-lanes={lanes.length}>
+          {lanes.map((lane, laneIndex) => (
+            <div key={laneIndex} className="phase-lane">
+              {lane.map((phase) => (
+                <button
+                  type="button"
+                  key={phase.id}
+                  className={`phase-bar is-${phase.state}`}
+                  style={{ left: `${phase.startAt * 100}%`, width: `${Math.max((phase.at - phase.startAt) * 100, 0.8)}%` }}
+                  title={`${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`}
+                  onClick={() => (phase.source === "clickup" ? onOpenTask(phase.taskId, phase.label) : onEdit(phase.id))}
+                  data-phase={phase.id}
+                >
+                  <span className="phase-bar-label">
+                    {phase.label} · {shortDate(phase.start)} → {shortDate(phase.date)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+          <div className="phase-today" style={{ left: `${timeline.elapsedFraction * 100}%` }} />
+        </div>
+      )}
+      {sourceNote && <div className="deadline-source project-dim" data-deadline-source>{sourceNote}</div>}
       {pace && (
         <div className="deadline-pace" data-deadline-pace>
           <span className="computed-tag" title={translate("projects.computedHint")}>
@@ -391,7 +759,7 @@ function DeadlineCard({ snapshot, now, language }) {
             {pace.todayDots.map((closed, index) => (
               <span key={index} className={closed ? "today-dot is-closed" : "today-dot"} />
             ))}
-            {translate("projects.closedOfTarget", { closed: pace.closedToday, target: pace.todayTarget })}
+            {translate(pace.todayKey, { count: pace.handedOffToday, target: pace.todayTargetText })}
           </span>
         </div>
       )}
@@ -401,7 +769,7 @@ function DeadlineCard({ snapshot, now, language }) {
 
 // ---- numbers (variant A) ------------------------------------------------------
 
-function StatsCards({ snapshot }) {
+function StatsCards({ snapshot, activeStat, onStat }) {
   const { translate } = useTranslation();
   const stats = snapshot.stats;
   const segments = bucketSegments(stats.buckets);
@@ -412,7 +780,15 @@ function StatsCards({ snapshot }) {
   return (
     <div className="project-stats">
       <section className="project-card stat-where" data-stats-buckets>
-        <h3>{translate("projects.whereTasksAre", { count: stats.total })}</h3>
+        <h3>
+          {translate("projects.whereTasksAre", { count: stats.total })}
+          {snapshot.sources.truncated && snapshot.sources.truncated.buildTasks && (
+            <span className="truncated-note" title={translate("projects.truncatedHint")} data-truncated>
+              {" "}
+              {translate("projects.truncatedNote")}
+            </span>
+          )}
+        </h3>
         <div className="stack-bar">
           {segments.map((segment) => (
             <span key={segment.bucket} style={{ width: `${segment.fraction * 100}%`, background: segment.color }} />
@@ -420,19 +796,26 @@ function StatsCards({ snapshot }) {
         </div>
         <div className="bucket-legend">
           {legend.map((bucket) => (
-            <span key={bucket} className="bucket-legend-item">
+            <button
+              type="button"
+              key={bucket}
+              className={activeStat && activeStat.kind === "bucket" && activeStat.bucket === bucket ? "bucket-legend-item is-active" : "bucket-legend-item"}
+              onClick={() => onStat({ kind: "bucket", bucket })}
+              title={translate("projects.statClickHint")}
+              data-stat-bucket={bucket}
+            >
               <span className="dot" style={{ background: BUCKET_COLORS[bucket] }} />
               <b>{stats.buckets[bucket] || 0}</b>
               <span>{translate(`projects.bucket.${bucket}`)}</span>
-            </span>
+            </button>
           ))}
         </div>
         <div className="stat-bottom">
-          <div className="burn-down">
-            <div className="burn-down-number">
+          <div className="burn-down" data-my-queue>
+            <button type="button" className="burn-down-number" onClick={() => onStat({ kind: "perspective", perspective: "myQueue" })} data-stat-perspective="myQueue">
               <b>{stats.pace.leftToClose}</b>
-              <span>{translate("projects.leftToClose")}</span>
-            </div>
+              <span>{translate("projects.myQueue")}</span>
+            </button>
             {burnPoints && (
               <svg className="burn-down-line" width={BURN_DOWN_WIDTH} height={BURN_DOWN_HEIGHT} viewBox={`0 0 ${BURN_DOWN_WIDTH} ${BURN_DOWN_HEIGHT}`} aria-hidden="true">
                 <polyline points={burnPoints} />
@@ -445,20 +828,30 @@ function StatsCards({ snapshot }) {
               )}
               <span className="is-actual">{translate("projects.actualPerWeek", { count: stats.pace.actualPerWeek })}</span>
             </div>
+            <div className="queue-others">
+              <button type="button" className="stat-counter" onClick={() => onStat({ kind: "perspective", perspective: "waiting" })} data-stat-perspective="waiting">
+                <b>{stats.waiting || 0}</b>
+                {translate("projects.waitingOnOthers")}
+              </button>
+              <button type="button" className="stat-counter" onClick={() => onStat({ kind: "perspective", perspective: "closed" })} data-stat-perspective="closed">
+                <b>{stats.closed || 0}</b>
+                {translate("projects.perspective.closed")}
+              </button>
+            </div>
           </div>
           <div className="stat-counters" data-stats-counters>
-            <span className="stat-counter">
+            <button type="button" className="stat-counter" onClick={() => onStat({ kind: "specsToWrite" })} data-stat-counter="specsToWrite">
               <b>{stats.specsToWrite}</b>
               {translate("projects.specsToWrite")}
-            </span>
-            <span className="stat-counter is-gold">
+            </button>
+            <button type="button" className="stat-counter is-gold" onClick={() => onStat({ kind: "specsInReview" })} data-stat-counter="specsInReview">
               <b>{stats.specsInReview}</b>
               {translate("projects.specsInReview")}
-            </span>
-            <span className={stats.redPullRequests > 0 ? "stat-counter is-coral" : "stat-counter"}>
+            </button>
+            <button type="button" className={stats.redPullRequests > 0 ? "stat-counter is-coral" : "stat-counter"} onClick={() => onStat({ kind: "redCi" })} data-stat-counter="redCi">
               <b>{stats.redPullRequests}</b>
               {translate("projects.redCi")}
-            </span>
+            </button>
           </div>
         </div>
       </section>
@@ -467,7 +860,20 @@ function StatsCards({ snapshot }) {
         <div className="people-list">
           {stats.people.length === 0 && <span className="project-dim">{translate("projects.nobodyHasAnything")}</span>}
           {stats.people.slice(0, 7).map((person) => (
-            <div key={person.id || "nobody"} className="person-row">
+            <button
+              type="button"
+              key={person.id || "nobody"}
+              className={activeStat && activeStat.kind === "person" && activeStat.personId === (person.isNobody ? null : person.id) ? "person-row is-active" : "person-row"}
+              onClick={() =>
+                onStat({
+                  kind: "person",
+                  personId: person.isNobody ? null : person.id,
+                  name: person.isUser ? translate("projects.me") : person.isNobody ? translate("projects.nobody") : person.name
+                })
+              }
+              title={translate("projects.statClickHint")}
+              data-stat-person={person.id || "nobody"}
+            >
               <span
                 className={person.isNobody ? "person-avatar is-nobody" : "person-avatar"}
                 style={person.isNobody ? undefined : { background: person.isUser ? "var(--accent)" : person.color || "var(--project-color-2)" }}
@@ -483,7 +889,7 @@ function StatsCards({ snapshot }) {
                 ))}
               </span>
               <span className="person-count">{person.total}</span>
-            </div>
+            </button>
           ))}
         </div>
       </section>
@@ -496,6 +902,7 @@ function StatsCards({ snapshot }) {
 function CardList({
   snapshot,
   filter,
+  statCards = null,
   now,
   language,
   expandedCardId,
@@ -505,21 +912,33 @@ function CardList({
   pullRequestsAvailable,
   onOpenTask,
   onOpenExternal,
-  onSelectSession
+  onSelectSession,
+  sessions,
+  agents,
+  repositories,
+  actions,
+  query
 }) {
   const { translate } = useTranslation();
-  const { cards, notStarted } = cardsForFilter(snapshot, filter);
-  const visible = showNotStarted ? [...cards, ...notStarted] : cards;
-  const cardProps = { now, language, pullRequestsAvailable, onOpenTask, onOpenExternal, onSelectSession };
+  const listed = statCards ? { cards: statCards, notStarted: [] } : cardsForFilter(snapshot, filter);
+  // A search looks through the folded "nobody started" cards too.
+  const searching = Boolean(String(query || "").trim());
+  const cards = searchCards(listed.cards, query);
+  const notStarted = searchCards(listed.notStarted, query);
+  const visible = showNotStarted || searching ? [...cards, ...notStarted] : cards;
+  const upNextIds = (snapshot.filters && snapshot.filters.upNext) || [];
+  const cardProps = { now, language, pullRequestsAvailable, onOpenTask, onOpenExternal, onSelectSession, sessions, agents, repositories, actions, upNextIds, inUpNext: filter === "upNext" };
   return (
     <div className="task-list" data-task-list={filter}>
       {visible.length === 0 && (
-        <div className="project-banner is-quiet">{translate(filter === "upNext" ? "projects.upNextEmpty" : "projects.filterEmpty")}</div>
+        <div className="project-banner is-quiet">
+          {translate(searching ? "projects.searchNoCards" : filter === "upNext" ? "projects.upNextEmpty" : "projects.filterEmpty")}
+        </div>
       )}
       {visible.map((card) => (
         <TaskCard key={card.id} card={card} expanded={expandedCardId === card.id} onToggle={() => onToggle(card.id)} {...cardProps} />
       ))}
-      {notStarted.length > 0 && !showNotStarted && (
+      {notStarted.length > 0 && !showNotStarted && !searching && (
         <button type="button" className="more-row" onClick={onShowNotStarted} data-show-not-started>
           {translate("projects.notStartedHidden", { count: notStarted.length })}
         </button>
@@ -548,7 +967,11 @@ function Pipeline({ label, stage, emptyText }) {
       ) : (
         <span className="pipeline-steps">
           {dots.map((dot) => (
-            <span key={dot.step} className={`pipeline-step is-${dot.state}`}>
+            <span
+              key={dot.step}
+              className={`pipeline-step is-${dot.state}${dot.others ? " is-others" : ""}${dot.handOff ? " is-hand-off" : ""}`}
+              title={dot.handOff ? translate("projects.handOffHint") : dot.others ? translate("projects.othersHint") : undefined}
+            >
               <span className="pipeline-node" />
               <span className="pipeline-caption">{translate(`projects.step.${dot.step}`)}</span>
             </span>
@@ -658,7 +1081,23 @@ function LinkChips({ card, now, pullRequestsAvailable, onOpenTask, onOpenExterna
   );
 }
 
-function TaskCard({ card, expanded, onToggle, now, language, pullRequestsAvailable, onOpenTask, onOpenExternal, onSelectSession }) {
+function TaskCard({
+  card,
+  expanded,
+  onToggle,
+  now,
+  language,
+  pullRequestsAvailable,
+  onOpenTask,
+  onOpenExternal,
+  onSelectSession,
+  sessions,
+  agents,
+  repositories,
+  actions,
+  upNextIds,
+  inUpNext
+}) {
   const { translate } = useTranslation();
   const needs = needsLabel(card.needs);
   const specStepName = card.spec && card.spec.steps ? card.spec.steps[card.spec.index] : null;
@@ -679,8 +1118,20 @@ function TaskCard({ card, expanded, onToggle, now, language, pullRequestsAvailab
           </span>
           <span className="task-card-name">{card.name}</span>
         </div>
+        <CardMenu card={card} sessions={sessions} agents={agents} repositories={repositories} actions={actions} upNextIds={upNextIds} inUpNext={inUpNext} />
         <div className="task-card-pills">
+          {card.upNext && <span className="up-next-mark" title={translate("projects.filter.upNext")}>📌</span>}
           <StatusPill card={card} />
+          {card.perspective && (
+            <span className={`perspective-tag is-${card.perspective}`} data-card-perspective={card.perspective}>
+              {translate(`projects.perspective.${card.perspective}`)}
+            </span>
+          )}
+          {card.developerStatus && (
+            <span className="source-chip developer-status" title={card.developerStatusField || ""} data-developer-status>
+              {card.developerStatusField}: {card.developerStatus}
+            </span>
+          )}
           {needs && <span className="needs-pill">● {translate(needs.key, needs.values)}</span>}
           {card.subtaskCount > 0 && <span className="project-dim">{translate(card.subtaskCount === 1 ? "projects.subtaskOne" : "projects.subtasks", { count: card.subtaskCount })}</span>}
         </div>
@@ -707,6 +1158,100 @@ function TaskCard({ card, expanded, onToggle, now, language, pullRequestsAvailab
       />
       {expanded && <TaskDetails card={card} now={now} language={language} onSelectSession={onSelectSession} />}
     </article>
+  );
+}
+
+// The agent that fits a card: a spec card wants the agent whose role is
+// spec, a build card the builder (by the agent's name, or the role the
+// project gave it). None fitting means a plain session.
+function agentForCard(card, agents) {
+  const wanted = card.kind === "spec" ? "spec" : "build";
+  return (agents || []).find((agent) => new RegExp(wanted, "i").test(agent.name || "")) || null;
+}
+
+// "…" on a card: Up next, the links made by hand, and starting a session
+// for the task. Only project-boards.json changes (and a terminal opens).
+function CardMenu({ card, sessions, agents, repositories, actions, upNextIds, inUpNext }) {
+  const { translate } = useTranslation();
+  const [anchor, setAnchor] = useState(null);
+  const buttonRef = useRef(null);
+  const close = () => setAnchor(null);
+  const linkedIds = new Set(card.sessions.map((session) => session.sessionId));
+  const recent = [...(sessions || [])]
+    .filter((session) => !linkedIds.has(session.sessionId))
+    .sort((first, second) => (second.lastModified || 0) - (first.lastModified || 0))
+    .slice(0, SESSIONS_IN_LINK_MENU);
+  const agent = agentForCard(card, agents);
+  const place = upNextIds.indexOf(card.id);
+  const usableRepositories = (repositories || []).filter((repository) => repository.localPath);
+  return (
+    <>
+      <button
+        type="button"
+        className="row-menu-button task-card-menu"
+        ref={buttonRef}
+        title={translate("projects.cardMenu")}
+        aria-label={translate("projects.cardMenu")}
+        onClick={() => setAnchor(buttonRef.current.getBoundingClientRect())}
+        data-card-menu={card.id}
+      >
+        <DotsIcon />
+      </button>
+      {anchor && (
+        <PopupMenu anchor={anchor} onClose={close}>
+          {card.upNext ? (
+            <MenuItem marker="unpin" onClick={() => { close(); actions.unpin(card); }}>
+              {translate("projects.unpin")}
+            </MenuItem>
+          ) : (
+            <MenuItem marker="pin" onClick={() => { close(); actions.pin(card); }}>
+              {translate("projects.pin")}
+            </MenuItem>
+          )}
+          {inUpNext && place > 0 && (
+            <MenuItem marker="move-up" onClick={() => { close(); actions.move(card, -1); }}>
+              {translate("projectSettings.moveUp")}
+            </MenuItem>
+          )}
+          {inUpNext && place >= 0 && place < upNextIds.length - 1 && (
+            <MenuItem marker="move-down" onClick={() => { close(); actions.move(card, 1); }}>
+              {translate("projectSettings.moveDown")}
+            </MenuItem>
+          )}
+          <MenuSeparator />
+          <MenuSubmenu label={translate("projects.linkSession")} marker="link-session">
+            {recent.length === 0 && <MenuLabel>{translate("projects.noSessionsToLink")}</MenuLabel>}
+            {recent.map((session) => (
+              <MenuItem key={session.sessionId} marker={`link-${session.sessionId}`} onClick={() => { close(); actions.link(card, session.sessionId); }}>
+                {session.title}
+              </MenuItem>
+            ))}
+          </MenuSubmenu>
+          {card.sessions.map((session) => (
+            <MenuItem key={session.sessionId} marker={`unlink-${session.sessionId}`} onClick={() => { close(); actions.unlink(card, session.sessionId); }}>
+              {translate("projects.unlinkSession", { name: session.title })}
+            </MenuItem>
+          ))}
+          <MenuSeparator />
+          <MenuSubmenu label={translate("projects.startSession")} marker="start-session">
+            {usableRepositories.length === 0 && <MenuLabel>{translate("projects.noRepositoryToStart")}</MenuLabel>}
+            {usableRepositories.map((repository) => (
+              <MenuItem key={`agent-${repository.name}`} marker={`start-${repository.name}`} onClick={() => { close(); actions.start(card, repository, agent); }}>
+                {agent
+                  ? translate("projects.startInWithAgent", { repository: repository.name, agent: agent.name })
+                  : translate("projects.startIn", { repository: repository.name })}
+              </MenuItem>
+            ))}
+            {agent &&
+              usableRepositories.map((repository) => (
+                <MenuItem key={`plain-${repository.name}`} marker={`start-plain-${repository.name}`} onClick={() => { close(); actions.start(card, repository, null); }}>
+                  {translate("projects.startInPlain", { repository: repository.name })}
+                </MenuItem>
+              ))}
+          </MenuSubmenu>
+        </PopupMenu>
+      )}
+    </>
   );
 }
 
@@ -828,9 +1373,11 @@ function FieldRow({ field }) {
 
 // ---- spec pipeline (variant C) --------------------------------------------------------
 
-function SpecPipeline({ snapshot, stage, onStage, now, onOpenTask, onSelectSession }) {
+function SpecPipeline({ snapshot, stage, onStage, now, onOpenTask, onSelectSession, query }) {
   const { translate } = useTranslation();
   const current = snapshot.specPipeline.find((entry) => entry.stage === stage) || snapshot.specPipeline[0];
+  const wanted = String(query || "").trim().toLowerCase();
+  const items = wanted ? current.items.filter((item) => item.name.toLowerCase().includes(wanted) || item.id.includes(wanted)) : current.items;
   return (
     <div className="spec-pipeline" data-spec-pipeline={current.stage}>
       <div className="spec-funnel">
@@ -849,9 +1396,12 @@ function SpecPipeline({ snapshot, stage, onStage, now, onOpenTask, onSelectSessi
       </div>
       <div className="stage-head">
         {translate(`projects.specStage.${current.stage}`)} · {translate("projects.stageCount", { count: current.count })}
+        {snapshot.sources.truncated && snapshot.sources.truncated.planningTasks && (
+          <span className="truncated-note" title={translate("projects.truncatedHint")}> {translate("projects.truncatedNote")}</span>
+        )}
       </div>
-      {current.items.length === 0 && <div className="project-banner is-quiet">{translate("projects.stageEmpty")}</div>}
-      {current.items.map((item) => (
+      {items.length === 0 && <div className="project-banner is-quiet">{translate(wanted ? "projects.searchNoCards" : "projects.stageEmpty")}</div>}
+      {items.map((item) => (
         <div key={item.id} className="spec-row" data-spec-row={item.id}>
           <ClickupMark />
           <button type="button" className="spec-row-name" onClick={() => onOpenTask(item.id, item.name)} title={translate("projects.openTaskHint")}>

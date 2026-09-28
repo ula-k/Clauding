@@ -68,7 +68,7 @@ export function bucketForStatus(statusName, statusType, overrides = {}) {
   if (statusType === "closed" || statusType === "done") {
     return BUCKETS.done;
   }
-  if (statusType === "open") {
+  if (statusType === "open" || statusType === "unstarted") {
     return BUCKETS.open;
   }
   return BUCKETS.other;
@@ -97,12 +97,16 @@ export const SPEC_STAGE_ORDER = [
 ];
 
 // Review is checked before approved so "ready for review" is not read as
-// ready.
+// ready. A status that says the spec is still being written or designed
+// ("functional writing/review", "design (figma)/review") is a draft even
+// when it also mentions review: the writing comes first. Each project can
+// move any status elsewhere (board.specStatusOverrides).
 const SPEC_STAGE_RULES = [
+  { stage: SPEC_STAGES.draft, words: ["writing", "drafting", "design"] },
   { stage: SPEC_STAGES.review, words: ["review", "approval", "feedback", "waiting"] },
   { stage: SPEC_STAGES.approved, words: ["approved", "ready for dev", "ready for development", "ready", "done", "closed", "complete", "published"] },
   { stage: SPEC_STAGES.draft, words: ["draft", "writing", "in progress", "progress", "spec"] },
-  { stage: SPEC_STAGES.noSpec, words: ["open", "to do", "todo", "backlog", "not started", "new"] }
+  { stage: SPEC_STAGES.noSpec, words: ["open", "to do", "todo", "backlog", "not started", "new", "conceptual", "idea", "planned"] }
 ];
 
 // What the planning task's own status says about its spec. The session

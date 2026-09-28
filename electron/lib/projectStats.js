@@ -20,13 +20,13 @@ export function bucketCounts(tasks) {
   return counts;
 }
 
-// Who has what, among tasks that are not closed. The user first, then the
+// Who has what, among tasks that are not closed (from the user's side). The user first, then the
 // others by how much they hold, then "Nobody".
 export function peopleBreakdown(tasks, userId) {
   const people = new Map();
   const nobody = { id: null, name: "Nobody", initials: "–", color: null, isUser: false, isNobody: true, byBucket: {}, total: 0 };
   for (const task of tasks) {
-    if (task.bucket === BUCKETS.done) {
+    if (isClosedTask(task)) {
       continue;
     }
     const holders = task.assignees && task.assignees.length > 0 ? task.assignees : [null];
@@ -105,12 +105,18 @@ export function deadlineTimeline(deadlines, { now, projectStart = null }) {
   if (sorted.length === 0) {
     return { deadlines: [], start: null, end: null, elapsedFraction: null, next: null };
   }
-  const start = Math.min(projectStart || sorted[0].date, sorted[0].date);
-  const end = sorted[sorted.length - 1].date;
+  // A phase (deadline.start set) is drawn from its start to its end; the
+  // axis starts at the earliest of everything.
+  const earliestStart = Math.min(...sorted.map((deadline) => (Number.isFinite(deadline.start) ? deadline.start : deadline.date)));
+  const start = Math.min(projectStart || earliestStart, earliestStart);
+  const end = Math.max(...sorted.map((deadline) => deadline.date));
   const span = Math.max(end - start, DAY_MILLISECONDS);
+  const place = (time) => Math.min(1, Math.max(0, (time - start) / span));
   const placed = sorted.map((deadline) => ({
     ...deadline,
-    at: Math.min(1, Math.max(0, (deadline.date - start) / span)),
+    at: place(deadline.date),
+    startAt: Number.isFinite(deadline.start) ? place(deadline.start) : null,
+    running: Number.isFinite(deadline.start) && deadline.start <= now && deadline.date >= startOfDay(now),
     passed: deadline.date < startOfDay(now),
     daysLeft: calendarDaysBetween(now, deadline.date)
   }));
@@ -125,71 +131,118 @@ export function deadlineTimeline(deadlines, { now, projectStart = null }) {
   };
 }
 
-// "Left to close", how fast tasks closed over the last two weeks, and how
-// fast they must close to make the last deadline.
-export function pace(tasks, { now, lastDeadline = null }) {
-  const open = tasks.filter((task) => task.bucket !== BUCKETS.done);
+// A task with a place from the user's side (lib/perspective.js) is in her
+// queue when that place is "myQueue"; one without (older callers, tests)
+// is in it until ClickUp closes it.
+function inQueue(task) {
+  return task.perspective ? task.perspective === "myQueue" : task.bucket !== BUCKETS.done;
+}
+
+function isClosedTask(task) {
+  return task.perspective ? task.perspective === "closed" : task.bucket === BUCKETS.done;
+}
+
+// The task's path through the three places; without one, it entered the
+// queue when created and left it when ClickUp closed it.
+function pathOf(task) {
+  if (Array.isArray(task.path) && task.path.length > 0) {
+    return task.path;
+  }
+  const path = [{ at: task.createdAt || 0, perspective: "myQueue" }];
+  const closedAt = closedAtOf(task);
+  if (!inQueue(task)) {
+    path.push({ at: closedAt || task.updatedAt || task.createdAt || 0, perspective: task.perspective || "closed" });
+  }
+  return path;
+}
+
+function queueAt(path, time) {
+  let current = null;
+  for (const step of path) {
+    if (step.at <= time) {
+      current = step.perspective;
+    }
+  }
+  return current === "myQueue";
+}
+
+// Every moment a task left the queue (handed off: to waiting or closed).
+function handOffs(task) {
+  const path = pathOf(task);
+  const moments = [];
+  for (let position = 1; position < path.length; position += 1) {
+    if (path[position - 1].perspective === "myQueue" && path[position].perspective !== "myQueue") {
+      moments.push(path[position].at);
+    }
+  }
+  return moments;
+}
+
+// What is in the user's queue, what waits on others, what is closed; how
+// many tasks she handed off over the last two weeks (a task that came back
+// and left again counts twice — it was handed off twice), and how fast the
+// queue must shrink to make the last deadline.
+// `deadline` is the next deadline (the one the line under the axis uses);
+// `lastDeadline` is its older name.
+export function pace(tasks, { now, deadline = null, lastDeadline = null }) {
+  const target = deadline || lastDeadline;
+  const queue = tasks.filter(inQueue);
+  const closed = tasks.filter(isClosedTask);
   const windowStart = now - PACE_WINDOW_DAYS * DAY_MILLISECONDS;
-  const closedRecently = tasks.filter((task) => {
-    const closedAt = closedAtOf(task);
-    return task.bucket === BUCKETS.done && closedAt && closedAt >= windowStart && closedAt <= now;
-  }).length;
-  const actualPerWeek = closedRecently / (PACE_WINDOW_DAYS / 7);
+  const handedOffRecently = tasks.flatMap(handOffs).filter((at) => at >= windowStart && at <= now).length;
+  const actualPerWeek = handedOffRecently / (PACE_WINDOW_DAYS / 7);
   let neededPerWeek = null;
-  if (lastDeadline && lastDeadline > now) {
-    neededPerWeek = open.length / Math.max((lastDeadline - now) / WEEK_MILLISECONDS, 1 / 7);
+  if (target && target > now) {
+    neededPerWeek = queue.length / Math.max((target - now) / WEEK_MILLISECONDS, 1 / 7);
   }
   return {
-    leftToClose: open.length,
+    leftToClose: queue.length,
+    inQueue: queue.length,
+    waiting: tasks.length - queue.length - closed.length,
+    closed: closed.length,
     total: tasks.length,
-    closedFraction: tasks.length === 0 ? 0 : (tasks.length - open.length) / tasks.length,
+    closedFraction: tasks.length === 0 ? 0 : closed.length / tasks.length,
     actualPerWeek: Math.round(actualPerWeek * 10) / 10,
     neededPerWeek: neededPerWeek === null ? null : Math.round(neededPerWeek * 10) / 10,
-    history: burnDownHistory(tasks, { now, lastDeadline })
+    history: burnDownHistory(tasks, { now })
   };
 }
 
-// Open tasks at the end of each of the past weeks, oldest first, rebuilt
-// from creation and close dates — enough for the small burn-down line.
+// The size of the user's queue at the end of each of the past weeks,
+// oldest first — the "My queue" line. Waiting-on-others is not on it.
 export function burnDownHistory(tasks, { now, weeks = 8 }) {
+  const paths = tasks.map(pathOf);
   const points = [];
   for (let week = weeks; week >= 0; week -= 1) {
     const at = now - week * WEEK_MILLISECONDS;
-    const openThen = tasks.filter((task) => {
-      const created = task.createdAt || 0;
-      const closedAt = closedAtOf(task);
-      return created <= at && (!closedAt || closedAt > at);
-    }).length;
-    points.push({ at, open: openThen });
+    points.push({ at, open: paths.filter((path) => queueAt(path, at)).length });
   }
   return points;
 }
 
-// "To make Feature freeze: 17 tasks in 13 work days → about 1–2 a day",
-// and how many closed today. Tasks due on or before the deadline count
-// towards it; when no task carries a due date, everything still open does.
+// "To make Feature freeze: 17 tasks in 13 work days → about 1–2 a day":
+// the queue divided by the work days to the next deadline, and how many
+// tasks were handed off today.
 export function dailyPace(tasks, { now, deadline }) {
   if (!deadline) {
     return null;
   }
-  const open = tasks.filter((task) => task.bucket !== BUCKETS.done);
-  const dated = open.filter((task) => task.dueDate);
-  const towards = dated.length > 0 ? dated.filter((task) => task.dueDate <= deadline.date) : open;
+  const queue = tasks.filter(inQueue);
   const workDays = Math.max(workDaysBetween(now, deadline.date), 1);
-  const perDay = towards.length / workDays;
+  const perDay = queue.length / workDays;
   const todayStart = startOfDay(now);
-  const closedToday = tasks.filter((task) => {
-    const closedAt = closedAtOf(task);
-    return task.bucket === BUCKETS.done && closedAt && closedAt >= todayStart;
-  }).length;
+  const handedOffToday = tasks.flatMap(handOffs).filter((at) => at >= todayStart && at <= now).length;
   return {
     deadlineLabel: deadline.label,
-    tasks: towards.length,
+    tasks: queue.length,
     workDays,
     perDay: Math.round(perDay * 10) / 10,
     perDayLow: Math.floor(perDay),
     perDayHigh: Math.ceil(perDay),
     todayTarget: Math.ceil(perDay),
-    closedToday
+    // Under one a day, the same rate said per work week (five work days).
+    perWeek: Math.round(perDay * 5 * 10) / 10,
+    handedOffToday,
+    closedToday: handedOffToday
   };
 }

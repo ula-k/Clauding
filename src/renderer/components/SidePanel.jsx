@@ -6,6 +6,7 @@ import SearchResults from "./SearchResults.jsx";
 import SkillsPanel from "./SkillsPanel.jsx";
 import ClickupTaskTab from "./ClickupTaskTab.jsx";
 import { fileUrlFor, splitAddress } from "../paths.js";
+import { DEFAULT_ZOOM, applyZoomCommand, zoomLabel } from "../panelZoom.js";
 
 // The right panel: Hermes-style tabs next to the terminal. Each tab is a
 // local HTML file or an http(s) page (rendered in a locked-down <webview>)
@@ -57,11 +58,13 @@ function externalTargetOf(tab) {
 
 // An http(s) page or a local HTML file. `reloadCounter` bumps whenever the
 // file changed on disk or Reload was pressed.
-function WebviewTab({ tab, active, reloadCounter, onTitle }) {
+function WebviewTab({ tab, active, reloadCounter, onTitle, zoom = DEFAULT_ZOOM, onGuest }) {
   const { translate } = useTranslation();
   const webviewRef = useRef(null);
   const [failure, setFailure] = useState(null);
   const source = tab.kind === "url" ? tab.target : fileUrl(tab.target);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   useEffect(() => {
     const webview = webviewRef.current;
@@ -82,6 +85,19 @@ function WebviewTab({ tab, active, reloadCounter, onTitle }) {
     function handleStart() {
       setFailure(null);
     }
+    // Every load starts from this tab's own zoom (100 % unless the user
+    // zoomed this tab), whatever the shared file:// origin remembered.
+    function handleReady() {
+      try {
+        webview.setZoomFactor(zoomRef.current);
+        if (onGuest) {
+          onGuest(tab.tabId, webview.getWebContentsId());
+        }
+      } catch (error) {
+        // The guest went away while loading.
+      }
+    }
+    webview.addEventListener("dom-ready", handleReady);
     webview.addEventListener("page-title-updated", handleTitle);
     webview.addEventListener("did-fail-load", handleFailure);
     webview.addEventListener("did-start-loading", handleStart);
@@ -89,8 +105,23 @@ function WebviewTab({ tab, active, reloadCounter, onTitle }) {
       webview.removeEventListener("page-title-updated", handleTitle);
       webview.removeEventListener("did-fail-load", handleFailure);
       webview.removeEventListener("did-start-loading", handleStart);
+      webview.removeEventListener("dom-ready", handleReady);
     };
-  }, [tab.tabId, tab.kind, onTitle]);
+  }, [tab.tabId, tab.kind, onTitle, onGuest]);
+
+  // The tab's zoom goes back on the guest when it changes and whenever the
+  // tab comes to the front (another file:// tab may have changed it).
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview || !active) {
+      return;
+    }
+    try {
+      webview.setZoomFactor(zoom);
+    } catch (error) {
+      // Not attached yet: dom-ready applies it.
+    }
+  }, [zoom, active]);
 
   useEffect(() => {
     if (reloadCounter > 0 && webviewRef.current) {
@@ -200,6 +231,25 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reloadCounters, setReloadCounters] = useState({});
+  // Zoom per tab, in memory only (see panelZoom.js), and which guest page
+  // belongs to which tab, so the menu bar's zoom reaches the right one.
+  const [zooms, setZooms] = useState({});
+  const guestsRef = useRef(new Map());
+  const rememberGuest = useMemo(
+    () => (tabId, webContentsId) => {
+      guestsRef.current.set(webContentsId, tabId);
+    },
+    []
+  );
+  useEffect(() => {
+    return window.clauding.onPanelZoom(({ command, webContentsId }) => {
+      const tabId = guestsRef.current.get(webContentsId);
+      if (!tabId) {
+        return;
+      }
+      setZooms((previous) => ({ ...previous, [tabId]: applyZoomCommand(previous[tabId] || DEFAULT_ZOOM, command) }));
+    });
+  }, []);
   const tabs = panelState.tabs;
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -349,6 +399,17 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
                       ? translate("panel.copied")
                       : <AddressText target={externalTargetOf(activePage)} />}
             </button>
+            {activeTab && zoomLabel(zooms[activeTab.tabId]) && (
+              <button
+                type="button"
+                className="panel-zoom-label"
+                onClick={() => setZooms((previous) => ({ ...previous, [activeTab.tabId]: DEFAULT_ZOOM }))}
+                title={translate("panel.zoomReset")}
+                data-panel-zoom
+              >
+                {zoomLabel(zooms[activeTab.tabId])}
+              </button>
+            )}
             <button type="button" className="panel-tool" onClick={reloadActive} disabled={!activePage} title={translate("panel.reload")}>
               <ReloadIcon />
               <span>{translate("panel.reload")}</span>
@@ -416,6 +477,8 @@ export default function SidePanel({ open, sessionKey, panelState, actions, searc
                   active={!showAddressForm && tab.tabId === panelState.activeTabId}
                   reloadCounter={reloadCounters[tab.tabId] || 0}
                   onTitle={handleTitle}
+                  zoom={zooms[tab.tabId] || DEFAULT_ZOOM}
+                  onGuest={rememberGuest}
                 />
               )
             )}

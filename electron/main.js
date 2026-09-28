@@ -13,6 +13,7 @@ import {
   deleteSessionTranscript,
   forgetNeedsAnswer,
   searchSessionTranscript,
+  readSessionOpening,
   DEFAULT_PAGE_SIZE
 } from "./sessions.js";
 import { watchLiveStatus, collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
@@ -58,7 +59,6 @@ import { builtinAgentDraft, seedBuiltinSkills, seedBuiltins } from "./builtins.j
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
 import { createProjectBoardStore } from "./projectBoards.js";
 import { createProjectDataService } from "./projectData.js";
-import { taskIdFromLink } from "./lib/clickupClient.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
@@ -245,6 +245,26 @@ let sessionFlags = null;
 // ClickUp, git, gh and the sessions for one of them.
 let projectBoards = null;
 let projectData = null;
+// Terminals started from a task card ("Start a session for this task"),
+// waiting for their session id: terminalId → { boardId, taskId }.
+const pendingTaskLinks = new Map();
+
+function linkPendingTerminals() {
+  if (!projectBoards || pendingTaskLinks.size === 0) {
+    return;
+  }
+  for (const terminal of terminalRegistry.list()) {
+    const pending = pendingTaskLinks.get(terminal.terminalId);
+    if (pending && terminal.sessionId) {
+      pendingTaskLinks.delete(terminal.terminalId);
+      try {
+        projectBoards.linkSession(pending.boardId, pending.taskId, terminal.sessionId);
+      } catch (error) {
+        console.log(`[projects] could not link ${terminal.sessionId}: ${error.message}`);
+      }
+    }
+  }
+}
 
 const terminalRegistry = createTerminalRegistry({
   sendToWindow,
@@ -254,6 +274,7 @@ const terminalRegistry = createTerminalRegistry({
     syncHiddenWithLiveStatus();
     forgetLinkedSessions();
     sendToWindow(CHANNELS.sessionsChanged, { reason: "terminals" });
+    linkPendingTerminals();
     // Tabs opened before the CLI registered its session move to the session id.
     if (panelTabs) {
       for (const terminal of terminalRegistry.list()) {
@@ -428,7 +449,10 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       // The right panel renders pages in <webview> elements (see README).
-      webviewTag: true
+      webviewTag: true,
+      // A screenshot run keeps drawing while its window is behind others;
+      // otherwise the shutter can catch a frame from before the clicks.
+      backgroundThrottling: !(screenshotPath || anySmokeMode)
     }
   });
 
@@ -681,7 +705,10 @@ function createWindow() {
 //       macOS screen recording permission)
 //   CLAUDING_SCREENSHOT_ABOUT_HOLD=<ms>    keep the About panel on screen this
 //       much longer before quitting, so it can be read from outside
-//   CLAUDING_SCREENSHOT_CLICK=a>>b         click these selectors, in order,
+//   CLAUDING_SCREENSHOT_CLICK=a>>b         click these selectors, in order
+//       (an entry can also be wait:<ms>, scroll:<selector>,
+//       fill:<selector>::<text>, select:<selector>::<value>,
+//       submit:<form selector> or panelzoom:<in|out|reset>),
 //       before the capture (a sheet, a tab, a menu item)
 //   CLAUDING_SCREENSHOT_SKILLS=<word>      open the panel's Skills tab, type
 //                                          that word into its search field and
@@ -751,6 +778,58 @@ async function captureScreenshotAndQuit() {
   for (const entry of clickSelectors) {
     if (!mainWindow) {
       break;
+    }
+    // `wait:<ms>` pauses (a sheet reading ClickUp); `fill:<selector>::<text>`
+    // types into a field the way React hears it; `select:<selector>::<value>`
+    // picks an option of a <select>.
+    if (entry.startsWith("wait:")) {
+      await new Promise((resolve) => setTimeout(resolve, Number(entry.slice(5)) || 0));
+      continue;
+    }
+    // `submit:<form selector>` sends a form the way Enter would;
+    // `panelzoom:<in|out|reset>` zooms the first side-panel page as the
+    // View menu does while that page has the focus.
+    if (entry.startsWith("submit:")) {
+      const submitted = await mainWindow.webContents.executeJavaScript(
+        `(() => { const form = document.querySelector(${JSON.stringify(entry.slice(7))}); if (form) { form.requestSubmit(); } return Boolean(form); })()`
+      );
+      console.log(`[screenshot] submitted ${entry.slice(7)}: ${submitted}`);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      continue;
+    }
+    if (entry.startsWith("panelzoom:")) {
+      const guest = webContents.getAllWebContents().find((contents) => contents.getType() === "webview" && !contents.isDestroyed());
+      if (guest) {
+        sendToWindow(CHANNELS.panelZoom, { command: entry.slice(10), webContentsId: guest.id });
+      }
+      console.log(`[screenshot] panel zoom ${entry.slice(10)}: ${Boolean(guest)}`);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      continue;
+    }
+    if (entry.startsWith("scroll:")) {
+      const scrolled = await mainWindow.webContents.executeJavaScript(
+        `(() => { const target = document.querySelector(${JSON.stringify(entry.slice(7))}); if (target) { target.scrollIntoView({ block: "start" }); } return Boolean(target); })()`
+      );
+      console.log(`[screenshot] scrolled to ${entry.slice(7)}: ${scrolled}`);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      continue;
+    }
+    if (entry.startsWith("fill:") || entry.startsWith("select:")) {
+      const isSelect = entry.startsWith("select:");
+      const [fieldSelector, ...textParts] = entry.slice(isSelect ? 7 : 5).split("::");
+      const filled = await mainWindow.webContents.executeJavaScript(
+        `(() => {
+          const field = document.querySelector(${JSON.stringify(fieldSelector)});
+          if (!field) { return false; }
+          const prototype = ${isSelect} ? HTMLSelectElement.prototype : field.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(prototype, "value").set.call(field, ${JSON.stringify(textParts.join("::"))});
+          field.dispatchEvent(new Event(${isSelect} ? "change" : "input", { bubbles: true }));
+          return true;
+        })()`
+      );
+      console.log(`[screenshot] ${isSelect ? "selected" : "filled"} ${fieldSelector}: ${filled}`);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      continue;
     }
     // ⌘ on macOS, Ctrl on Windows — and never both, because the window
     // reads "the command key, and not the other one" (platform.js).
@@ -829,6 +908,9 @@ async function captureScreenshotAndQuit() {
     return;
   }
   if (mainWindow) {
+    // Ask for a fresh frame first (a covered window may not have drawn one).
+    mainWindow.webContents.invalidate();
+    await new Promise((resolve) => setTimeout(resolve, 400));
     const image = await mainWindow.webContents.capturePage();
     fs.writeFileSync(screenshotPath, image.toPNG());
     console.log(`Screenshot written to ${screenshotPath}`);
@@ -1118,6 +1200,15 @@ function installApplicationMenu() {
         applicationName: app.name,
         updateItemLabel: updateMenuItemLabel(quietUpdatePlan),
         skillsMenu: skillsMenuTemplate(),
+        onZoom(command) {
+          zoomFromMenu(command);
+        },
+        onAddProject() {
+          sendToWindow(CHANNELS.boardsMenu, { action: "add" });
+        },
+        onProjectSettings() {
+          sendToWindow(CHANNELS.boardsMenu, { action: "settings" });
+        },
         onCheckForUpdate() {
           checkForNewVersion({ quiet: false });
         },
@@ -1132,6 +1223,28 @@ function installApplicationMenu() {
       })
     )
   );
+}
+
+// View → Zoom In / Out / Actual Size. A side-panel page with the focus is
+// the window's renderer's business (it keeps a zoom per tab, see
+// src/renderer/panelZoom.js); anything else zooms the app window itself,
+// the way the standard roles did.
+const WINDOW_ZOOM_STEP = 0.5;
+function zoomFromMenu(command) {
+  const focused = webContents.getFocusedWebContents();
+  if (focused && !focused.isDestroyed() && focused.getType() === "webview") {
+    sendToWindow(CHANNELS.panelZoom, { command, webContentsId: focused.id });
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  const contents = mainWindow.webContents;
+  if (command === "reset") {
+    contents.setZoomLevel(0);
+  } else {
+    contents.setZoomLevel(contents.getZoomLevel() + (command === "in" ? WINDOW_ZOOM_STEP : -WINDOW_ZOOM_STEP));
+  }
 }
 
 // Definition folders under the agents root that the app has already seen.
@@ -1305,22 +1418,45 @@ function registerIpc() {
   });
 
   ipcMain.handle(CHANNELS.boardsGet, async () => projectBoards.getState());
-  // "Add a project…": the sheet sends a name, one task link and the local
-  // repositories; the link becomes the seed the lists are found from.
+  // "Add a project…": the sheet sends a name, one ClickUp link (a list, a
+  // saved view, a folder or a space), optionally one task link, and the
+  // local repositories. The answer is { board }, { candidates } when the
+  // lists cannot be told apart (the sheet asks which one is the build list
+  // and sends the draft again with clickup.buildListId), or { errorKey } — a
+  // locale key, so the sheet says it in the user's language.
   ipcMain.handle(CHANNELS.boardsAdd, async (event, { draft }) => {
     const request = draft || {};
     if (projectData.usesFixture) {
-      throw new Error("Projects come from CLAUDING_PROJECTS_FIXTURE in this run; nothing is saved.");
+      return { errorKey: "projects.fixtureReadOnly", values: {} };
     }
-    const seedTaskId = request.seedLink ? taskIdFromLink(request.seedLink) : null;
-    if (request.seedLink && !seedTaskId) {
-      throw new Error("That is not a link to a ClickUp task.");
+    const { projectLink, taskLink, seedLink, ...rest } = request;
+    let clickup = { ...(rest.clickup || {}) };
+    if (!clickup.buildListId) {
+      try {
+        const resolved = await projectData.resolveProjectLink({ projectLink: projectLink || null, taskLink: taskLink || seedLink || null });
+        if (resolved.ambiguous) {
+          return { candidates: resolved.candidates, clickup: resolved.clickup };
+        }
+        clickup = { ...resolved.clickup, ...clickup };
+      } catch (error) {
+        if (error.key) {
+          return { errorKey: error.key, values: error.values || {} };
+        }
+        throw error;
+      }
     }
-    const { seedLink, ...rest } = request;
-    return projectBoards.addBoard({
-      ...rest,
-      clickup: { ...(rest.clickup || {}), seedTaskId: seedTaskId || (rest.clickup && rest.clickup.seedTaskId) || null }
-    });
+    try {
+      return { board: projectBoards.addBoard({ ...rest, clickup }) };
+    } catch (error) {
+      return { errorKey: "projects.linkError.needsName", values: {} };
+    }
+  });
+  ipcMain.handle(CHANNELS.boardsSettingsData, async (event, { boardId }) => projectData.settingsData(boardId));
+  ipcMain.handle(CHANNELS.boardsBrowse, async (event, { place }) => projectData.browse(place || {}));
+  ipcMain.handle(CHANNELS.boardsLinkTerminal, async (event, { boardId, taskId, terminalId }) => {
+    pendingTaskLinks.set(terminalId, { boardId, taskId });
+    linkPendingTerminals();
+    return true;
   });
   ipcMain.handle(CHANNELS.boardsUpdate, async (event, { boardId, update }) => projectBoards.updateBoard(boardId, update || {}));
   ipcMain.handle(CHANNELS.boardsDelete, async (event, { boardId }) => {
@@ -1785,6 +1921,9 @@ function lockDownWebviews() {
       webPreferences.contextIsolation = true;
       webPreferences.sandbox = true;
       webPreferences.webSecurity = true;
+      // Every panel page starts at 100 %; the renderer puts back the zoom
+      // of its own tab (per tab, never remembered per origin).
+      webPreferences.zoomFactor = 1;
       if (!/^(file|https?):\/\//i.test(attachParameters.src || "")) {
         attachEvent.preventDefault();
       }
@@ -1934,6 +2073,7 @@ app.whenReady().then(() => {
       return page.sessions;
     },
     getAgents: () => agents.get(),
+    readSessionOpeningImplementation: readSessionOpening,
     log(line) {
       console.log(line);
     }

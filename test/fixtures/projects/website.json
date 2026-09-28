@@ -582,7 +582,7 @@
           "name": "Analytics events",
           "url": "https://app.clickup.com/t/web0017",
           "status": {
-            "status": "ready for prod",
+            "status": "in prod",
             "type": "custom",
             "color": "#a9c7a4"
           },

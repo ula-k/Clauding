@@ -427,7 +427,7 @@ test("the Windows menu bar has the same menus, without the macOS-only roles", ()
   assert.deepEqual(
     windowsMenu.map((menu) => menu.label || menu.role),
     macMenu.map((menu) => menu.label || menu.role),
-    "Clauding, Edit, Skills, View, Window — on both"
+    "Clauding, Edit, Skills, Projects, View, Window — on both"
   );
 
   const windowsRoles = windowsMenu[0].submenu.map((item) => item.role).filter(Boolean);

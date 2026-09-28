@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "../i18n.js";
 import { renderMarkdown } from "../markdown.js";
+import { clickupErrorLabel } from "../projectsView.js";
 
 // The side panel's own view of one ClickUp task (Projects view): status,
 // assignees, due date, custom fields, the description and the comments,
@@ -19,6 +20,11 @@ export default function ClickupTaskTab({ tab, active, reloadCounter, onOpenExter
       .getBoardTaskDetail(tab.target)
       .then((answer) => {
         if (canceled) {
+          return;
+        }
+        if (answer && answer.errorKind) {
+          const label = clickupErrorLabel(answer.errorKind, answer.status);
+          setFailure(translate(label.key, label.values));
           return;
         }
         if (!answer || !answer.task) {

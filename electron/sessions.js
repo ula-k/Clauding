@@ -10,6 +10,7 @@ import { isInsideSmokeFolder } from "./smokeFolder.js";
 import { claudeRegistryPaths } from "./lib/platformPaths.js";
 import { searchTranscriptFiles } from "./lib/transcriptSearch.js";
 import { TAIL_BYTES, createNeedsAnswerCache, isRecentEnoughToAsk } from "./lib/needsAnswer.js";
+import { OPENING_BYTES, openingTextFromTranscript } from "./lib/transcriptOpening.js";
 
 export const DEFAULT_PAGE_SIZE = 60;
 
@@ -114,6 +115,28 @@ function transcriptStamp(sessionId) {
   } catch (error) {
     transcriptPathBySession.delete(sessionId);
     return null;
+  }
+}
+
+// The opening of a conversation (its first user messages), for the Projects
+// view's task linking: { stamp, text } or null. The head of the file only.
+export function readSessionOpening(sessionId) {
+  const transcript = transcriptStamp(sessionId);
+  if (!transcript) {
+    return null;
+  }
+  let handle = null;
+  try {
+    handle = fs.openSync(transcript.filePath, "r");
+    const buffer = Buffer.alloc(OPENING_BYTES);
+    const length = fs.readSync(handle, buffer, 0, OPENING_BYTES, 0);
+    return { stamp: transcript.stamp, text: openingTextFromTranscript(buffer.subarray(0, length).toString("utf8")) };
+  } catch (error) {
+    return null;
+  } finally {
+    if (handle !== null) {
+      fs.closeSync(handle);
+    }
   }
 }
 
