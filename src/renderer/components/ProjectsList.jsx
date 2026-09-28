@@ -14,18 +14,37 @@ import { SearchIcon } from "./Icons.jsx";
 // local repositories — the lists are found from the link. Nothing is
 // written to ClickUp. The search box finds projects by name and their
 // tasks by name or id (from the cached ClickUp answer).
-export default function ProjectsList({ summaries, loading, selectedBoardId, onSelect, onSelectTask, onAdd, readOnly, addRequest, onAddRequestHandled }) {
+export default function ProjectsList({
+  summaries,
+  loading,
+  selectedBoardId,
+  onSelect,
+  onSelectTask,
+  onAdd,
+  onSetUpWithAgent,
+  readOnly,
+  addRequest,
+  onAddRequestHandled
+}) {
   const { translate } = useTranslation();
+  // The old form ("Manual setup…" in the menu bar) and the sheet "+" opens,
+  // which hands the project to the setup agent.
   const [addOpen, setAddOpen] = useState(false);
+  const [agentSheetOpen, setAgentSheetOpen] = useState(false);
   const [query, setQuery] = useState("");
   const found = useMemo(() => searchProjects(summaries, query), [summaries, query]);
   const groups = useMemo(() => projectListModel(found), [found]);
   const matchesById = useMemo(() => new Map(found.map((entry) => [entry.id, entry])), [found]);
 
-  // Projects → Add a Project… in the menu bar.
+  // Projects → Set up a Project… (the agent) / Manual setup… (the form) in
+  // the menu bar.
   useEffect(() => {
     if (addRequest) {
-      setAddOpen(true);
+      if (addRequest === "manual") {
+        setAddOpen(true);
+      } else {
+        setAgentSheetOpen(true);
+      }
       if (onAddRequestHandled) {
         onAddRequestHandled();
       }
@@ -52,7 +71,7 @@ export default function ProjectsList({ summaries, loading, selectedBoardId, onSe
         <div className="projects-empty" data-projects-empty>
           <p>{translate("projects.emptyList")}</p>
           {!readOnly && (
-            <button type="button" className="text-link" onClick={() => setAddOpen(true)} data-add-project>
+            <button type="button" className="text-link" onClick={() => setAgentSheetOpen(true)} data-add-project>
               {translate("projects.addProject")}
             </button>
           )}
@@ -101,7 +120,7 @@ export default function ProjectsList({ summaries, loading, selectedBoardId, onSe
                         onClick={() => onSelectTask(project.id, task.id, query)}
                         data-project-task-match={task.id}
                       >
-                        <span className="mono">CU-{task.id}</span> {task.name}
+                        {task.source !== "git" && <span className="mono">CU-{task.id}</span>} {task.name}
                       </button>
                     ))}
                     {match.hiddenMatches > 0 && (
@@ -115,9 +134,23 @@ export default function ProjectsList({ summaries, loading, selectedBoardId, onSe
         </section>
       ))}
       {summaries.length > 0 && !readOnly && (
-        <button type="button" className="text-link projects-add-link" onClick={() => setAddOpen(true)} data-add-project>
+        <button type="button" className="text-link projects-add-link" onClick={() => setAgentSheetOpen(true)} data-add-project>
           + {translate("projects.addProject")}
         </button>
+      )}
+      {agentSheetOpen && (
+        <SetUpProjectSheet
+          readOnly={readOnly}
+          onClose={() => setAgentSheetOpen(false)}
+          onStart={(text) => {
+            setAgentSheetOpen(false);
+            onSetUpWithAgent(text);
+          }}
+          onManual={() => {
+            setAgentSheetOpen(false);
+            setAddOpen(true);
+          }}
+        />
       )}
       {addOpen && (
         <AddProjectSheet
@@ -133,6 +166,87 @@ export default function ProjectsList({ summaries, loading, selectedBoardId, onSe
           }}
         />
       )}
+    </div>
+  );
+}
+
+// "+": the project is handed to the setup agent, which composes it from
+// what is there — a ClickUp link, the repositories, the sessions — and shows
+// a draft before adding anything. The one field is what it starts from, and
+// may stay empty (the agent then asks).
+function SetUpProjectSheet({ onClose, onStart, onManual, readOnly }) {
+  const { translate } = useTranslation();
+  const [text, setText] = useState("");
+  const sheetRef = useRef(null);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="sheet-backdrop"
+      onMouseDown={(event) => {
+        if (sheetRef.current && !sheetRef.current.contains(event.target)) {
+          onClose();
+        }
+      }}
+    >
+      <form
+        className="sheet add-project-sheet"
+        ref={sheetRef}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onStart(text.trim());
+        }}
+        data-setup-project-sheet
+      >
+        <div className="sheet-title">{translate("projects.setUpTitle")}</div>
+        {readOnly ? (
+          <p className="sheet-hint">{translate("projects.fixtureReadOnly")}</p>
+        ) : (
+          <>
+            <p className="sheet-hint">{translate("projects.setUpText")}</p>
+            <label className="sheet-label" htmlFor="setup-project-text">
+              {translate("projects.setUpField")}
+            </label>
+            <input
+              id="setup-project-text"
+              type="text"
+              className="agent-form-input"
+              value={text}
+              autoFocus
+              spellCheck={false}
+              placeholder={translate("projects.setUpPlaceholder")}
+              onChange={(event) => setText(event.target.value)}
+              data-setup-project-text
+            />
+            <p className="sheet-hint">{translate("projects.setUpHint")}</p>
+          </>
+        )}
+        <div className="sheet-actions">
+          {!readOnly && (
+            <button type="button" className="text-link sheet-actions-aside" onClick={onManual} data-setup-project-manual>
+              {translate("projects.setUpManual")}
+            </button>
+          )}
+          <button type="button" className="button is-ghost" onClick={onClose}>
+            {translate("projects.cancel")}
+          </button>
+          {!readOnly && (
+            <button type="submit" className="button is-primary" data-setup-project-start>
+              {translate("projects.setUpStart")}
+            </button>
+          )}
+        </div>
+      </form>
     </div>
   );
 }

@@ -88,8 +88,14 @@ export function buildProjectSnapshot({
   deadlineInfo = { source: null, undated: 0 },
   truncated = null,
   clickup = { ok: true, error: null, refreshedAt: null },
+  // "git" for a project without ClickUp: the build tasks are its feature
+  // branches (lib/gitTasks.js), there is no spec pipeline, and a session on
+  // a branch belongs to that branch's card (`branchTasks`).
+  mode = "clickup",
+  branchTasks = {},
   now = Date.now()
 }) {
+  const gitMode = mode === "git";
   const statusOverrides = board.statusOverrides || {};
   const userId = board.clickupUserId || null;
   const upNext = (board.upNext || []).map((taskId) => String(taskId));
@@ -149,7 +155,8 @@ export function buildProjectSnapshot({
     agents,
     agentRoles: board.agentRoles || {},
     manualLinks: board.manualLinks || {},
-    transcriptTextBySession
+    transcriptTextBySession,
+    branchTasks
   });
   const branchesByTask = mergeByTask(repositoryResults, "branchesByTask");
   const pullsByTask = mergeByTask(pullRequestResults, "byTask");
@@ -164,11 +171,12 @@ export function buildProjectSnapshot({
     }
     const ownSessions = sessionLinks.get(task.id) || [];
     const planningSessions = planningTask ? sessionLinks.get(planningTask.id) || [] : [];
-    const specSessions = [
-      ...planningSessions,
-      ...ownSessions.filter((session) => session.role === SESSION_ROLES.spec)
-    ];
-    const builderSessions = ownSessions.filter((session) => session.role !== SESSION_ROLES.spec);
+    // Without ClickUp there are no specs to write: every session on a
+    // branch is work on it.
+    const specSessions = gitMode
+      ? []
+      : [...planningSessions, ...ownSessions.filter((session) => session.role === SESSION_ROLES.spec)];
+    const builderSessions = gitMode ? ownSessions : ownSessions.filter((session) => session.role !== SESSION_ROLES.spec);
     const branches = branchesByTask[task.id] || [];
     const pullRequests = pullsByTask[task.id] || [];
     const spec = specStage({ planningTask, specSessions, statusOverrides: board.specStatusOverrides || {} });
@@ -184,6 +192,8 @@ export function buildProjectSnapshot({
     const card = {
       id: task.id,
       kind: "build",
+      source: gitMode ? "git" : "clickup",
+      branchName: task.branchName || null,
       customId: task.customId || null,
       description: excerptOf(task.description),
       fields: fieldsOf(task.customFields),
@@ -293,7 +303,7 @@ export function buildProjectSnapshot({
   const upNextCards = upNext.map((taskId) => cards.find((card) => card.id === taskId)).filter(Boolean);
 
   // ---- spec pipeline: every planning task by its stage ----
-  const specCards = cards.filter((card) => card.planning);
+  const specCards = gitMode ? [] : cards.filter((card) => card.planning);
   const specPipeline = SPEC_STAGE_ORDER.map((stage) => {
     const items = specCards
       .filter((card) => card.spec.known !== false && card.spec.steps[card.spec.index] === stage)
@@ -333,6 +343,8 @@ export function buildProjectSnapshot({
   const fromClickup = source.mode === "manual" ? [] : deadlineItems || [];
   const timeline = deadlineTimeline([...typed, ...fromClickup], {
     now,
+    hiddenIds: board.deadlineHidden || [],
+    keyDeadlineId: board.keyDeadlineId || null,
     projectStart: board.startDate || Math.min(...topBuild.map((task) => task.createdAt || now), now)
   });
   const buildForStats = topBuild;
@@ -358,6 +370,7 @@ export function buildProjectSnapshot({
     id: board.id,
     name: board.name,
     color: board.color || null,
+    mode: gitMode ? "git" : "clickup",
     sources: {
       buildList: board.clickup && board.clickup.buildListName ? board.clickup.buildListName : null,
       planningList: board.clickup && board.clickup.planningListName ? board.clickup.planningListName : null,

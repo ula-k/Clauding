@@ -5680,3 +5680,231 @@ button.burn-down-number:hover b {
   letter-spacing: 0;
   color: var(--gold);
 }
+
+/* ---- First run (FirstRunSheet.jsx) --------------------------------------
+   The whole window, once: the app's own gradient under a centered card with
+   two choices, the agent first. */
+.first-run {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 56px 24px 32px;
+  background: var(--background-gradient);
+}
+
+.first-run-card {
+  width: 100%;
+  max-width: 560px;
+  padding: 30px 32px 24px;
+  border-radius: var(--radius);
+  background: var(--surface-lavender);
+  border: 1px solid var(--border-lavender);
+  box-shadow: var(--shadow-soft);
+}
+
+.first-run-title {
+  font-size: 21px;
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.first-run-text {
+  margin-top: 10px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.first-run-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.first-run-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  border-radius: var(--radius-small);
+  background: var(--surface-lavender-raised);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.first-run-choice:hover {
+  background: var(--surface-hover);
+}
+
+.first-run-choice.is-primary {
+  box-shadow: inset 0 0 0 1px var(--accent-outline);
+  background: var(--accent-tint);
+}
+
+.first-run-choice.is-primary:hover {
+  background: var(--accent-soft);
+}
+
+.first-run-choice-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent-strong);
+}
+
+.first-run-choice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.first-run-choice-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.first-run-choice.is-primary .first-run-choice-title {
+  color: var(--accent-strong);
+}
+
+.first-run-choice-text {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.first-run-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.first-run-note {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+/* The "+" sheet of the Projects tab: the link to the old form sits on the
+   left of the buttons. */
+.sheet-actions-aside {
+  margin-right: auto;
+  align-self: center;
+  font-size: 12px;
+}
+
+/* ---- Projects: the key deadline and the phase bars' own menu ----------- */
+/* The date "Next" counts to when it is a phase's end: a filled diamond in
+   the accent color on the axis line, with its own label. */
+.deadline-key .deadline-diamond {
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.deadline-key .deadline-label {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.deadline-milestone.is-key .deadline-diamond {
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}
+
+.phase-bar.is-key {
+  border-color: var(--accent-strong);
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+
+.phase-bar-group {
+  display: contents;
+}
+
+.phase-bar-outside {
+  position: absolute;
+  top: 0;
+  font-size: 10.5px;
+  line-height: 20px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.phase-bar-outside.is-left {
+  text-align: right;
+}
+
+.phase-bar-more {
+  position: absolute;
+  top: 1px;
+  width: 17px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 14px;
+  color: var(--text-faint);
+  background: transparent;
+}
+
+.phase-bar-more:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.settings-axis-items {
+  margin-top: 12px;
+}
+
+.settings-axis-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-axis-item .settings-check {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-axis-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-axis-item-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.phase-bar-label.has-more {
+  padding-right: 16px;
+}
+
+.phase-bar-more {
+  z-index: 1;
+}

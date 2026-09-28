@@ -17,8 +17,9 @@ import {
   DEFAULT_PAGE_SIZE
 } from "./sessions.js";
 import { watchLiveStatus, collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
-import { ensureShellPath } from "./claudeCli.js";
-import { claudeRegistryPaths, commandChannelPath, isMacOS } from "./lib/platformPaths.js";
+import { claudeExecutablePath, ensureShellPath, setConfiguredClaudeBinary } from "./claudeCli.js";
+import { commandChannelPath, isMacOS } from "./lib/platformPaths.js";
+import { applyConfiguredClaudeHome, claudeHomeOrigin, currentClaudeHome, currentRegistryPaths } from "./claudeHome.js";
 import { applicationMenuTemplate } from "./lib/applicationMenu.js";
 import { createTerminalRegistry } from "./terminals.js";
 import { smartPaste } from "./pasteSmart.js";
@@ -55,10 +56,12 @@ import { createSettingsStore } from "./settings.js";
 import { createSessionFlagsStore } from "./sessionFlags.js";
 import { listSkills } from "./skills.js";
 import { copySkillCandidate, scanForSkillCandidates } from "./skillsScan.js";
-import { builtinAgentDraft, seedBuiltinSkills, seedBuiltins } from "./builtins.js";
+import { BUILTIN_SETUP_AGENT, restoreBuiltinAgents, seedBuiltinSkills, seedBuiltins } from "./builtins.js";
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
 import { createProjectBoardStore } from "./projectBoards.js";
 import { createProjectDataService } from "./projectData.js";
+import { describeRepository } from "./lib/gitInspector.js";
+import { findRepositories } from "./lib/repositoryFinder.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
@@ -118,6 +121,9 @@ app.on("second-instance", () => {
   }
 });
 const screenshotSelect = process.env.CLAUDING_SCREENSHOT_SELECT || null;
+// CLAUDING_SCREENSHOT_FIRST_RUN=1: a screenshot run that photographs the
+// first-run screen (every other screenshot run keeps it out of the way).
+const screenshotFirstRun = process.env.CLAUDING_SCREENSHOT_FIRST_RUN === "1";
 const screenshotAboutPanel = process.env.CLAUDING_SCREENSHOT_ABOUT === "1";
 const screenshotTerminalFolder = process.env.CLAUDING_SCREENSHOT_TERMINAL || null;
 // CLAUDING_SCREENSHOT_RESUME=<sessionId>: that terminal resumes this session
@@ -223,12 +229,47 @@ function clearStalePromptFiles() {
 // settings themselves rather than pushed, because a push sent while the
 // renderer is still mounting reaches nobody. A screenshot or smoke run is
 // never asked: it would photograph the sheet instead of the app.
+//
+// The first-run screen replaced that question: the setup agent asks it
+// (`clauding skills install-builtin`), and so does nobody else. The screen
+// is shown to a window that has never been set up — no answer yet, no
+// project, no agent of the user's own — so an app that is already in use
+// never sees it after an update.
 function settingsForRenderer() {
   const current = settings.get();
+  const ownAgents = agents ? agents.get().agents.filter((agent) => !agent.builtin).length : 0;
+  const projectCount = projectBoards ? projectBoards.getState().boards.length : 0;
   return {
     ...current,
-    askAboutBuiltinSkill: current.skillMakerSeeding === "unanswered" && !screenshotPath && !anySmokeMode
+    showFirstRun:
+      current.onboarding !== "done" &&
+      ownAgents === 0 &&
+      projectCount === 0 &&
+      (screenshotFirstRun || (!screenshotPath && !anySmokeMode)),
+    setupWorkingDirectory: setupWorkingDirectory(),
+    claudeHomeInUse: currentClaudeHome(),
+    claudeBinaryInUse: claudeExecutablePath()
   };
+}
+
+// Where the setup agent works: a folder of its own inside the app's data
+// folder, for the draft pages and the project file it shows before writing
+// anything. Created when it is first needed.
+function setupWorkingDirectory() {
+  const folder = path.join(userDataDirectory, "setup");
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+  } catch (error) {
+    console.log(`[setup] could not create ${folder}: ${error.message}`);
+  }
+  return folder;
+}
+
+// The settings that change how `claude` is found and where its sessions
+// are read from take effect here, at start-up and on every change.
+function applyClaudeSettings(current) {
+  setConfiguredClaudeBinary(current.claudeBinary);
+  applyConfiguredClaudeHome(current.claudeHome);
 }
 
 function sendToWindow(channel, payload) {
@@ -288,7 +329,7 @@ const terminalRegistry = createTerminalRegistry({
     console.log(line);
   },
   readPreamble() {
-    return readPreamble(preamblePath);
+    return withPreambleExtra(readPreamble(preamblePath));
   },
   commandDirectory,
   resolveAgent(agentId) {
@@ -307,6 +348,15 @@ const terminalRegistry = createTerminalRegistry({
     }
   }
 });
+
+// `preambleExtra` from settings.json — what the setup agent (or the user)
+// added about this person ("answer in Polish") — goes at the end of
+// preamble.md's text in every terminal. preamble.md itself stays the app's
+// default, so it keeps being refreshed with new versions.
+function withPreambleExtra(preamble) {
+  const extra = settings ? String(settings.get().preambleExtra || "").trim() : "";
+  return extra ? `${preamble.trimEnd()}\n\n${extra}\n` : preamble;
+}
 
 // A terminal started with an agent records the link the moment its CLI
 // registers a session id, so the row keeps the agent's badge for good — long
@@ -370,10 +420,124 @@ const commandRequests = createCommandRequestHandler({
       return added;
     }
   },
+  setup: {
+    getSettings() {
+      return settings.get();
+    },
+    updateSettings(draft) {
+      return settings.update(draft);
+    },
+    effectiveSettings() {
+      return { claudeBinary: claudeExecutablePath(), claudeHome: currentClaudeHome(), claudeHomeOrigin: claudeHomeOrigin() };
+    },
+    fileChecks: {
+      homeDirectory: os.homedir(),
+      isDirectory(folder) {
+        try {
+          return fs.statSync(folder).isDirectory();
+        } catch (error) {
+          return false;
+        }
+      },
+      isExecutableFile(filePath) {
+        try {
+          fs.accessSync(filePath, fs.constants.X_OK);
+          return fs.statSync(filePath).isFile();
+        } catch (error) {
+          return false;
+        }
+      }
+    },
+    ensureFolder(folder) {
+      fs.mkdirSync(folder, { recursive: true });
+    },
+    async countSessions() {
+      const page = await listSessionsPage({ offset: 0, limit: 2000, ownedStates: terminalRegistry.ownedStates() });
+      return { count: page.sessions.length, more: page.hasMore, claudeHome: currentClaudeHome() };
+    },
+    installBuiltinSkills() {
+      const current = settings.update({ skillMakerSeeding: "installed" });
+      const results = seedBuiltinSkills(current.skillsRoot, (line) => console.log(line));
+      installApplicationMenu();
+      return { skillsRoot: current.skillsRoot, results };
+    },
+    clickupStatus() {
+      return projectData.clickupStatus();
+    },
+    inspectProjectLink(link) {
+      return projectData.inspectProjectLink(link).catch((error) => {
+        throw new Error(error.key ? linkErrorSentence(error) : error.message);
+      });
+    },
+    async addProject(draft) {
+      const repositories = [];
+      for (const repository of Array.isArray(draft.repositories) ? draft.repositories : []) {
+        repositories.push(await completeRepository(repository));
+      }
+      try {
+        return await projectData.addProjectFromDraft({ ...draft, repositories });
+      } catch (error) {
+        throw new Error(error.key ? linkErrorSentence(error) : error.message);
+      }
+    },
+    listProjects() {
+      return projectBoards.getState().boards;
+    },
+    findRepositories(roots) {
+      return findRepositories({ roots });
+    },
+    describeRepository(folder) {
+      return describeRepository(folder);
+    }
+  },
   log(line) {
     console.log(line);
   }
 });
+
+// A repository the setup agent named by its folder only: the rest is read
+// from git (the name, the GitHub slug, the base and staging branches). What
+// it did say is kept; a folder that is not a checkout is refused.
+async function completeRepository(repository) {
+  const localPath = String((repository && repository.localPath) || "").trim();
+  if (!localPath) {
+    throw new Error("every repository needs a localPath.");
+  }
+  const described = await describeRepository(localPath);
+  if (!described.isRepository) {
+    throw new Error(`${localPath} is not a git repository.`);
+  }
+  return {
+    name: repository.name || described.name,
+    localPath: described.path,
+    githubSlug: repository.githubSlug || described.githubSlug,
+    remoteName: repository.remoteName || described.remoteName,
+    baseBranch: repository.baseBranch || described.suggestedBaseBranch || "main",
+    stagingBranch:
+      repository.stagingBranch !== undefined && repository.stagingBranch !== null
+        ? repository.stagingBranch
+        : described.suggestedStagingBranch || ""
+  };
+}
+
+// The link errors of the project sheet are locale keys; the command line
+// says them in English.
+const LINK_ERROR_SENTENCES = {
+  "projects.linkError.notClickup": "that is not a ClickUp link.",
+  "projects.linkError.notTask": "the task link is not a ClickUp task.",
+  "projects.linkError.notFound": "ClickUp says that does not exist (or the token cannot see it).",
+  "projects.linkError.noToken": "there is no working ClickUp token (see `clauding integrations clickup status`).",
+  "projects.linkError.noLists": "there are no lists behind that link.",
+  "projects.linkError.viewWithoutList": "that view does not belong to a list, folder or space.",
+  "projects.fixtureReadOnly": "this window shows test data and changes nothing."
+};
+
+function linkErrorSentence(error) {
+  if (error.key === "projects.linkError.clickupFailed") {
+    return `ClickUp could not be asked: ${(error.values && error.values.message) || "unknown error"}.`;
+  }
+  return LINK_ERROR_SENTENCES[error.key] || error.key;
+}
 
 const openPanelTab = commandRequests.openPanelTab;
 const handleCommandRequest = commandRequests.handleCommandRequest;
@@ -1206,6 +1370,12 @@ function installApplicationMenu() {
         onAddProject() {
           sendToWindow(CHANNELS.boardsMenu, { action: "add" });
         },
+        onManualProject() {
+          sendToWindow(CHANNELS.boardsMenu, { action: "manual" });
+        },
+        onRunSetupAgent() {
+          sendToWindow(CHANNELS.onboardingRun, {});
+        },
         onProjectSettings() {
           sendToWindow(CHANNELS.boardsMenu, { action: "settings" });
         },
@@ -1425,30 +1595,16 @@ function registerIpc() {
   // and sends the draft again with clickup.buildListId), or { errorKey } — a
   // locale key, so the sheet says it in the user's language.
   ipcMain.handle(CHANNELS.boardsAdd, async (event, { draft }) => {
-    const request = draft || {};
-    if (projectData.usesFixture) {
-      return { errorKey: "projects.fixtureReadOnly", values: {} };
-    }
-    const { projectLink, taskLink, seedLink, ...rest } = request;
-    let clickup = { ...(rest.clickup || {}) };
-    if (!clickup.buildListId) {
-      try {
-        const resolved = await projectData.resolveProjectLink({ projectLink: projectLink || null, taskLink: taskLink || seedLink || null });
-        if (resolved.ambiguous) {
-          return { candidates: resolved.candidates, clickup: resolved.clickup };
-        }
-        clickup = { ...resolved.clickup, ...clickup };
-      } catch (error) {
-        if (error.key) {
-          return { errorKey: error.key, values: error.values || {} };
-        }
-        throw error;
-      }
-    }
     try {
-      return { board: projectBoards.addBoard({ ...rest, clickup }) };
+      return await projectData.addProjectFromDraft(draft || {});
     } catch (error) {
-      return { errorKey: "projects.linkError.needsName", values: {} };
+      if (error.key) {
+        return { errorKey: error.key, values: error.values || {} };
+      }
+      if (/needs a name/.test(error.message || "")) {
+        return { errorKey: "projects.linkError.needsName", values: {} };
+      }
+      throw error;
     }
   });
   ipcMain.handle(CHANNELS.boardsSettingsData, async (event, { boardId }) => projectData.settingsData(boardId));
@@ -1681,7 +1837,7 @@ function registerIpc() {
   // color and definition the app ships with (and the built-in skills are
   // seeded again if they are missing).
   ipcMain.handle(CHANNELS.agentsRestoreBuiltin, async () => {
-    agents.ensureBuiltinAgent(builtinAgentDraft(), { force: true });
+    restoreBuiltinAgents(agents);
     // Asking for the built-ins back is itself a yes to the files under
     // ~/.claude, so the skills are written whatever the stored answer was.
     settings.update({ skillMakerSeeding: "installed" });
@@ -1942,7 +2098,7 @@ function lockDownWebviews() {
 // New transcripts or appended messages change lastModified and titles, so the
 // session list also refreshes when anything under ~/.claude/projects moves.
 function watchProjectFolders(onChange) {
-  const projectsDirectory = claudeRegistryPaths({ homeDirectory: os.homedir() }).projectsDirectory;
+  const projectsDirectory = currentRegistryPaths().projectsDirectory;
   const watchers = [];
   let debounceTimer = null;
   function scheduleChange() {
@@ -2018,7 +2174,8 @@ app.whenReady().then(() => {
   });
   settings = createSettingsStore({
     storagePath: path.join(userDataDirectory, "settings.json"),
-    onChange() {
+    onChange(current) {
+      applyClaudeSettings(current);
       sendToWindow(CHANNELS.settingsChanged, settingsForRenderer());
       // A new agents root is a new folder to watch, and the Skills menu may
       // now be reading a different skills folder.
@@ -2029,6 +2186,7 @@ app.whenReady().then(() => {
       console.log(line);
     }
   });
+  applyClaudeSettings(settings.get());
   // The agent that makes agents, the skill that makes skills and the skill
   // that explains the `clauding` command ship with the app, so they exist
   // for everyone: the Agent Maker goes into agents.json as the first agent.

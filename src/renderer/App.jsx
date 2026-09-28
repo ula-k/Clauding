@@ -13,7 +13,11 @@ import {
   harvestSkillsKickoffMessage,
   harvestSkillsSessionName,
   harvestSkillsTaskPrompt,
-  newAgentSessionName
+  newAgentSessionName,
+  PROJECT_SETUP_SESSION_NAME,
+  projectSetupKickoffMessage,
+  SETUP_SESSION_NAME,
+  setupKickoffMessage
 } from "./metaPrompts.js";
 import { taskKickoffMessage } from "./projectsView.js";
 import { assignmentPlan, definitionLoadsOnNextResume } from "./assignmentPlan.js";
@@ -26,7 +30,7 @@ import SidePanel from "./components/SidePanel.jsx";
 import ProjectView from "./components/ProjectView.jsx";
 import WindowTools from "./components/WindowTools.jsx";
 import SkillsScanSheet from "./components/SkillsScanSheet.jsx";
-import BuiltinSkillSheet from "./components/BuiltinSkillSheet.jsx";
+import FirstRunSheet from "./components/FirstRunSheet.jsx";
 import AssignAgentDialog from "./components/AssignAgentDialog.jsx";
 import SessionFlagsDialog from "./components/SessionFlagsDialog.jsx";
 import DeleteSessionDialog from "./components/DeleteSessionDialog.jsx";
@@ -109,6 +113,9 @@ const INITIAL_SETTINGS = {
 // The agent that makes agents, by its built-in marker rather than by name:
 // the user may rename it.
 const AGENT_MAKER_MARKER = "agent-maker";
+// The setup agent, the same way: the first-run screen, Clauding ▸ Run setup
+// agent… and "+" in the Projects tab all start it.
+const SETUP_AGENT_MARKER = "setup";
 
 // A row for a session a terminal of ours just started, shown until
 // listSessions() sees the transcript file on disk (written at the first prompt).
@@ -151,6 +158,10 @@ export default function App() {
   const [groupState, setGroupState] = useState(INITIAL_GROUP_STATE);
   const [agentState, setAgentState] = useState(INITIAL_AGENT_STATE);
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
+  // The first-run screen is closed for this window once one of its two
+  // choices was taken; only "I'll set it up myself" (or the agent's
+  // `clauding onboarding done`) closes it for good.
+  const [firstRunDismissed, setFirstRunDismissed] = useState(false);
   // The one place the skills are read: the **Skills** tab of the side
   // panel. The macOS Skills menu opens it and nothing else does — the
   // window has no button for it, and the popover it used to hang off the
@@ -292,10 +303,22 @@ export default function App() {
   terminalsRef.current = terminals;
   agentLinksRef.current = agentState.sessionAgents;
 
+  // A choice made in the window is written to settings.json too, so the
+  // setup agent (`clauding settings get language`) sees it, and a language
+  // the agent set arrives here through the settings.
   const setLanguage = useCallback((languageCode) => {
     saveLanguage(languageCode);
     setLanguageState(languageCode);
+    window.clauding.updateSettings({ language: languageCode }).then(setSettings).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (settings.language && settings.language !== language) {
+      saveLanguage(settings.language);
+      setLanguageState(settings.language);
+    }
+    // Only a change of the stored setting moves the window.
+  }, [settings.language]);
 
   // Ask the main process for the OS language once, unless a choice was saved.
   useEffect(() => {
@@ -330,8 +353,8 @@ export default function App() {
   useEffect(() => {
     return window.clauding.onBoardsMenu((request) => {
       setLeftTab("projects");
-      if (request && request.action === "add") {
-        setProjectAddRequest(true);
+      if (request && (request.action === "add" || request.action === "manual")) {
+        setProjectAddRequest(request.action === "manual" ? "manual" : "agent");
       } else {
         setProjectSettingsRequest(true);
       }
@@ -1849,6 +1872,44 @@ export default function App() {
     [selectSession]
   );
 
+  // The setup agent in a terminal of its own, in its own working folder,
+  // with the first message that says which of its two jobs this is.
+  const startSetupAgent = useCallback(
+    ({ kickoffMessage, sessionName }) => {
+      const setupAgent = agentState.agents.find((agent) => agent.builtin === SETUP_AGENT_MARKER) || null;
+      if (!setupAgent || !settings.setupWorkingDirectory) {
+        window.alert(translateInLanguage(language, "firstRun.noSetupAgent"));
+        return null;
+      }
+      setLeftTab("sessions");
+      return openTerminal({
+        workingDirectory: settings.setupWorkingDirectory,
+        agentId: setupAgent.id,
+        sessionName,
+        kickoffMessage
+      });
+    },
+    [agentState, settings, language, openTerminal]
+  );
+
+  const startFirstRunSetup = useCallback(() => {
+    setFirstRunDismissed(true);
+    return startSetupAgent({ kickoffMessage: setupKickoffMessage(), sessionName: SETUP_SESSION_NAME });
+  }, [startSetupAgent]);
+
+  const setUpProjectWithAgent = useCallback(
+    (typedText) => startSetupAgent({ kickoffMessage: projectSetupKickoffMessage(typedText), sessionName: PROJECT_SETUP_SESSION_NAME }),
+    [startSetupAgent]
+  );
+
+  // Clauding ▸ Run setup agent… in the menu bar.
+  useEffect(() => {
+    if (typeof window.clauding.onRunSetupAgent !== "function") {
+      return undefined;
+    }
+    return window.clauding.onRunSetupAgent(() => startFirstRunSetup());
+  }, [startFirstRunSetup]);
+
   const addProject = useCallback(async (draft) => {
     return window.clauding.addBoard(draft);
   }, []);
@@ -1951,6 +2012,7 @@ export default function App() {
             onSelect: setSelectedBoardId,
             onSelectTask: selectProjectTask,
             onAdd: addProject,
+            onSetUpWithAgent: setUpProjectWithAgent,
             addRequest: projectAddRequest,
             onAddRequestHandled: () => setProjectAddRequest(false),
             readOnly: false
@@ -2025,14 +2087,19 @@ export default function App() {
             onSkillsAdded={() => window.clauding.getSettings().then(setSettings)}
           />
         )}
-        {/* Asked once, on the first start: may the built-in skill-maker be
-            written into the skills folder? Until it is answered nothing is
-            written there. The settings carry the question, so it cannot be
-            missed by a window that was still mounting. */}
-        {settings.askAboutBuiltinSkill && (
-          <BuiltinSkillSheet
-            skillsRoot={settings.skillsRoot}
-            onAnswer={(install) => window.clauding.answerBuiltinSkill(install).then(setSettings)}
+        {/* The first start: one click hands the whole setup to the setup
+            agent, or the user does it by hand in Settings. The settings
+            carry the question (showFirstRun), so a window that was still
+            mounting cannot miss it. The built-in skills question is one of
+            the agent's steps now. */}
+        {settings.showFirstRun && !firstRunDismissed && (
+          <FirstRunSheet
+            onSetUpWithAgent={startFirstRunSetup}
+            onSetUpMyself={() => {
+              setFirstRunDismissed(true);
+              window.clauding.updateSettings({ onboarding: "done" }).then(setSettings);
+              setSettingsMenuOpen(true);
+            }}
           />
         )}
         {/* "Assign to agent" asks here, before anything is written: Cancel

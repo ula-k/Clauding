@@ -69,7 +69,7 @@ const CHANNELS = {
   skillsScanAdd: "skills:scan-add",
   skillsScanAddRoot: "skills:scan-add-root",
   // The answer to the first-run question about the built-in skill-maker.
-  // The question itself rides along in the settings (askAboutBuiltinSkill).
+  // Asked by the Skills tab button (and, through the socket, by the setup agent).
   skillsSeedAnswer: "skills:seed-answer",
   systemLanguage: "system:language",
   systemEmojiPanel: "system:emoji-panel",
@@ -88,6 +88,8 @@ const CHANNELS = {
   boardsBrowse: "boards:browse",
   boardsLinkTerminal: "boards:link-terminal",
   boardsMenu: "boards:menu",
+  // Clauding → Run setup agent… in the menu bar.
+  onboardingRun: "onboarding:run",
   // View → Zoom In / Out / Actual Size while a side-panel page has the focus.
   panelZoom: "panel:zoom",
   projectsRecent: "projects:recent",

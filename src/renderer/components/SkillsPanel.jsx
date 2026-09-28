@@ -107,9 +107,10 @@ export default function SkillsPanel({
           </button>
         ))}
       </div>
-      {/* Offered only to somebody who said "not now" when the app first
-          asked whether it may write its built-in skills. */}
-      {skillMakerSeeding === "declined" && onInstallBuiltinSkill && (
+      {/* Offered until the built-in skills were installed — by this
+          button, by the setup agent (`clauding skills install-builtin`) or
+          by "Restore built-in". */}
+      {skillMakerSeeding !== "installed" && onInstallBuiltinSkill && (
         <button type="button" className="skills-panel-install" onClick={onInstallBuiltinSkill} data-skills-install-builtin>
           <SparkIcon />
           {translate("skills.installBuiltin")}

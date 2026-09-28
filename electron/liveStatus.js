@@ -18,7 +18,7 @@ import {
   readJobRegistry,
   readProcessRegistry
 } from "./lib/liveStatusCore.js";
-import { claudeRegistryPaths } from "./lib/platformPaths.js";
+import { currentRegistryPaths } from "./claudeHome.js";
 
 // The mapping itself, the two registry readers and the merge live in
 // lib/liveStatusCore.js, so they can be exercised against a temporary folder
@@ -27,9 +27,14 @@ export { STATUS_GROUPS };
 
 // %USERPROFILE%\.claude on Windows, ~/.claude everywhere else, with the same
 // two registries inside (see lib/platformPaths.js for that assumption).
-const registryPaths = claudeRegistryPaths({ homeDirectory: os.homedir() });
-const sessionsRegistryDirectory = registryPaths.sessionsRegistryDirectory;
-const jobsRegistryDirectory = registryPaths.jobsRegistryDirectory;
+// Read at the moment of asking: the folder is a setting (see claudeHome.js).
+function registryFolders() {
+  const registryPaths = currentRegistryPaths();
+  return {
+    sessionsRegistryDirectory: registryPaths.sessionsRegistryDirectory,
+    jobsRegistryDirectory: registryPaths.jobsRegistryDirectory
+  };
+}
 
 // `process.kill(pid, 0)` asks whether the process exists without touching
 // it, and Windows answers the same way (ESRCH when it is gone, EPERM when it
@@ -49,6 +54,7 @@ export function isProcessAlive(pid) {
 
 // Returns a map: sessionId -> { group, source, rawStatus, name, jobId, pid, needs }
 export function collectLiveStatus() {
+  const { jobsRegistryDirectory, sessionsRegistryDirectory } = registryFolders();
   return collectLiveStatusFrom({
     jobEntries: readJobRegistry({ jobsRegistryDirectory }),
     processEntries: readProcessRegistry({ sessionsRegistryDirectory, isProcessAlive })
@@ -85,6 +91,7 @@ export function watchLiveStatus(onChange, debounceMilliseconds = 300) {
     }
   }
 
+  const { jobsRegistryDirectory, sessionsRegistryDirectory } = registryFolders();
   watchDirectory(sessionsRegistryDirectory);
   watchDirectory(jobsRegistryDirectory);
   // Each job keeps its state.json inside its own folder, so watch those

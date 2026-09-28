@@ -73,7 +73,10 @@ export function linkSessionsToTasks({
   agents = [],
   agentRoles = {},
   manualLinks = {},
-  transcriptTextBySession = {}
+  transcriptTextBySession = {},
+  // A project without ClickUp: branch name (lower case) → task key, so a
+  // session on that branch belongs to that card (lib/gitTasks.js).
+  branchTasks = {}
 }) {
   const known = new Set(taskIds.map((taskId) => String(taskId).toLowerCase()));
   const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
@@ -108,6 +111,10 @@ export function linkSessionsToTasks({
         ...taskIdsFromPath(session.gitBranch),
         ...taskIdsFromPath(session.workingDirectory)
       ]);
+      const branchKey = session.gitBranch ? branchTasks[String(session.gitBranch).toLowerCase()] : null;
+      if (branchKey) {
+        fromBranch.add(branchKey);
+      }
       if (fromBranch.size > 0) {
         via = "branch";
         found = fromBranch;

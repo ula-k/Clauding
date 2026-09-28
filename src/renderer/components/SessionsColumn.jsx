@@ -337,6 +337,7 @@ export default function SessionsColumn({
           onSelect={projects.onSelect}
           onSelectTask={projects.onSelectTask}
           onAdd={projects.onAdd}
+          onSetUpWithAgent={projects.onSetUpWithAgent}
           addRequest={projects.addRequest}
           onAddRequestHandled={projects.onAddRequestHandled}
           readOnly={projects.readOnly}

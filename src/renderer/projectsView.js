@@ -114,9 +114,11 @@ function sortNeedsFirst(cards) {
 }
 
 // The chips above the list, each with how many cards it holds.
+// A project without ClickUp has no specs, so it has no Specs chip either.
 export function filterChips(snapshot) {
   const filters = (snapshot && snapshot.filters) || {};
-  return FILTERS.map((filterId) => ({ id: filterId, count: (filters[filterId] || []).length }));
+  const gitOnly = Boolean(snapshot && snapshot.mode === "git");
+  return FILTERS.filter((filterId) => !(gitOnly && filterId === "specs")).map((filterId) => ({ id: filterId, count: (filters[filterId] || []).length }));
 }
 
 // The cards one chip shows: the focus list keeps its own order (needs me
@@ -211,8 +213,13 @@ export function sessionTone(session) {
 // there and is not yet is a "missing" chip (drawn dashed).
 export function cardLinks(card, { pullRequestsAvailable = true } = {}) {
   const links = [];
-  links.push({ kind: "clickup", taskId: card.id, label: `CU-${card.id}`, url: card.url });
-  if (card.kind === "build") {
+  // A card of a project without ClickUp is a branch: no task to link to and
+  // no spec to ask for — its chips start at the sessions.
+  const gitOnly = card.source === "git";
+  if (!gitOnly) {
+    links.push({ kind: "clickup", taskId: card.id, label: `CU-${card.id}`, url: card.url });
+  }
+  if (!gitOnly && card.kind === "build") {
     if (card.specUrl) {
       links.push({ kind: "spec", url: card.specUrl, label: card.planning ? card.planning.name : card.name });
     } else if (card.planning) {
@@ -220,9 +227,9 @@ export function cardLinks(card, { pullRequestsAvailable = true } = {}) {
     } else if (card.spec && card.spec.known === false) {
       links.push({ kind: "missing", reason: "noSpecLinked" });
     }
-  } else if (card.specUrl) {
+  } else if (!gitOnly && card.specUrl) {
     links.push({ kind: "spec", url: card.specUrl, label: card.name });
-  } else {
+  } else if (!gitOnly) {
     links.push({ kind: "missing", reason: "noSpecPage" });
   }
   for (const session of card.specSessions || []) {
@@ -239,7 +246,7 @@ export function cardLinks(card, { pullRequestsAvailable = true } = {}) {
   }
   const buildStarted = card.build && card.build.index >= 0;
   const buildDone = card.bucket === "done";
-  if ((card.builderSessions || []).length === 0 && buildStarted && !buildDone && card.bucket !== "inStaging") {
+  if (!gitOnly && (card.builderSessions || []).length === 0 && buildStarted && !buildDone && card.bucket !== "inStaging") {
     links.push({ kind: "missing", reason: "noBuilder" });
   }
   for (const branch of card.branches || []) {
@@ -358,19 +365,39 @@ export function axisMilestones(timeline, { minimumGap = 0.2 } = {}) {
 }
 
 // Phases (start → end) as bars in lanes under the axis: a phase goes in the
-// first lane where it does not overlap the one before.
-export function phaseLanes(timeline) {
+// first lane where it does not overlap what is already there — its bar, its
+// "…" button and, when its name does not fit inside the bar, the name drawn
+// next to it. So two phases with the same dates get two lanes, and a name
+// outside its bar never runs into the next bar. `axisWidth` (pixels) and
+// `labelOf(phase)` are what the placement is measured with; without them
+// only the bars count.
+const PHASE_MORE_PIXELS = 24;
+const PHASE_GAP_PIXELS = 6;
+export function phaseLanes(timeline, { axisWidth = 0, labelOf = null } = {}) {
   const phases = ((timeline && timeline.deadlines) || []).filter((deadline) => Number.isFinite(deadline.start));
   const lanes = [];
+  const pixel = axisWidth > 0 ? 1 / axisWidth : 0;
   for (const phase of [...phases].sort((first, second) => first.start - second.start)) {
-    let lane = lanes.find((candidate) => candidate[candidate.length - 1].date < phase.start);
+    const insideText = labelOf ? labelOf(phase) : "";
+    const outsideText = labelOf ? labelOf(phase, true) : "";
+    const placement = labelOf ? phaseLabelPlacement(phase, axisWidth, insideText) : "inside";
+    const outsidePixels = placement === "inside" ? 0 : String(outsideText).length * PHASE_LABEL_CHARACTER_PIXELS + 8;
+    const from = placement === "left" ? phase.startAt - outsidePixels * pixel : phase.startAt;
+    // The "…" sits inside the right end of a bar wide enough for it (and
+    // its name), else just after the bar.
+    const barPixels = (phase.at - phase.startAt) * axisWidth;
+    const moreInside = placement === "inside" && barPixels >= 60;
+    const to = phase.at + ((moreInside ? 0 : PHASE_MORE_PIXELS) + (placement === "right" ? outsidePixels : 0)) * pixel;
+    let lane = lanes.find((candidate) => candidate.occupiedTo + PHASE_GAP_PIXELS * pixel <= from && candidate.lastDate < phase.start);
     if (!lane) {
-      lane = [];
+      lane = { phases: [], occupiedTo: -1, lastDate: -Infinity };
       lanes.push(lane);
     }
-    lane.push({ ...phase, state: phase.passed ? "done" : phase.running ? "running" : "later" });
+    lane.phases.push({ ...phase, placement, moreInside, state: phase.passed ? "done" : phase.running ? "running" : "later" });
+    lane.occupiedTo = Math.max(lane.occupiedTo, to);
+    lane.lastDate = Math.max(lane.lastDate, phase.date);
   }
-  return lanes;
+  return lanes.map((lane) => lane.phases);
 }
 
 // The small burn-down line: open tasks per week, as SVG points in a box of
@@ -560,6 +587,9 @@ export function emptyDeadlineReason(snapshot) {
   if (sources.deadlinesSet > 0) {
     return { key: "projects.deadlinesWithoutDates", values: { count: sources.deadlinesSet } };
   }
+  if (snapshot && snapshot.mode === "git") {
+    return { key: "projects.noDatesGitOnly", values: {} };
+  }
   if (sources.dueDates === 0 && sources.milestones === 0) {
     return { key: "projects.noDatesInClickup", values: {} };
   }
@@ -603,6 +633,35 @@ export function moveInList(list, itemId, step) {
 // so it is inside the short first prompt the session list keeps, and the
 // task is linked to the session by the ordinary "mention" rule as well.
 export function taskKickoffMessage(card) {
+  if (card.source === "git") {
+    const where = (card.branches || []).map((branch) => `${branch.repository}: ${branch.name}`).join(", ");
+    return `Branch ${card.branchName || card.name}${where ? ` (${where})` : ""}${card.url ? `\n${card.url}` : ""}\n\nTask: ${card.name}`;
+  }
   const link = card.url || `https://app.clickup.com/t/${card.id}`;
   return `${link}\n\n${card.kind === "spec" ? "Spec task" : "Task"}: ${card.name}`;
+}
+
+// Where a phase bar's name goes: inside the bar when it fits, otherwise
+// outside it — after the bar, or before it when the bar ends near the right
+// edge — so a name is never cut off without a word. `axisWidth` is in
+// pixels; the text width is estimated from its length.
+export const PHASE_LABEL_CHARACTER_PIXELS = 6.2;
+export function phaseLabelPlacement(phase, axisWidth, text) {
+  const barPixels = Math.max(0, (phase.at - phase.startAt) * (axisWidth || 0));
+  const textPixels = String(text || "").length * PHASE_LABEL_CHARACTER_PIXELS + 14;
+  if (!axisWidth || barPixels >= textPixels) {
+    return "inside";
+  }
+  return phase.at <= 0.62 ? "right" : "left";
+}
+
+// The marker "Next" gets on the axis line when it is the end of a phase
+// (the running one, or a pinned phase): { at, label, date, reason } or null.
+// A single date that is "Next" is already a diamond of its own.
+export function keyAxisMarker(timeline) {
+  const next = timeline && timeline.next;
+  if (!next || !next.isPhaseEnd) {
+    return null;
+  }
+  return { id: next.id, at: next.at, label: next.label, date: next.date, reason: next.reason };
 }

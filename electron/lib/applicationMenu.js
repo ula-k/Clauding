@@ -43,7 +43,12 @@ export function applicationMenuTemplate({
   onZoom = null,
   zoomLabels = { in: "Zoom In", out: "Zoom Out", reset: "Actual Size" },
   onAddProject = () => {},
+  // The old "Add a project" form, next to the agent that sets one up.
+  onManualProject = () => {},
   onProjectSettings = () => {},
+  // Clauding → Run setup agent…: the first-run screen's agent, again.
+  onRunSetupAgent = () => {},
+  setupAgentLabel = "Run setup agent…",
   onCheckForUpdate = () => {},
   onShowSettings = () => {},
   onFindInConversation = () => {},
@@ -58,6 +63,7 @@ export function applicationMenuTemplate({
     { label: updateItemLabel, click: onCheckForUpdate },
     { type: "separator" },
     { label: settingsLabel, accelerator: SETTINGS_ACCELERATOR, click: onShowSettings },
+    { label: setupAgentLabel, click: onRunSetupAgent },
     { type: "separator" }
   ];
   if (onMac) {
@@ -101,7 +107,9 @@ export function applicationMenuTemplate({
     {
       label: "Projects",
       submenu: [
-        { label: "Add a Project…", click: onAddProject },
+        { label: "Set up a Project…", click: onAddProject },
+        { label: "Manual setup…", click: onManualProject },
+        { type: "separator" },
         { label: "Project Settings…", click: onProjectSettings }
       ]
     },

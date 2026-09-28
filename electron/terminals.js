@@ -21,7 +21,8 @@ import {
   supportsAppendSystemPromptFile,
   terminalEnvironment
 } from "./claudeCli.js";
-import { claudeRegistryPaths, isWindows } from "./lib/platformPaths.js";
+import { isWindows } from "./lib/platformPaths.js";
+import { currentRegistryPaths } from "./claudeHome.js";
 import { buildClaudeArguments, buildTerminalEnvironment, mergeExtraArguments } from "./lib/claudeArguments.js";
 import { exitNoticeText, exitPlan } from "./lib/exitPlan.js";
 import { buildAgentSystemPrompt } from "./agents.js";
@@ -47,7 +48,10 @@ const CLOSE_GRACE_MILLISECONDS = 3000;
 // sat idle this long is hung up, so browsing the list cannot pile up
 // `claude` processes. The session itself stays on disk.
 const UNTOUCHED_IDLE_CLOSE_MILLISECONDS = 20 * 60 * 1000;
-const sessionsRegistryDirectory = claudeRegistryPaths({ homeDirectory: os.homedir() }).sessionsRegistryDirectory;
+// Read at the moment of asking: the Claude folder is a setting (claudeHome.js).
+function sessionsRegistryDirectory() {
+  return currentRegistryPaths().sessionsRegistryDirectory;
+}
 
 // Windows has no signals: node-pty ends the console process whatever it is
 // handed, and passing a name it does not know is the one way to get an error.
@@ -64,7 +68,7 @@ function readJsonQuietly(filePath) {
 }
 
 function registryEntryForPid(pid) {
-  const record = readJsonQuietly(path.join(sessionsRegistryDirectory, `${pid}.json`));
+  const record = readJsonQuietly(path.join(sessionsRegistryDirectory(), `${pid}.json`));
   if (!record || typeof record.sessionId !== "string") {
     return null;
   }
@@ -76,7 +80,7 @@ function registryEntryForPid(pid) {
 function registryEntryByFolder(workingDirectory, startedAt, claimedSessionIds) {
   let entries = [];
   try {
-    entries = fs.readdirSync(sessionsRegistryDirectory);
+    entries = fs.readdirSync(sessionsRegistryDirectory());
   } catch (error) {
     return null;
   }
@@ -84,7 +88,7 @@ function registryEntryByFolder(workingDirectory, startedAt, claimedSessionIds) {
     if (!fileName.endsWith(".json")) {
       continue;
     }
-    const record = readJsonQuietly(path.join(sessionsRegistryDirectory, fileName));
+    const record = readJsonQuietly(path.join(sessionsRegistryDirectory(), fileName));
     if (!record || typeof record.sessionId !== "string" || record.cwd !== workingDirectory) {
       continue;
     }

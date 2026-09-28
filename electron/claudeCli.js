@@ -51,22 +51,42 @@ function lookUpOnPath(name, platform) {
   }
 }
 
+// `claudeBinary` from settings.json: "" means "find it" (the order below).
+let configuredClaudeBinary = "";
+
+export function setConfiguredClaudeBinary(binaryPath) {
+  const wanted = String(binaryPath || "").trim();
+  if (wanted !== configuredClaudeBinary) {
+    configuredClaudeBinary = wanted;
+    // Another binary may answer the flag probe differently.
+    appendSystemPromptFileSupport = null;
+  }
+  return configuredClaudeBinary;
+}
+
 // CLAUDING_CLAUDE_BIN wins over everything: it is how a second install, a
 // version manager or a wrapper script is pointed at without touching PATH.
-// After that, ~/.local/bin/claude (claude.exe, then claude.cmd, on Windows),
-// and finally whatever PATH says. On macOS the bare name "claude" is returned
-// when nothing was found, because the spawn resolves it; on Windows a bare
-// name is not enough for a pty, so the PATH lookup is done here.
+// Then `claudeBinary` from settings.json (the setup agent or the user wrote
+// it there). After that, ~/.local/bin/claude (claude.exe, then claude.cmd,
+// on Windows), and finally whatever PATH says. On macOS the bare name
+// "claude" is returned when nothing was found, because the spawn resolves
+// it; on Windows a bare name is not enough for a pty, so the PATH lookup is
+// done here.
 export function claudeExecutablePath({
   platform = process.platform,
   homeDirectory = os.homedir(),
   environment = process.env,
+  configuredBinary = configuredClaudeBinary,
   fileExists = (candidate) => fs.existsSync(candidate),
   findOnPath = (name) => lookUpOnPath(name, platform)
 } = {}) {
   const chosen = String(environment.CLAUDING_CLAUDE_BIN || "").trim();
   if (chosen) {
     return chosen;
+  }
+  const configured = String(configuredBinary || "").trim();
+  if (configured) {
+    return configured;
   }
   for (const candidate of claudeBinaryCandidates({ platform, homeDirectory })) {
     if (fileExists(candidate)) {

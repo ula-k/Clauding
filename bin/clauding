@@ -10,10 +10,26 @@
 //                                 the app would suggest from the folder)
 //   clauding agent list           the agents registered in the app
 //
+// And what the setup agent changes the app with (README: "The `clauding`
+// command"):
+//   clauding settings get [key] | settings set <key> <value>
+//   clauding sessions count
+//   clauding skills install-builtin
+//   clauding integrations clickup status
+//   clauding project inspect <ClickUp link>
+//   clauding project add --json <file>
+//   clauding project add --name "…" [--list <ClickUp link or id>] [--repo <folder>]… [--group "…"]
+//   clauding project list
+//   clauding repos find [folder …]
+//   clauding repo inspect <folder>
+//   clauding onboarding done
+//
 // It is started as `clauding` on macOS (this file, executable, with the
 // shebang above) and as `clauding.cmd` on Windows (the little batch file next
 // to it, which runs `node` on this same file).
+import fs from "node:fs";
 import net from "node:net";
+import path from "node:path";
 import { commandChannelPath, defaultUserDataDirectory } from "../electron/lib/platformPaths.js";
 
 // The running app exports the address of its own channel into every terminal
@@ -32,7 +48,18 @@ const FAILURE_VERBS = {
   panel: "could not change the panel",
   tabs: "could not list the tabs",
   "agent add": "could not add agent",
-  "agent list": "could not list the agents"
+  "agent list": "could not list the agents",
+  "settings get": "could not read the settings",
+  "settings set": "could not change the setting",
+  "sessions count": "could not count the sessions",
+  "skills install-builtin": "could not install the built-in skills",
+  integrations: "could not check the integration",
+  "project inspect": "could not inspect the link",
+  "project add": "could not add the project",
+  "project list": "could not list the projects",
+  "repos find": "could not look for repositories",
+  "repo inspect": "could not inspect the repository",
+  "onboarding done": "could not mark setup as done"
 };
 
 function failAndExit(reason) {
@@ -45,9 +72,66 @@ function failAndExit(reason) {
 function usage() {
   process.stderr.write(
     "usage: clauding open <path or URL> | clauding panel show|hide | clauding tabs\n" +
-      '       clauding agent add <definition folder> [--name "…"] [--emoji "…"] | clauding agent list\n'
+      '       clauding agent add <definition folder> [--name "…"] [--emoji "…"] | clauding agent list\n' +
+      "       clauding settings get [key] | clauding settings set <key> <value>\n" +
+      "       clauding sessions count | clauding skills install-builtin | clauding integrations clickup status\n" +
+      "       clauding project inspect <link> | clauding project add --json <file> | clauding project list\n" +
+      '       clauding project add --name "…" [--list <link or id>] [--repo <folder>]… [--group "…"]\n' +
+      "       clauding repos find [folder …] | clauding repo inspect <folder> | clauding onboarding done\n"
   );
   process.exit(1);
+}
+
+function resolvedPath(folder) {
+  return path.resolve(process.cwd(), folder.startsWith("~/") ? path.join(process.env.HOME || "", folder.slice(2)) : folder);
+}
+
+// `project add --json <file>` reads the file here, where its relative path
+// means something; the flags form builds the same draft.
+function readProjectDraft(flagArguments) {
+  if (flagArguments[0] === "--json") {
+    if (flagArguments.length !== 2) {
+      usage();
+    }
+    const filePath = resolvedPath(flagArguments[1]);
+    let text = "";
+    try {
+      text = fs.readFileSync(filePath, "utf8");
+    } catch (error) {
+      failAndExit(`there is no readable file at ${filePath}.`);
+    }
+    try {
+      const draft = JSON.parse(text);
+      for (const repository of Array.isArray(draft.repositories) ? draft.repositories : []) {
+        if (repository && typeof repository.localPath === "string" && repository.localPath) {
+          repository.localPath = resolvedPath(repository.localPath);
+        }
+      }
+      return draft;
+    } catch (error) {
+      failAndExit(`${filePath} is not valid JSON (${error.message}).`);
+    }
+  }
+  const draft = { repositories: [] };
+  for (let position = 0; position < flagArguments.length; position += 2) {
+    const flag = flagArguments[position];
+    const value = flagArguments[position + 1];
+    if (typeof value !== "string") {
+      usage();
+    }
+    if (flag === "--name") {
+      draft.name = value;
+    } else if (flag === "--list") {
+      draft.projectLink = value;
+    } else if (flag === "--repo") {
+      draft.repositories.push({ localPath: resolvedPath(value) });
+    } else if (flag === "--group") {
+      draft.group = value;
+    } else {
+      usage();
+    }
+  }
+  return draft;
 }
 
 // `--name "Release Notes Writer" --emoji 📝`: what the app would otherwise
@@ -87,6 +171,48 @@ function buildRequest() {
   }
   if (commandName === "tabs") {
     return { ...base, command: "tabs" };
+  }
+  if (commandName === "settings") {
+    const [action, key, ...valueParts] = commandArguments;
+    if (action === "get" && valueParts.length === 0) {
+      return { ...base, command: "settings", action: "get", key: key || null };
+    }
+    if (action === "set" && key) {
+      // The value may be several words ("answer in Polish") without quotes.
+      return { ...base, command: "settings", action: "set", key, value: valueParts.join(" ") };
+    }
+    return usage();
+  }
+  if (commandName === "sessions" && commandArguments[0] === "count" && commandArguments.length === 1) {
+    return { ...base, command: "sessions", action: "count" };
+  }
+  if (commandName === "skills" && commandArguments[0] === "install-builtin" && commandArguments.length === 1) {
+    return { ...base, command: "skills", action: "install-builtin" };
+  }
+  if (commandName === "integrations" && commandArguments.length === 2) {
+    return { ...base, command: "integrations", service: commandArguments[0], action: commandArguments[1] };
+  }
+  if (commandName === "project") {
+    const [action, ...rest] = commandArguments;
+    if (action === "list" && rest.length === 0) {
+      return { ...base, command: "project", action: "list" };
+    }
+    if (action === "inspect" && rest.length === 1) {
+      return { ...base, command: "project", action: "inspect", link: rest[0] };
+    }
+    if (action === "add" && rest.length > 0) {
+      return { ...base, command: "project", action: "add", board: readProjectDraft(rest) };
+    }
+    return usage();
+  }
+  if (commandName === "repos" && commandArguments[0] === "find") {
+    return { ...base, command: "repos", action: "find", roots: commandArguments.slice(1).map(resolvedPath) };
+  }
+  if (commandName === "repo" && commandArguments[0] === "inspect" && commandArguments.length === 2) {
+    return { ...base, command: "repo", action: "inspect", path: resolvedPath(commandArguments[1]) };
+  }
+  if (commandName === "onboarding" && commandArguments[0] === "done" && commandArguments.length === 1) {
+    return { ...base, command: "onboarding", action: "done" };
   }
   if (commandName === "agent") {
     const [action, ...rest] = commandArguments;
@@ -143,6 +269,10 @@ connection.on("error", (error) => {
     failAndExit(error.message);
   }
 });
-connection.setTimeout(5000, () => {
-  failAndExit("the app did not answer within 5 s.");
+// Asking ClickUp about a whole folder of lists takes a while; everything
+// else answers at once.
+const SLOW_COMMANDS = ["project", "integrations", "repos", "repo", "sessions"];
+const answerSeconds = SLOW_COMMANDS.includes(commandName) ? 120 : 5;
+connection.setTimeout(answerSeconds * 1000, () => {
+  failAndExit(`the app did not answer within ${answerSeconds} s.`);
 });

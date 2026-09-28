@@ -1,14 +1,13 @@
 // Recent project folders for the "+ New" sheet, read from the `projects` map
 // in ~/.claude.json (the CLI keeps one entry per folder it was started in).
 import fs from "node:fs";
-import os from "node:os";
 import { projectFolderLabel, projectColorIndex, shortenHomePath } from "./projects.js";
-import { claudeRegistryPaths } from "./lib/platformPaths.js";
+import { currentRegistryPaths } from "./claudeHome.js";
 
 export function listRecentProjects() {
   let configuration = null;
   try {
-    const configurationFile = claudeRegistryPaths({ homeDirectory: os.homedir() }).configurationFile;
+    const configurationFile = currentRegistryPaths().configurationFile;
     configuration = JSON.parse(fs.readFileSync(configurationFile, "utf8"));
   } catch (error) {
     return [];

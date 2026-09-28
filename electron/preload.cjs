@@ -146,9 +146,14 @@ contextBridge.exposeInMainWorld("clauding", {
   onPanelZoom(listener) {
     return subscribe(CHANNELS.panelZoom, listener);
   },
-  // Projects → Add a Project… / Project Settings… in the menu bar.
+  // Projects → Set up a Project… / Manual setup… / Project Settings… in
+  // the menu bar: { action: "add" | "manual" | "settings" }.
   onBoardsMenu(listener) {
     return subscribe(CHANNELS.boardsMenu, listener);
+  },
+  // Clauding → Run setup agent… in the menu bar.
+  onRunSetupAgent(listener) {
+    return subscribe(CHANNELS.onboardingRun, listener);
   },
   getBoardTaskDetail(taskId) {
     return ipcRenderer.invoke(CHANNELS.boardsTaskDetail, { taskId });
@@ -259,7 +264,7 @@ contextBridge.exposeInMainWorld("clauding", {
     return ipcRenderer.invoke(CHANNELS.skillsScanAddRoot);
   },
   // The answer to the first-run question about the built-in skill-maker
-  // skill. The question itself is `askAboutBuiltinSkill` in the settings.
+  // skill (the Skills tab button; the setup agent uses `clauding skills install-builtin`).
   answerBuiltinSkill(install) {
     return ipcRenderer.invoke(CHANNELS.skillsSeedAnswer, { install: Boolean(install) });
   },

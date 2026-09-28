@@ -39,7 +39,9 @@
 //                         "upNext": true, "everythingOpen": false },
 //         "perspectiveOverrides": { "<status name>": "myQueue" | "waiting" | "closed" },
 //         "developerStatusFieldName": null,        // null = detected
-//         "developerStatusMap": { "<field value>": "myQueue" | "waiting" | "closed" }
+//         "developerStatusMap": { "<field value>": "myQueue" | "waiting" | "closed" },
+//         "deadlineHidden": ["clickup-<task id>", …],  // not drawn on the axis
+//         "keyDeadlineId": "clickup-<task id>" | null  // what "Next" counts to
 //       }
 //     ]
 //   }
@@ -113,7 +115,10 @@ function cleanRepository(raw) {
     githubSlug: raw.githubSlug ? cleanText(raw.githubSlug, 120) : null,
     remoteName: cleanText(raw.remoteName, 40) || "origin",
     baseBranch: cleanText(raw.baseBranch, 120) || DEFAULT_BASE_BRANCH,
-    stagingBranch: cleanText(raw.stagingBranch, 120) || DEFAULT_STAGING_BRANCH
+    // "" on purpose means "this repository has no staging branch" (the setup
+    // agent writes that when `git branch -r` has none); a missing value is
+    // the old default.
+    stagingBranch: raw.stagingBranch === "" ? "" : cleanText(raw.stagingBranch, 120) || DEFAULT_STAGING_BRANCH
   };
 }
 
@@ -210,7 +215,11 @@ export function cleanBoard(raw) {
     developerStatusFieldName: cleanText(raw.developerStatusFieldName, 120) || null,
     developerStatusMap: cleanMap(raw.developerStatusMap, PERSPECTIVE_CHOICES),
     // Where the phases and deadlines come from (lib/deadlineSources.js).
-    deadlineSource: cleanDeadlineSource(raw.deadlineSource)
+    deadlineSource: cleanDeadlineSource(raw.deadlineSource),
+    // Deadline items (typed or from ClickUp, by id) left off the axis, and
+    // the one pinned as the key deadline "Next" counts to.
+    deadlineHidden: cleanStringList(raw.deadlineHidden, 200),
+    keyDeadlineId: cleanText(raw.keyDeadlineId, 120) || null
   };
 }
 

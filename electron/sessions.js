@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { isInsideSmokeFolder } from "./smokeFolder.js";
 import { claudeRegistryPaths } from "./lib/platformPaths.js";
+import { currentClaudeHome } from "./claudeHome.js";
 import { searchTranscriptFiles } from "./lib/transcriptSearch.js";
 import { TAIL_BYTES, createNeedsAnswerCache, isRecentEnoughToAsk } from "./lib/needsAnswer.js";
 import { OPENING_BYTES, openingTextFromTranscript } from "./lib/transcriptOpening.js";
@@ -271,11 +272,14 @@ export async function deleteSessionTranscript(sessionId) {
 // The transcript and every subagent transcript of one session, as
 // [{ filePath, roleLabel }] — the main file first, so the hits come back in
 // the order the conversation happened.
-export function transcriptFilesFor(sessionId, { homeDirectory = os.homedir() } = {}) {
+export function transcriptFilesFor(sessionId, { homeDirectory = os.homedir(), claudeHome = null } = {}) {
   if (!sessionId || !/^[A-Za-z0-9._-]+$/.test(String(sessionId))) {
     return [];
   }
-  const projectsDirectory = claudeRegistryPaths({ homeDirectory }).projectsDirectory;
+  // The real home reads the Claude folder the app is set to; a made-up home
+  // (the tests) reads its own .claude.
+  const folder = claudeHome || (homeDirectory === os.homedir() ? currentClaudeHome() : null);
+  const projectsDirectory = claudeRegistryPaths({ homeDirectory, claudeHome: folder }).projectsDirectory;
   let projectFolders = [];
   try {
     projectFolders = fs.readdirSync(projectsDirectory, { withFileTypes: true });

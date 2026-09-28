@@ -95,9 +95,12 @@ them are demo state and nothing real was touched.
   uses `~/.local/bin/claude` when that file exists, otherwise `claude` from
   your PATH (on Windows: `%USERPROFILE%\.local\bin\claude.exe`, then
   `claude.cmd` there, then whatever `where claude.exe` / `where claude.cmd`
-  answers). Set **`CLAUDING_CLAUDE_BIN=/path/to/claude`** to point it at a
-  different binary — a second install, a version manager, a wrapper script —
-  without touching your PATH; it wins over all of them.
+  answers). **`claudeBinary`** in the settings (the setup agent writes it
+  with `clauding settings set claudeBinary <path>`) points it at a different
+  binary — a second install, a version manager, a wrapper script — and
+  **`CLAUDING_CLAUDE_BIN=/path/to/claude`** in the environment wins over
+  all of them. Sessions are read from `~/.claude` unless `claudeHome` says
+  otherwise; `CLAUDE_CONFIG_DIR`, the CLI's own variable, wins over both.
 
 ## Install
 
@@ -132,6 +135,38 @@ the ones that were current when it was written. It costs about 290 MB in
 script wrote.
 
 Launch it from Launchpad, Spotlight or `open -a Clauding`.
+
+## First run
+
+The first launch of a copy that has never been set up (no answer yet, no
+project, no agent of your own) shows one screen over the whole window,
+**Welcome to Clauding**, with two choices:
+
+* **Set up with an agent** (recommended) — opens a terminal running the
+  built-in **Setup** agent (🧭, `builtin/agents/setup/setup.md`) in its own
+  working folder, `<userData>/setup`, with the first message "Set up
+  Clauding". The agent goes through ten steps, one question at a time:
+  the `claude` binary and the Claude folder it finds (`which claude`,
+  `claude --version`, `claude auth status`, `clauding settings get`), that
+  the sessions are visible (`clauding sessions count`), whether to install
+  the built-in skills (the question the first start used to ask in a sheet),
+  the agents folder (and any definitions already in it), the git
+  repositories in the usual places (`clauding repos find`), the window's
+  language and anything every session should be told (`preambleExtra`),
+  ClickUp and the GitHub CLI (only if you want them), and optionally a
+  first project. It then writes a summary page, opens it in the side panel
+  and **changes nothing until you say yes**. Only then does it run the
+  `clauding` commands on the page, report each printed line, and finish
+  with `clauding onboarding done`.
+* **I'll set it up myself** — opens Settings and marks the question
+  answered. Everything works with the defaults.
+
+**Clauding ▸ Run setup agent…** in the menu bar starts the same agent at
+any time. The agent changes the app only through the `clauding` command
+(which it may run without a permission question: the built-in agent carries
+`--permission-mode acceptEdits --allowedTools Bash(clauding:*),Bash(which:*)`
+as its own extra flags); every other command asks as usual, and nothing is
+written outside its working folder and the app's stores.
 
 ## Updating
 
@@ -423,7 +458,7 @@ src/renderer/components/SearchResults.jsx  its hits, in the side panel's Search 
 src/renderer/components/SkillsPanel.jsx    the Skills tab of the side panel: search, the list, the footer links
 src/renderer/skillsList.js         what that tab draws: the order, the search filter and where a skill comes from
 src/renderer/components/SkillsScanSheet.jsx  "Scan for skills…": candidates found on the Mac
-src/renderer/components/BuiltinSkillSheet.jsx  the first-run question about the built-in skill
+src/renderer/components/FirstRunSheet.jsx      the first-run screen: set up with an agent, or by hand
 electron/skillsScan.js     where skills hide on a Mac, and copying one into the skills folder
 src/renderer/metaPrompts.js        the task lines the two meta actions put in the prompt file
 src/renderer/agentConstants.js     the small label helpers of the agent rows and menus
@@ -929,14 +964,32 @@ IPC: `transcript:search` (renderer → main, read-only) and
 `bin/clauding` (`#!/usr/bin/env node`) is on the PATH of every terminal the
 app opens:
 
-```
-clauding open <path or URL>     open a tab in the right panel (relative paths: against the caller's cwd)
-clauding panel show|hide        show or hide the panel
-clauding tabs                   list this session's tabs ("*" marks the active one)
-clauding agent add <folder>     register an agent definition in the app
-                                [--name "…"] [--emoji "…"]
-clauding agent list             the agents registered in the app
-```
+| command | what it does |
+| --- | --- |
+| `clauding open <path or URL>` | open a tab in the right panel (relative paths: against the caller's cwd) |
+| `clauding panel show\|hide` | show or hide the panel |
+| `clauding tabs` | list this session's tabs (`*` marks the active one) |
+| `clauding agent add <folder> [--name "…"] [--emoji "…"]` | register an agent definition in the app |
+| `clauding agent list` | the agents registered in the app |
+| `clauding settings get [key]` | the settings as JSON (with what is in use where "automatic" is stored), or one value |
+| `clauding settings set <key> <value>` | change one of `language`, `agentsRoot`, `skillsRoot`, `preambleExtra`, `claudeBinary`, `claudeHome`, `skillScanRoots`, `extraClaudeArguments` — validated (see **Settings**); `auto` resets `claudeBinary` / `claudeHome`; setting `agentsRoot` creates the folder |
+| `clauding sessions count` | how many sessions the app can list, and from which Claude folder |
+| `clauding skills install-builtin` | write the built-in skills into `skillsRoot` (a copy you edited is kept) and remember the yes |
+| `clauding integrations clickup status` | whether a ClickUp token is there and whose it is (the token itself is never printed); exit 1 with the fix when there is none |
+| `clauding project inspect <ClickUp link>` | JSON: the lists behind the link with their real statuses (and where each lands automatically), custom fields and drop-down values, the suggested build and specs lists, the developer-status field, spec-link field candidates, who the token belongs to, the members, and where phases could come from |
+| `clauding project add --json <file>` | add a project from a draft file (the same fields as `project-boards.json`; a `projectLink` is resolved to its lists, list names are filled in, repositories named only by folder get their name, GitHub slug and base/staging branches from git) |
+| `clauding project add --name "…" [--list <link or id>] [--repo <folder>]… [--group "…"]` | the same in one line |
+| `clauding project list` | the projects, one per line |
+| `clauding repos find [folder …]` | git checkouts under Documents, Projects, projects, Developer, src, code, work, git, repos and Sites (three levels deep), or under the folders given |
+| `clauding repo inspect <folder>` | JSON: a checkout's remote, GitHub slug, remote branches and suggested base/staging branch |
+| `clauding onboarding done` | the first-run screen does not come back |
+
+Every command prints one line (the two inspections print JSON) and exits 0,
+or prints `clauding: could not … — <reason>` on stderr and exits 1. The
+setup commands are handled in `electron/lib/commandRequests.js` against a
+handful of calls `main.js` hands in, so `test/setupCommands.test.js` runs
+them against a fake app — and runs `bin/clauding` itself against a real
+socket.
 
 `clauding agent add` is how a session that has just written a definition gets
 it into the Agents tab without the user going through the form: the folder is
@@ -974,6 +1027,10 @@ wrong: `Opened /path/page.html in the Clauding panel.` from its own terminal,
 `clauding: could not open — <reason>` (and `could not change the panel` /
 `could not list the tabs` / `could not add agent` / `could not list the
 agents`), on stderr, exit code 1.
+
+`preambleExtra` from `settings.json` is appended to the text of
+`preamble.md` in every terminal the app starts; `preamble.md` itself stays
+the app's default, so a new version can still refresh it.
 
 The default preamble (`preamble.md`, from `electron/preamble-default.md`)
 tells the session it runs inside Clauding, describes the panel, and says to
@@ -1440,8 +1497,34 @@ and the Claude Code sessions that work on its tasks. ClickUp, git and GitHub
 are **only read**; what the tab changes is its own file,
 `project-boards.json` (and a terminal, when you start a session for a task).
 
-* **Adding a project** — "Add a project…" under the list, or **Projects →
-  Add a Project…** in the menu bar. Paste the **project link** from
+* **Setting a project up** — "+ Add a project…" under the list, or
+  **Projects → Set up a Project…** in the menu bar, asks one thing — what
+  the project should follow: a ClickUp link, a folder, a few words, or
+  nothing — and hands it to the **Setup** agent in a terminal ("Set up a
+  project: <what you typed>"). The agent composes the project from what is
+  actually there: with a ClickUp link it runs `clauding project inspect`
+  and proposes the build and specs lists, where each **real** status lands
+  (my queue / waiting / closed), the developer-status field and its values,
+  the spec-link field, the deadline source and who "me" is; it proposes the
+  repositories (`clauding repos find`, `clauding repo inspect` for the base
+  and staging branches); it shows the draft in the side panel and adds the
+  project with `clauding project add --json` only after a yes.
+* **Projects without ClickUp.** A project needs no ClickUp at all: without
+  a link or a list, its cards are the **feature branches** of its
+  repositories (every branch except the base, the staging branch and the
+  long-lived ones: main, master, develop, development, dev, staging,
+  production, prod, gh-pages). A branch without a pull request is in **my
+  queue** ("in progress"), one with an open pull request is **waiting**
+  ("in review"), one inside the staging branch is waiting ("in staging"),
+  and one whose pull request was merged — or with nothing of its own left
+  outside the base branch — is **closed** ("merged"; merged branches older
+  than 30 days drop off). A session whose git branch is that branch is
+  linked to its card. There is no spec pipeline (no Specs chip, no spec
+  counters, no spec dots), no ClickUp chip on the cards, and the deadlines
+  are the ones typed in the app. The header says "No ClickUp — branches".
+  (`electron/lib/gitTasks.js`, covered by `test/setupCommands.test.js`.)
+* **Manual setup** — **Projects → Manual setup…** in the menu bar (or "Fill
+  in the form instead" in the "+" sheet) is the form: paste the **project link** from
   ClickUp's address bar: a list (`…/v/li/<id>`), a saved view of it
   (`…/v/l/<view>`, `…/v/b/<view>` — ClickUp is asked which list it shows),
   a folder (`…/v/f/<id>`) or a space (`…/v/s/<id>`); a bare list id or task
@@ -1503,7 +1586,21 @@ are **only read**; what the tab changes is its own file,
   (start and end) is a bar in a lane under it — done, running (gold edge) or
   later (dashed) —, a single date is a diamond, several on the same day are
   one; with more than three, their names go in a row under the axis. A click
-  opens the task in the panel. "Next" is the nearest end still ahead.
+  opens the task in the panel. **"Next"** counts to, in this order: the
+  deadline **pinned as the key deadline**, else the **end of the phase
+  Today is in** (with two running, the one that ends first), else the
+  nearest date ahead (`chooseNextTarget` in `electron/lib/projectStats.js`).
+  When that is the end of a phase, it gets its own marker on the axis line —
+  a filled accent diamond, "Phase one ends · Dec 23" — and the
+  pill says "Next: … ends in N days". Every phase bar has a small **"…"**:
+  **Pin as key deadline** / **Unpin**, **Hide from the axis**, **Edit
+  deadlines**; Settings → Deadlines lists every phase and date with a
+  check box (shown / hidden) and a 📌 choice for the key deadline. Hidden
+  ones are not drawn and are counted in the line under the axis ("… · 1
+  hidden"). A phase's name is never cut off silently: the bar's tooltip
+  holds the whole name, a bar too short for it has the name (with its end
+  date) drawn next to it, and the lanes are packed around those names —
+  two phases with the same dates always get two lanes.
 * **Your side of a task.** ClickUp's statuses say where a task is in the
   team's process; the view also says whether it is on your plate. Every
   status lands in one of three places: **my queue** (you must act: open, in
@@ -1560,7 +1657,9 @@ from, the repositories with `baseBranch` — `main` by default — and
 `stagingBranch` — `staging` by default —, `specUrlFieldName`, deadlines, Up
 next, `focusRules`, `statusOverrides`, `specStatusOverrides`,
 `perspectiveOverrides`, `developerStatusFieldName`, `developerStatusMap`,
-`deadlineSource`, manual session links, agent roles). `project-cache/<id>.json`
+`deadlineSource`, `deadlineHidden`, `keyDeadlineId`, manual session links,
+agent roles; `stagingBranch: ""` means the repository has no staging
+branch). `project-cache/<id>.json`
 next to it holds the last ClickUp answer, the time in status, the status
 changes seen between refreshes, the phases read from the deadline source and
 where they were found.
@@ -1674,6 +1773,8 @@ them last, after everything the app needs.
 An agent that makes agents is useless if every user has to write it first, so
 both halves of this ship **inside the app**, in `builtin/`:
 
+* `builtin/agents/setup/setup.md` — the **Setup** agent: the first-run
+  setup and "+" in the Projects tab (see **First run** and **Projects**).
 * `builtin/agents/agent-maker/agent-maker.md` — the **Agent Maker**: it turns a
   conversation (or a description) into `<agents root>/<slug>/<slug>.md`, asks
   two or three questions only when the role is ambiguous, shows the draft in
@@ -1696,8 +1797,10 @@ both halves of this ship **inside the app**, in `builtin/`:
 
 At every start:
 
-* **The agent.** If `agents.json` holds no agent flagged `builtin:
-  "agent-maker"`, the Agent Maker is added as the **first** one (🧬),
+* **The agents.** The Setup agent (🧭, `builtin: "setup"`) and the Agent
+  Maker are seeded the same way; each new one goes above the ones already
+  there, so Setup is the first row. If `agents.json` holds no agent flagged `builtin:
+  "agent-maker"`, the Agent Maker is added (🧬),
   reading its definition straight out of `builtin/` — a new version of the
   app is simply a new definition, with nothing to migrate. Built-ins always
   sort above the user's own agents. Its emoji and name can be edited;
@@ -1706,12 +1809,11 @@ At every start:
   puts the shipped name, emoji and definition back.
 * **The skills — only after you say yes.** Writing into somebody's own
   `~/.claude` without telling them is not something an app should do
-  quietly, so the **first start asks**: a small sheet, *"Install the built-in
-  skills?"*, naming both files, with **Install** and **Not now**. The answer is remembered
+  quietly, so they are only written after a yes: the Setup agent asks
+  (step 3, `clauding skills install-builtin`), and the Skills tab has
+  **Install built-in skills** until they are installed. The answer is remembered
   in `settings.json` as `skillMakerSeeding` (`"unanswered"` → `"installed"` /
-  `"declined"`) and the question is never asked again; somebody who said no
-  gets **Install built-in skills** at the bottom of the panel's Skills tab,
-  and **Restore built-in** counts as a yes. Until then nothing is written.
+  `"declined"`); **Restore built-in** counts as a yes too. Until then nothing is written.
   Once installed: every `<skillsRoot>/<name>/SKILL.md` that is missing
   (`BUILTIN_SKILL_NAMES` in `electron/skills.js`) is copied there, with a line
   in the log. If it is there and **differs** from
@@ -1733,7 +1835,34 @@ Two folders, both shown under the **gear** in the top-right corner:
 | `agentsRoot` | `~/Clauding/agents` | where a new agent definition is written, and the folder the app watches; a folder picker changes it |
 | `skillsRoot` | `~/.claude/skills` | where Claude Code reads skills from; shown, not changed here |
 | `skillScanRoots` | `[]` | extra folders **Scan for skills…** looks through, added with a folder picker |
-| `skillMakerSeeding` | `"unanswered"` | whether the built-in skills may be written into `skillsRoot`: asked once on the first start, then `"installed"` or `"declined"` |
+| `skillMakerSeeding` | `"unanswered"` | whether the built-in skills may be written into `skillsRoot`: `"installed"` after a yes (the setup agent, the Skills tab button, Restore built-in) |
+| `extraClaudeArguments` | `""` | flags every `claude` gets (see **Extra `claude` flags**) |
+| `language` | `""` | the window's language; `""` follows the system. The language menu in the window writes it too |
+| `preambleExtra` | `""` | text added to what every session is told at start (up to 4000 characters) |
+| `claudeBinary` | `""` | the `claude` to start; `""` = `~/.local/bin/claude`, then PATH. `CLAUDING_CLAUDE_BIN` wins |
+| `claudeHome` | `""` | the Claude folder sessions are read from; `""` = `~/.claude`. `CLAUDE_CONFIG_DIR` wins; a folder set here is exported as `CLAUDE_CONFIG_DIR` to the app and every terminal, and a `skillsRoot` that was the default moves with it |
+| `onboarding` | `""` | `"done"` once the first-run screen was answered |
+
+**What is still fixed in the code, and why.** Each of these is either
+overridable per project, or a starting point the setup agent asks about:
+the default agents folder (`~/Clauding/agents`, proposed and changed by the
+agent); the places `clauding repos find` and **Scan for skills…** look
+(Documents, Projects, Developer, src, …; any other folder can be named —
+`clauding repos find <folder>`, `skillScanRoots`); the base/staging branch
+names tried first (main/master/trunk and staging/develop/dev, then any
+branch named like `*-staging`; per repository in the project); the
+long-lived branches a project without ClickUp leaves out (main, master,
+develop, development, dev, staging, production, prod, gh-pages); the status
+words that place a ClickUp status in a bucket and in my queue / waiting /
+closed (`statusOverrides` and `perspectiveOverrides` per project, which the
+setup agent writes from the real status names); the plan-like list names
+and ClickUp's milestone type used to find phases (a deadline source can be
+chosen per project); the `CU-<id>` branch convention (a project without
+ClickUp reads every branch); the "Spec URL" field name (`specUrlFieldName`
+per project); the ClickUp token's Keychain item name
+(`clickup-api` / `clickup-api-token`, or `CLAUDING_CLICKUP_TOKEN`); the
+update check, which follows `origin/main` of this checkout (it is how the
+app is distributed, not a user preference).
 
 ### The Skills menu, and the Skills tab in the panel
 
@@ -2272,7 +2401,7 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: **412 dry unit tests** of the main-process modules (live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder (including the whole command line of a session started with extra flags, argument by argument), what happens to a terminal whose `claude` ended, what Tab means in a field that shows a placeholder, the transcript search, what a paste into a terminal means (the quoting, the
+`npm test` runs `node --test test/*.test.js`: **524 dry unit tests** of the main-process modules (the setup commands, the settings that used to be baked in, projects without ClickUp, the key deadline and hidden phases, live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder (including the whole command line of a session started with extra flags, argument by argument), what happens to a terminal whose `claude` ended, what Tab means in a field that shows a placeholder, the transcript search, what a paste into a terminal means (the quoting, the
 clipboard's file / image / text order, the pasted/ folder), the terminal header's one-line fit, what a click on
 a row selects and what a bulk action would do, the session colors, the
 user's own tags, the skills catalogue, when a session needs an answer, i18n key

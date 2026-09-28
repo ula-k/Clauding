@@ -33,6 +33,7 @@ const electronFolder = path.dirname(fileURLToPath(import.meta.url));
 const builtinFolder = path.join(electronFolder, "..", "builtin");
 
 export const BUILTIN_AGENT_MAKER = "agent-maker";
+export const BUILTIN_SETUP_AGENT = "setup";
 
 // Everything about the built-in agent that is not the user's to change.
 export const AGENT_MAKER = {
@@ -40,8 +41,31 @@ export const AGENT_MAKER = {
   name: "Agent Maker",
   emoji: "🧬",
   definitionFolder: path.join(builtinFolder, "agents", "agent-maker"),
-  definitionFile: path.join(builtinFolder, "agents", "agent-maker", "agent-maker.md")
+  definitionFile: path.join(builtinFolder, "agents", "agent-maker", "agent-maker.md"),
+  extraClaudeArguments: ""
 };
+
+// The setup agent: the first thing a new user is offered ("Set up with an
+// agent"), and what "+" in the Projects tab hands a new project to. It
+// changes the app only through the `clauding` command, so that command is
+// allowed without a question every time — and so are the few read-only
+// checks its first step makes. Files it writes stay in its own working
+// folder (acceptEdits only covers that folder); anything else still asks.
+export const SETUP_AGENT = {
+  builtin: BUILTIN_SETUP_AGENT,
+  name: "Setup",
+  emoji: "🧭",
+  definitionFolder: path.join(builtinFolder, "agents", "setup"),
+  definitionFile: path.join(builtinFolder, "agents", "setup", "setup.md"),
+  // One token, no spaces: the stored flags are re-split on spaces, so a
+  // quoted list would not survive agents.json. The other read-only checks
+  // (claude --version, gh auth status) ask once, like any command.
+  extraClaudeArguments: "--permission-mode acceptEdits --allowedTools Bash(clauding:*),Bash(which:*)"
+};
+
+// In the order they are seeded. Each new one is put above the ones already
+// there, so the last in this list is the first row of the Agents tab.
+export const BUILTIN_AGENTS = [AGENT_MAKER, SETUP_AGENT];
 
 // Where a shipped skill is read from before it is copied into skillsRoot.
 export function builtinSkillSource(skillName) {
@@ -66,29 +90,40 @@ function hashOf(text) {
 // The agent's own definition, as the store wants it. The name, folder and
 // file are ours; the emoji is only a default, because the user is allowed
 // to rename a built-in agent and give it another emoji.
-export function builtinAgentDraft() {
+export function builtinAgentDraft(marker = BUILTIN_AGENT_MAKER) {
+  const shipped = BUILTIN_AGENTS.find((agent) => agent.builtin === marker) || AGENT_MAKER;
   return {
-    name: AGENT_MAKER.name,
-    emoji: AGENT_MAKER.emoji,
-    definitionFolder: AGENT_MAKER.definitionFolder,
-    definitionFile: AGENT_MAKER.definitionFile,
-    builtin: AGENT_MAKER.builtin
+    name: shipped.name,
+    emoji: shipped.emoji,
+    definitionFolder: shipped.definitionFolder,
+    definitionFile: shipped.definitionFile,
+    extraClaudeArguments: shipped.extraClaudeArguments,
+    builtin: shipped.builtin
   };
 }
 
-// Adds the Agent Maker as the first agent when agents.json has none flagged
-// as the built-in one; repairs the definition paths of one that is there but
-// points at a folder this version no longer ships (the app was moved).
+// Adds each built-in agent when agents.json has none flagged as that one;
+// repairs the definition paths of one that is there but points at a folder
+// this version no longer ships (the app was moved). Returns the outcome of
+// the Agent Maker, as before, with every outcome under `all`.
 export function seedBuiltinAgent(agentStore, log) {
-  const outcome = agentStore.ensureBuiltinAgent(builtinAgentDraft());
-  if (log) {
-    if (outcome.status === "added") {
-      log(`[builtin] added the Agent Maker as the first agent (${AGENT_MAKER.definitionFile})`);
-    } else if (outcome.status === "repaired") {
-      log(`[builtin] the Agent Maker pointed at a definition that is gone — put it back to ${AGENT_MAKER.definitionFile}`);
+  const outcomes = BUILTIN_AGENTS.map((shipped) => {
+    const outcome = agentStore.ensureBuiltinAgent(builtinAgentDraft(shipped.builtin));
+    if (log) {
+      if (outcome.status === "added") {
+        log(`[builtin] added the ${shipped.name} agent at the top of the list (${shipped.definitionFile})`);
+      } else if (outcome.status === "repaired") {
+        log(`[builtin] the ${shipped.name} agent pointed at a definition that is gone — put it back to ${shipped.definitionFile}`);
+      }
     }
-  }
-  return outcome;
+    return outcome;
+  });
+  return { ...outcomes[0], all: outcomes };
+}
+
+// "Restore built-in": every built-in agent back to what the app ships.
+export function restoreBuiltinAgents(agentStore) {
+  return BUILTIN_AGENTS.map((shipped) => agentStore.ensureBuiltinAgent(builtinAgentDraft(shipped.builtin), { force: true }));
 }
 
 // Puts <skillsRoot>/<skillName>/SKILL.md in place. Returns one of

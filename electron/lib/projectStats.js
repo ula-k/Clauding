@@ -98,12 +98,29 @@ export function calendarDaysBetween(fromTime, toTime) {
 // Deadlines sorted, with the elapsed fraction of the whole span for the
 // "Today" line. The span starts at the earliest of: the first deadline, the
 // project's own start date, the first task created.
-export function deadlineTimeline(deadlines, { now, projectStart = null }) {
-  const sorted = (deadlines || [])
-    .filter((deadline) => deadline && Number.isFinite(deadline.date))
-    .sort((first, second) => first.date - second.date);
+//
+// `hiddenIds` (board.deadlineHidden) are left off the axis — they are still
+// listed in `items`, so the settings can show them again — and
+// `keyDeadlineId` (board.keyDeadlineId) is the one the user pinned: it is
+// "Next" whatever else is nearer (see chooseNextTarget).
+export function deadlineTimeline(deadlines, { now, projectStart = null, hiddenIds = [], keyDeadlineId = null }) {
+  const hidden = new Set((hiddenIds || []).map(String));
+  const dated = (deadlines || []).filter((deadline) => deadline && Number.isFinite(deadline.date));
+  const items = dated
+    .map((deadline) => ({
+      id: deadline.id,
+      label: deadline.label,
+      start: Number.isFinite(deadline.start) ? deadline.start : null,
+      date: deadline.date,
+      source: deadline.source || "manual",
+      hidden: hidden.has(String(deadline.id)),
+      key: Boolean(keyDeadlineId) && String(deadline.id) === String(keyDeadlineId)
+    }))
+    .sort((first, second) => (first.start || first.date) - (second.start || second.date));
+  const sorted = dated.filter((deadline) => !hidden.has(String(deadline.id))).sort((first, second) => first.date - second.date);
+  const hiddenCount = dated.length - sorted.length;
   if (sorted.length === 0) {
-    return { deadlines: [], start: null, end: null, elapsedFraction: null, next: null };
+    return { deadlines: [], start: null, end: null, elapsedFraction: null, next: null, items, hiddenCount };
   }
   // A phase (deadline.start set) is drawn from its start to its end; the
   // axis starts at the earliest of everything.
@@ -120,15 +137,38 @@ export function deadlineTimeline(deadlines, { now, projectStart = null }) {
     passed: deadline.date < startOfDay(now),
     daysLeft: calendarDaysBetween(now, deadline.date)
   }));
-  const next = placed.find((deadline) => !deadline.passed) || null;
   return {
     deadlines: placed,
     start,
     end,
     elapsedFraction: Math.min(1, Math.max(0, (now - start) / span)),
     daysLeft: calendarDaysBetween(now, end),
-    next
+    next: chooseNextTarget(placed, { now, keyDeadlineId }),
+    items,
+    hiddenCount
   };
+}
+
+// What "Next" counts to, in this order:
+//   1. the deadline the user pinned as the key one (while it is ahead),
+//   2. the end of the phase Today is in — the date that matters while a
+//      phase runs; with two running, the one that ends first,
+//   3. the nearest date still ahead.
+// `reason` says which, so the axis can mark a phase's end as its own thing.
+export function chooseNextTarget(placed, { now, keyDeadlineId = null } = {}) {
+  const ahead = (placed || []).filter((deadline) => !deadline.passed);
+  const pinned = keyDeadlineId ? ahead.find((deadline) => String(deadline.id) === String(keyDeadlineId)) : null;
+  if (pinned) {
+    return { ...pinned, reason: "pinned", isPhaseEnd: Number.isFinite(pinned.start) };
+  }
+  const running = ahead
+    .filter((deadline) => Number.isFinite(deadline.start) && deadline.start <= now)
+    .sort((first, second) => first.date - second.date);
+  if (running.length > 0) {
+    return { ...running[0], reason: "phaseEnd", isPhaseEnd: true };
+  }
+  const nearest = [...ahead].sort((first, second) => first.date - second.date)[0] || null;
+  return nearest ? { ...nearest, reason: "nearest", isPhaseEnd: Number.isFinite(nearest.start) } : null;
 }
 
 // A task with a place from the user's side (lib/perspective.js) is in her

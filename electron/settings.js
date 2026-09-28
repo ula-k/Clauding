@@ -26,11 +26,27 @@
 //                       one file the app writes under ~/.claude is not
 //                       written behind the user's back.
 //
+// And the things that used to be baked into the code, so the setup agent
+// (or the user) can say what is true on this machine:
+//
+//   language       "" (follow the system) or one of the window's languages
+//   preambleExtra  text appended to preamble.md in every terminal ("answer
+//                  in Polish", "plans open as HTML pages in the panel")
+//   claudeBinary   "" (find it: ~/.local/bin/claude, then PATH) or the
+//                  absolute path of the `claude` to start;
+//                  CLAUDING_CLAUDE_BIN still wins
+//   claudeHome     "" (~/.claude) or the folder Claude Code keeps its
+//                  sessions in; CLAUDE_CONFIG_DIR still wins
+//   onboarding     "" until the first-run question was answered (by the
+//                  setup agent's `clauding onboarding done`, or "I'll set
+//                  it up myself"), then "done"
+//
 // File shape (version 1):
 //   { "version": 1, "agentsRoot": "/Users/<you>/Clauding/agents",
 //     "skillsRoot": "/Users/<you>/.claude/skills",
 //     "skillScanRoots": [], "skillMakerSeeding": "unanswered",
-//     "extraClaudeArguments": "" }
+//     "extraClaudeArguments": "", "language": "", "preambleExtra": "",
+//     "claudeBinary": "", "claudeHome": "", "onboarding": "" }
 //
 // Anything unexpected in the file is replaced by the default, exactly like
 // groups.json and agents.json: a broken settings.json must never keep the
@@ -39,17 +55,34 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { mergeExtraArguments } from "./lib/claudeArguments.js";
-import { claudeRegistryPaths, expandHomeFolder } from "./lib/platformPaths.js";
+import { LANGUAGE_CODES, MAXIMUM_PREAMBLE_EXTRA_CHARACTERS } from "./lib/settingCommands.js";
+import { claudeHomeFolder, claudeRegistryPaths, expandHomeFolder, samePath } from "./lib/platformPaths.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_EXTRA_ARGUMENTS_LENGTH = 500;
+// The window's languages (src/renderer/languageDetection.js has the same list).
+const SETTING_LANGUAGES = LANGUAGE_CODES;
+export const ONBOARDING_STATES = ["", "done"];
 
 export function defaultAgentsRoot() {
   return path.join(os.homedir(), "Clauding", "agents");
 }
 
-export function defaultSkillsRoot() {
-  return claudeRegistryPaths({ homeDirectory: os.homedir() }).skillsDirectory;
+// The skills folder inside the Claude folder: ~/.claude/skills unless the
+// app (or CLAUDE_CONFIG_DIR) points somewhere else.
+export function defaultSkillsRoot(claudeHome = "") {
+  const folder = claudeHomeFolder({ homeDirectory: os.homedir(), configuredHome: claudeHome });
+  return claudeRegistryPaths({ homeDirectory: os.homedir(), claudeHome: folder }).skillsDirectory;
+}
+
+export function cleanLanguage(rawLanguage) {
+  const language = String(rawLanguage || "").trim();
+  return SETTING_LANGUAGES.includes(language) ? language : "";
+}
+
+// Free text, kept as written (line breaks included), only trimmed and cut.
+export function cleanPreambleExtra(rawText) {
+  return String(rawText || "").replace(/\r\n/g, "\n").trim().slice(0, MAXIMUM_PREAMBLE_EXTRA_CHARACTERS);
 }
 
 function cleanFolder(rawFolder, fallback) {
@@ -89,21 +122,36 @@ export function cleanExtraClaudeArguments(rawText) {
 function sanitize(saved) {
   const source = saved && typeof saved === "object" ? saved : {};
   const seeding = String(source.skillMakerSeeding || "");
+  const claudeHome = cleanFolder(source.claudeHome, "");
   return {
     agentsRoot: cleanFolder(source.agentsRoot, defaultAgentsRoot()),
-    skillsRoot: cleanFolder(source.skillsRoot, defaultSkillsRoot()),
+    skillsRoot: cleanFolder(source.skillsRoot, defaultSkillsRoot(claudeHome)),
     skillScanRoots: cleanFolderList(source.skillScanRoots),
     skillMakerSeeding: SKILL_SEEDING_ANSWERS.includes(seeding) ? seeding : "unanswered",
-    extraClaudeArguments: cleanExtraClaudeArguments(source.extraClaudeArguments)
+    extraClaudeArguments: cleanExtraClaudeArguments(source.extraClaudeArguments),
+    language: cleanLanguage(source.language),
+    preambleExtra: cleanPreambleExtra(source.preambleExtra),
+    claudeBinary: cleanFolder(source.claudeBinary, ""),
+    claudeHome,
+    onboarding: ONBOARDING_STATES.includes(source.onboarding) ? source.onboarding : ""
   };
 }
 
+const COMPARED_KEYS = [
+  "agentsRoot",
+  "skillsRoot",
+  "skillMakerSeeding",
+  "extraClaudeArguments",
+  "language",
+  "preambleExtra",
+  "claudeBinary",
+  "claudeHome",
+  "onboarding"
+];
+
 function sameSettings(first, second) {
   return (
-    first.agentsRoot === second.agentsRoot &&
-    first.skillsRoot === second.skillsRoot &&
-    first.skillMakerSeeding === second.skillMakerSeeding &&
-    first.extraClaudeArguments === second.extraClaudeArguments &&
+    COMPARED_KEYS.every((key) => first[key] === second[key]) &&
     first.skillScanRoots.join("\n") === second.skillScanRoots.join("\n")
   );
 }
@@ -169,7 +217,13 @@ export function createSettingsStore({ storagePath, onChange, log }) {
   }
 
   function update(draft) {
-    const merged = sanitize({ ...state, ...(draft || {}) });
+    const change = { ...(draft || {}) };
+    // A skills folder that was only ever the default follows the Claude
+    // folder when that moves; one the user chose stays where it is.
+    if ("claudeHome" in change && !("skillsRoot" in change) && samePath(state.skillsRoot, defaultSkillsRoot(state.claudeHome))) {
+      change.skillsRoot = defaultSkillsRoot(cleanFolder(change.claudeHome, ""));
+    }
+    const merged = sanitize({ ...state, ...change });
     if (sameSettings(merged, state)) {
       return get();
     }

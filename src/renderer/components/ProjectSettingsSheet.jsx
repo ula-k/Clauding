@@ -134,7 +134,13 @@ export default function ProjectSettingsSheet({ boardId, snapshot, sessions, agen
             <ClickupSection draft={draft} change={change} data={data} onPick={setPicking} />
             <RepositoriesSection draft={draft} change={change} />
             <PeopleSection draft={draft} change={change} data={data} />
-            <DeadlinesSection draft={draft} change={change} data={data} cardsById={cardsById} />
+            <DeadlinesSection
+              draft={draft}
+              change={change}
+              data={data}
+              cardsById={cardsById}
+              axisItems={snapshot && snapshot.timeline ? snapshot.timeline.items || [] : []}
+            />
             <FocusSection draft={draft} change={change} />
             <UpNextSection draft={draft} change={change} cardsById={cardsById} />
             <StatusesSection draft={draft} change={change} data={data} />
@@ -479,7 +485,68 @@ export function usableDeadlines(deadlines) {
   );
 }
 
-function DeadlinesSection({ draft, change, data, cardsById }) {
+// Every phase and date the axis could draw (typed here or read from
+// ClickUp): a check box shows or hides each one (board.deadlineHidden), and
+// one of them can be the key deadline "Next" counts to (board.keyDeadlineId).
+function AxisItems({ items, draft, change }) {
+  const { translate } = useTranslation();
+  const hidden = new Set(draft.deadlineHidden || []);
+  const keyId = draft.keyDeadlineId || "";
+  const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <div className="settings-axis-items" data-axis-items>
+      <div className="sheet-label">{translate("projectSettings.deadlineItems")}</div>
+      {items.map((item) => (
+        <div key={item.id} className="settings-axis-item" data-axis-item={item.id}>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={!hidden.has(item.id)}
+              onChange={(event) => {
+                const next = new Set(hidden);
+                if (event.target.checked) {
+                  next.delete(item.id);
+                } else {
+                  next.add(item.id);
+                }
+                change({ deadlineHidden: [...next], keyDeadlineId: !event.target.checked && keyId === item.id ? null : keyId || null });
+              }}
+              data-axis-item-show={item.id}
+            />
+            <span className="settings-axis-item-name" title={item.label}>
+              {item.label}
+            </span>
+            <span className="project-dim">
+              {item.start ? `${formatter.format(item.start)} → ` : ""}
+              {formatter.format(item.date)}
+            </span>
+          </label>
+          <label className="settings-axis-item-key" title={translate("projectSettings.deadlineItemKey")}>
+            <input
+              type="radio"
+              name="key-deadline"
+              checked={keyId === item.id}
+              disabled={hidden.has(item.id)}
+              onChange={() => change({ keyDeadlineId: item.id })}
+              data-axis-item-key={item.id}
+            />
+            📌
+          </label>
+        </div>
+      ))}
+      <label className="settings-check">
+        <input type="radio" name="key-deadline" checked={!keyId} onChange={() => change({ keyDeadlineId: null })} data-axis-item-key="none" />
+        {translate("projectSettings.deadlineNoKey")}
+      </label>
+      <p className="sheet-hint">{translate("projectSettings.deadlineItemsHint")}</p>
+    </div>
+  );
+}
+
+function DeadlinesSection({ draft, change, data, cardsById, axisItems = [] }) {
   const { translate } = useTranslation();
   const deadlines = draft.deadlines || [];
   const update = (deadlineId, patch) => change({ deadlines: deadlines.map((deadline) => (deadline.id === deadlineId ? { ...deadline, ...patch } : deadline)) });
@@ -538,6 +605,7 @@ function DeadlinesSection({ draft, change, data, cardsById }) {
             : translate("projectSettings.deadlineSourceHint")}
         {data && data.deadlineSearchTruncated ? ` ${translate("projectSettings.deadlineSearchTruncated")}` : ""}
       </p>
+      <AxisItems items={axisItems} draft={draft} change={change} />
       {deadlines.length === 0 && <p className="project-dim">{translate("projectSettings.noDeadlines")}</p>}
       {deadlines.map((deadline) => (
         <DeadlineRow

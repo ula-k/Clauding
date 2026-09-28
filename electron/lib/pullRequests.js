@@ -4,7 +4,7 @@
 // branch name (CU-<task id>). `gh` uses the user's own login; when it is not
 // installed or not signed in, the cards say so and everything else works.
 import { execFile } from "node:child_process";
-import { taskIdFromBranch } from "./gitInspector.js";
+import { gitTaskKey, taskIdFromBranch } from "./gitInspector.js";
 
 const PULL_REQUEST_LIMIT = 200;
 const GH_TIMEOUT_MILLISECONDS = 30000;
@@ -32,10 +32,12 @@ export function ciStateFrom(checks) {
 }
 
 // gh's JSON → { "<taskId>": [pullRequest…] }, newest first.
-export function pullRequestsByTask(repositoryName, pullRequests) {
+// With `allBranches` (a project without ClickUp) every pull request counts,
+// keyed the way its branch is (gitTaskKey).
+export function pullRequestsByTask(repositoryName, pullRequests, { allBranches = false } = {}) {
   const byTask = {};
   for (const pull of pullRequests || []) {
-    const taskId = taskIdFromBranch(pull.headRefName);
+    const taskId = allBranches ? gitTaskKey(pull.headRefName) : taskIdFromBranch(pull.headRefName);
     if (!taskId) {
       continue;
     }
@@ -59,7 +61,7 @@ export function pullRequestsByTask(repositoryName, pullRequests) {
 }
 
 // { available, reason, byTask }. reason: "gh-missing" | "gh-signed-out" | "gh-failed"
-export function listPullRequests(repository, { execFileImplementation = execFile } = {}) {
+export function listPullRequests(repository, { execFileImplementation = execFile, allBranches = false } = {}) {
   const { name, githubSlug, localPath } = repository;
   const repositoryArguments = githubSlug ? ["--repo", githubSlug] : [];
   return new Promise((resolve) => {
@@ -80,7 +82,7 @@ export function listPullRequests(repository, { execFileImplementation = execFile
           return;
         }
         try {
-          resolve({ available: true, reason: null, byTask: pullRequestsByTask(name, JSON.parse(standardOutput || "[]")) });
+          resolve({ available: true, reason: null, byTask: pullRequestsByTask(name, JSON.parse(standardOutput || "[]"), { allBranches }) });
         } catch (parseError) {
           resolve({ available: false, reason: "gh-failed", byTask: {} });
         }

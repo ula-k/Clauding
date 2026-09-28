@@ -68,11 +68,45 @@ export function isInsideFolder(candidate, parent, platform = process.platform) {
   return child.toLowerCase().startsWith(rootWithSeparator.toLowerCase());
 }
 
+// The folder Claude Code keeps its registries in. The CLI's own variable,
+// CLAUDE_CONFIG_DIR, wins; then the folder the app was told to use
+// (`claudeHome` in settings.json, handed in as `configuredHome`); then
+// ~/.claude. `environment` is a parameter so the tests can leave the real
+// one out of it.
+export function claudeHomeFolder({
+  platform = process.platform,
+  homeDirectory = os.homedir(),
+  environment = process.env,
+  configuredHome = null
+} = {}) {
+  const pathModule = pathFor(platform);
+  const fromEnvironment = String((environment && environment.CLAUDE_CONFIG_DIR) || "").trim();
+  if (fromEnvironment) {
+    return fromEnvironment;
+  }
+  const configured = String(configuredHome || "").trim();
+  if (configured) {
+    return configured;
+  }
+  return pathModule.join(homeDirectory, ".claude");
+}
+
 // The three registries Claude Code keeps, plus the two files next to them.
 // Read-only for this app, and assumed to be the same JSON on Windows.
-export function claudeRegistryPaths({ platform = process.platform, homeDirectory = os.homedir() } = {}) {
+//
+// `.claude.json` sits in the home folder next to ~/.claude, except when the
+// CLI was pointed at another folder: then it lives inside that folder.
+export function claudeRegistryPaths({
+  platform = process.platform,
+  homeDirectory = os.homedir(),
+  claudeHome: givenClaudeHome = null
+} = {}) {
   const pathModule = pathFor(platform);
-  const claudeHome = pathModule.join(homeDirectory, ".claude");
+  const defaultHome = pathModule.join(homeDirectory, ".claude");
+  const claudeHome = givenClaudeHome || defaultHome;
+  const configurationFile = samePath(claudeHome, defaultHome, platform)
+    ? pathModule.join(homeDirectory, ".claude.json")
+    : pathModule.join(claudeHome, ".claude.json");
   return {
     claudeHome,
     sessionsRegistryDirectory: pathModule.join(claudeHome, "sessions"),
@@ -80,7 +114,7 @@ export function claudeRegistryPaths({ platform = process.platform, homeDirectory
     projectsDirectory: pathModule.join(claudeHome, "projects"),
     skillsDirectory: pathModule.join(claudeHome, "skills"),
     pluginsDirectory: pathModule.join(claudeHome, "plugins"),
-    configurationFile: pathModule.join(homeDirectory, ".claude.json")
+    configurationFile
   };
 }
 

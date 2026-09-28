@@ -42,6 +42,7 @@ import {
 import { fetchRepository, inspectRepository } from "./lib/gitInspector.js";
 import { listPullRequests } from "./lib/pullRequests.js";
 import { buildProjectSnapshot } from "./lib/projectSnapshot.js";
+import { branchTaskMap, tasksFromBranches, usesClickup } from "./lib/gitTasks.js";
 import { cleanBoard } from "./projectBoards.js";
 
 const CACHE_FRESH_MILLISECONDS = 5 * 60 * 1000;
@@ -417,6 +418,9 @@ export function createProjectDataService({
         now: input.now || now()
       });
     }
+    if (!usesClickup(board)) {
+      return gitSnapshot(board, { sessions, agentState, fetchGit });
+    }
     if (fetchGit) {
       for (const repository of board.repositories) {
         try {
@@ -453,6 +457,50 @@ export function createProjectDataService({
       transcriptTextBySession: openingTexts(sessions),
       clickup,
       now: now()
+    });
+  }
+
+  // A project without ClickUp: its feature branches are its tasks
+  // (lib/gitTasks.js). The answer is cached like ClickUp's, so the project
+  // list on the left has its numbers without running git again.
+  async function gitSnapshot(board, { sessions, agentState, fetchGit }) {
+    if (fetchGit) {
+      for (const repository of board.repositories) {
+        try {
+          await fetchRepositoryImplementation(repository);
+        } catch (error) {
+          log(`[projects] git fetch in ${repository.name} failed: ${error.message}`);
+        }
+      }
+    }
+    const [repositoryResults, pullRequestResults] = await Promise.all([
+      Promise.all(board.repositories.map((repository) => inspectRepositoryImplementation(repository, { allBranches: true }))),
+      Promise.all(board.repositories.map((repository) => listPullRequestsImplementation(repository, { allBranches: true })))
+    ]);
+    const refreshedAt = now();
+    const buildTasks = tasksFromBranches({ repositoryResults, pullRequestResults, now: refreshedAt });
+    const previous = readCache(board.id);
+    const statusMoves = observedMoves(previous, buildTasks, refreshedAt);
+    try {
+      writeCache(board.id, { buildTasks, planningTasks: [], refreshedAt, statusMoves, gitOnly: true });
+    } catch (error) {
+      log(`[projects] could not cache ${board.name}: ${error.message}`);
+    }
+    return buildProjectSnapshot({
+      board: boardStore.getBoard(board.id),
+      buildTasks,
+      planningTasks: [],
+      statusMoves,
+      sessions,
+      sessionAgents: agentState.sessionAgents,
+      agents: agentState.agents,
+      repositoryResults,
+      pullRequestResults,
+      transcriptTextBySession: openingTexts(sessions),
+      clickup: { ok: true, error: null, refreshedAt, fromCache: false, disabled: true },
+      mode: "git",
+      branchTasks: branchTaskMap(buildTasks, repositoryResults),
+      now: refreshedAt
     });
   }
 
@@ -615,7 +663,7 @@ export function createProjectDataService({
       deadlineSourceInUse: !fixture && readCache(boardId) ? readCache(boardId).deadlineSource || null : null,
       error: null
     };
-    if (!fixture) {
+    if (!fixture && usesClickup(board)) {
       try {
         const clickup = await client();
         const lists = [board.clickup.buildListId, board.clickup.planningListId].filter(Boolean);
@@ -697,7 +745,7 @@ export function createProjectDataService({
     }
     return [...(cached.buildTasks || []), ...(cached.planningTasks || [])]
       .filter((task) => !task.parentId)
-      .map((task) => ({ id: task.id, name: task.name, customId: task.customId || null }));
+      .map((task) => ({ id: task.id, name: task.name, customId: task.customId || null, source: task.source || "clickup" }));
   }
 
   // For the list on the left: from the cache only, never the network, so
@@ -723,6 +771,7 @@ export function createProjectDataService({
       const summary = cached
         ? buildProjectSnapshot({
             board,
+            mode: cached.gitOnly ? "git" : "clickup",
             buildTasks: cached.buildTasks,
             planningTasks: cached.planningTasks,
             statusHistory: cached.statusHistory || {},
@@ -757,11 +806,170 @@ export function createProjectDataService({
     }
   }
 
+  // ---- for the setup agent (`clauding project inspect|add`, `clauding
+  // integrations clickup status`) -----------------------------------------
+
+  // Is there a token, and whose is it? The token itself never leaves here.
+  async function clickupStatus() {
+    if (fixture) {
+      return { connected: false, reason: "fixture" };
+    }
+    let token = "";
+    try {
+      token = await readToken();
+    } catch (error) {
+      token = "";
+    }
+    if (!token) {
+      return { connected: false, reason: "no-token" };
+    }
+    try {
+      const clickup = await client();
+      const [user, workspaces] = await Promise.all([clickup.getCurrentUser(), clickup.listWorkspaces()]);
+      return { connected: true, user, workspaces, source: process.env.CLAUDING_CLICKUP_TOKEN ? "CLAUDING_CLICKUP_TOKEN" : "keychain" };
+    } catch (error) {
+      forgetClientOn(error);
+      return { connected: false, reason: error.kind || "http", message: error.message };
+    }
+  }
+
+  // Everything a project could be built from, for one ClickUp link: the
+  // lists behind it with their REAL status names (and where each would land
+  // automatically), their custom fields with the drop-down values, which
+  // list looks like the build list and which the specs list, the people,
+  // who the token belongs to, and where the phases and milestones could
+  // come from. Read-only, like everything here.
+  async function inspectProjectLink(link) {
+    const parsed = parseClickupLink(link);
+    if (!parsed) {
+      throw new ProjectLinkError("projects.linkError.notClickup");
+    }
+    const resolved = await resolveProjectLink(parsed.kind === "task" ? { taskLink: link } : { projectLink: link });
+    const clickup = await client();
+    let target = parsed;
+    if (target.kind === "view") {
+      const view = await clickup.getView(target.id);
+      target = { kind: view.parentKind, id: view.parentId, viewName: view.name };
+    }
+    let lists = [];
+    if (target.kind === "task") {
+      lists = [{ id: resolved.clickup.buildListId, name: resolved.clickup.buildListName }];
+    } else if (target.kind === "list") {
+      lists = [{ id: target.id, name: resolved.clickup.buildListName }];
+    } else if (target.kind === "folder") {
+      lists = await listsOfFolder(clickup, target.id);
+    } else if (target.kind === "space") {
+      lists = await listsOfSpace(clickup, target.id);
+    }
+    const described = [];
+    let buildTasks = [];
+    for (const list of lists.slice(0, MAXIMUM_LISTS_TO_DISCOVER)) {
+      const [details, fields, tasks] = await Promise.all([
+        clickup.getList(list.id),
+        clickup.listFields(list.id).catch(() => []),
+        clickup.listTasks(list.id, { maximumPages: 1 })
+      ]);
+      if (list.id === resolved.clickup.buildListId) {
+        buildTasks = tasks;
+      }
+      const ownIds = new Set(tasks.map((task) => task.id));
+      described.push({
+        id: list.id,
+        name: details.name || list.name,
+        folderName: details.folderName || list.folderName || null,
+        spaceId: details.spaceId,
+        role: list.id === resolved.clickup.buildListId ? "build" : list.id === resolved.clickup.planningListId ? "specs" : null,
+        tasksOnFirstPage: tasks.length,
+        moreTasks: Boolean(tasks.truncated),
+        tasksWithDueDate: tasks.filter((task) => task.dueDate).length,
+        tasksDependingOnOtherLists: tasks.filter((task) => task.dependsOn.some((dependencyId) => !ownIds.has(dependencyId))).length,
+        statuses: details.statuses.map((status) => {
+          const bucket = bucketForStatus(status.name, status.type, {});
+          return { name: status.name, type: status.type, automaticBucket: bucket, automaticPlace: automaticPerspective(status.name, status.type, bucket) };
+        }),
+        customFields: fields.map((field) => ({ name: field.name, type: field.type, options: field.options })),
+        assignees: [...new Map(tasks.flatMap((task) => task.assignees).map((person) => [person.id, { id: person.id, name: person.name }])).values()]
+      });
+    }
+    const buildList = described.find((list) => list.role === "build") || null;
+    const planningList = described.find((list) => list.role === "specs") || null;
+    const [currentUser, members] = await Promise.all([
+      clickup.getCurrentUser().catch(() => null),
+      buildList ? clickup.listMembers(buildList.id).catch(() => []) : Promise.resolve([])
+    ]);
+    let deadlineCandidates = [];
+    if (buildList) {
+      try {
+        const found = await discoverDeadlineSources(clickup, { name: target.viewName || buildList.name }, resolved.clickup, buildTasks);
+        deadlineCandidates = found.candidates.map((candidate) => ({ kind: candidate.kind, id: candidate.id, name: candidate.name, where: candidate.where || null, dated: candidate.dated, matchesName: Boolean(candidate.matchesName) }));
+      } catch (error) {
+        log(`[projects] inspect: deadline sources could not be read: ${error.message}`);
+      }
+    }
+    return {
+      link,
+      linkKind: parsed.kind,
+      resolvedKind: target.kind,
+      suggestion: {
+        buildListId: resolved.clickup.buildListId || null,
+        buildListName: resolved.clickup.buildListName || null,
+        planningListId: resolved.clickup.planningListId || null,
+        planningListName: resolved.clickup.planningListName || null,
+        ambiguous: Boolean(resolved.ambiguous)
+      },
+      lists: described,
+      listsNotRead: Math.max(0, lists.length - MAXIMUM_LISTS_TO_DISCOVER),
+      developerStatusField: buildList ? detectDeveloperStatusField(buildList.customFields) : null,
+      specLinkFieldCandidates: planningList ? planningList.customFields.filter((field) => /spec|url|link|doc/i.test(field.name)).map((field) => field.name) : [],
+      currentUser: currentUser ? { id: currentUser.id, name: currentUser.name, email: currentUser.email || null } : null,
+      members: members.map((person) => ({ id: person.id, name: person.name, email: person.email || null })),
+      deadlineCandidates
+    };
+  }
+
+  // A project described by the setup agent (`clauding project add`), or
+  // typed into the manual sheet: a ClickUp link is resolved to its lists
+  // the same way the sheet does it; without one the project follows its
+  // repositories only. Returns { board } | { candidates } | throws.
+  async function addProjectFromDraft(draft) {
+    if (fixture) {
+      throw new ProjectLinkError("projects.fixtureReadOnly");
+    }
+    const { projectLink, taskLink, seedLink, ...rest } = draft || {};
+    let clickup = { ...(rest.clickup || {}) };
+    const link = projectLink || clickup.projectLink || null;
+    if (!clickup.buildListId && (link || taskLink || seedLink)) {
+      const resolved = await resolveProjectLink({ projectLink: link, taskLink: taskLink || seedLink || null });
+      if (resolved.ambiguous) {
+        return { candidates: resolved.candidates, clickup: resolved.clickup };
+      }
+      clickup = { ...resolved.clickup, ...clickup };
+    }
+    // Ids the agent took from `project inspect` come without their names;
+    // the names are what the header chips show.
+    if (link && !clickup.projectLink) {
+      clickup.projectLink = link;
+    }
+    for (const [idKey, nameKey] of [["buildListId", "buildListName"], ["planningListId", "planningListName"]]) {
+      if (clickup[idKey] && !clickup[nameKey]) {
+        try {
+          clickup[nameKey] = (await (await client()).getList(clickup[idKey])).name || null;
+        } catch (error) {
+          log(`[projects] could not read the name of list ${clickup[idKey]}: ${error.message}`);
+        }
+      }
+    }
+    return { board: boardStore.addBoard({ ...rest, clickup }) };
+  }
+
   return {
     snapshot,
     summaries,
     taskDetail,
     resolveProjectLink,
+    inspectProjectLink,
+    addProjectFromDraft,
+    clickupStatus,
     settingsData,
     browse,
     // True while CLAUDING_PROJECTS_FIXTURE is in charge: the window then

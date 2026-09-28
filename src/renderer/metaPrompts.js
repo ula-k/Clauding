@@ -114,3 +114,20 @@ export function agentAssignmentKickoffMessage(agentName) {
     "Read it and tell me in two sentences what you will do differently in this conversation from now on."
   );
 }
+
+// The setup agent (builtin/agents/setup/setup.md) is started with one of
+// these two first messages; its definition says what each one means. The
+// session names say which it was in the session list.
+export const SETUP_SESSION_NAME = "Set up Clauding";
+export const PROJECT_SETUP_SESSION_NAME = "Set up a project";
+
+export function setupKickoffMessage() {
+  return "Set up Clauding. Follow \"Setting up Clauding\" in your definition from step 1, one question at a time.";
+}
+
+// What the user typed into the "+" sheet goes after the colon as it is —
+// a ClickUp link, a folder, a sentence, or nothing at all.
+export function projectSetupKickoffMessage(typedText) {
+  const typed = String(typedText || "").replace(/\s+/g, " ").trim();
+  return `Set up a project: ${typed}`.trim();
+}

@@ -18,6 +18,7 @@ import {
   defaultSpecStage,
   filterChips,
   needsLabel,
+  keyAxisMarker,
   phaseLanes,
   pipelineDots,
   sessionStateLabel,
@@ -298,6 +299,13 @@ export default function ProjectView({
               onEdit={(deadlineId) => setDeadlineEditing(deadlineId || "new")}
               onEditAll={() => setSettingsSection("deadlines")}
               onOpenTask={onOpenTask}
+              onHideDeadline={(deadlineId) =>
+                changeBoard((board) => ({
+                  deadlineHidden: [...new Set([...(board.deadlineHidden || []), deadlineId])],
+                  keyDeadlineId: board.keyDeadlineId === deadlineId ? null : board.keyDeadlineId || null
+                }))
+              }
+              onPinDeadline={(deadlineId) => changeBoard(() => ({ keyDeadlineId: deadlineId }))}
             />
             {snapshot.cards.length > 0 && <StatsCards snapshot={snapshot} activeStat={statFilter} onStat={chooseStat} />}
             {snapshot.cards.length === 0 && state.kind === "ok" && (
@@ -534,6 +542,11 @@ function SourceChips({ snapshot, pullRequestsAvailable }) {
           {snapshot.sources.planningList}
         </span>
       )}
+      {snapshot.mode === "git" && (
+        <span className="source-chip is-muted" title={translate("projects.gitOnlyHint")} data-source-git-only>
+          {translate("projects.gitOnly")}
+        </span>
+      )}
       {repositories.length > 0 && (
         <span className="source-chip" title={translate("projects.repositoriesHint")}>
           {repositories.map((repository, index) => (
@@ -606,12 +619,14 @@ function ProjectSkeleton() {
 
 // ---- deadlines (variant A) ---------------------------------------------------
 
-function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }) {
+function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask, onHideDeadline, onPinDeadline }) {
   const { translate } = useTranslation();
   const shortDate = useShortDate(language);
   const timeline = snapshot.timeline;
   const axisRef = useRef(null);
   const [axisWidth, setAxisWidth] = useState(0);
+  // The small "…" of a phase bar: { phase, anchor } while its menu is open.
+  const [phaseMenu, setPhaseMenu] = useState(null);
   useEffect(() => {
     const axis = axisRef.current;
     if (!axis || typeof ResizeObserver === "undefined") {
@@ -623,8 +638,12 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }
   });
   if (!timeline || timeline.deadlines.length === 0) {
     // No numbers are made up: the axis says why it is empty (no deadline
-    // here, and whether ClickUp has any dates a deadline could follow).
-    const reason = emptyDeadlineReason(snapshot);
+    // here, and whether ClickUp has any dates a deadline could follow) —
+    // or that every one of them was hidden.
+    const reason =
+      timeline && timeline.hiddenCount > 0
+        ? { key: "projects.deadlinesAllHidden", values: { count: timeline.hiddenCount } }
+        : emptyDeadlineReason(snapshot);
     return (
       <section className="project-card deadlines is-empty" data-deadlines="none">
         <b>{translate("projects.deadlines")}</b>
@@ -646,7 +665,9 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }
   const labelPixels = compactMarkers ? AXIS_DATE_PIXELS : AXIS_LABEL_PIXELS;
   const minimumGap = axisWidth > 0 ? Math.min(0.6, Math.max(0.04, labelPixels / axisWidth)) : 0.2;
   const milestones = axisMilestones(timeline, { minimumGap });
-  const lanes = phaseLanes(timeline);
+  const phaseText = (phase, outside = false) =>
+    outside ? `${phase.label} → ${shortDate(phase.date)}` : `${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`;
+  const lanes = phaseLanes(timeline, { axisWidth, labelOf: phaseText });
   const sources = snapshot.dateSources || {};
   const sourceNote =
     sources.source && sources.source.name
@@ -654,6 +675,8 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }
       : null;
   const pace = dailyPaceText(snapshot.dailyPace);
   const next = timeline.next;
+  const keyMarker = keyAxisMarker(timeline);
+  const hiddenNote = timeline.hiddenCount > 0 ? translate("projects.deadlinesHidden", { count: timeline.hiddenCount }) : null;
   return (
     <section className="project-card deadlines" data-deadlines={timeline.deadlines.length}>
       <div className="deadlines-head">
@@ -671,9 +694,14 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }
         <span className="project-header-spacer" />
         {next && (
           <span className="pill is-gold">
-            {next.daysLeft <= 0
-              ? translate("projects.nextToday", { label: next.label })
-              : translate("projects.nextIn", { label: next.label, count: next.daysLeft })}
+            {next.reason === "pinned" ? "📌 " : ""}
+            {next.isPhaseEnd
+              ? next.daysLeft <= 0
+                ? translate("projects.nextEndsToday", { label: next.label })
+                : translate("projects.nextEndsIn", { label: next.label, count: next.daysLeft })
+              : next.daysLeft <= 0
+                ? translate("projects.nextToday", { label: next.label })
+                : translate("projects.nextIn", { label: next.label, count: next.daysLeft })}
           </span>
         )}
       </div>
@@ -683,11 +711,25 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }
         <div className="deadline-today" style={{ left: `${timeline.elapsedFraction * 100}%` }}>
           <span>{translate("projects.today")}</span>
         </div>
+        {keyMarker && (
+          <div
+            className={`deadline-milestone deadline-key is-lower${keyMarker.at > 0.8 ? " is-end" : ""}`}
+            style={{ left: `${keyMarker.at * 100}%` }}
+            title={translate("projects.phaseEnds", { label: keyMarker.label, date: shortDate(keyMarker.date) })}
+            data-deadline-key={keyMarker.id}
+          >
+            <span className="deadline-diamond" />
+            <span className="deadline-label">
+              {keyMarker.reason === "pinned" ? "📌 " : ""}
+              {translate("projects.phaseEndsShort", { label: keyMarker.label })} · <b>{shortDate(keyMarker.date)}</b>
+            </span>
+          </div>
+        )}
         {milestones.map((milestone) => (
           <button
             type="button"
             key={milestone.id || milestone.label}
-            className={`deadline-milestone is-${milestone.state}${milestone.row ? " is-lower" : ""}${milestone.at < 0.08 ? " is-start" : ""}${milestone.at > 0.92 ? " is-end" : ""}`}
+            className={`deadline-milestone is-${milestone.state}${next && next.reason === "pinned" && next.id === milestone.id ? " is-key" : ""}${milestone.row ? " is-lower" : ""}${milestone.at < 0.08 ? " is-start" : ""}${milestone.at > 0.92 ? " is-end" : ""}`}
             style={{ left: `${milestone.at * 100}%` }}
             title={`${milestone.label} · ${shortDate(milestone.date)} — ${translate("projects.editDeadline")}`}
             onClick={() => (milestone.source === "clickup" ? onOpenTask(milestone.taskId, milestone.label) : onEdit(milestone.id))}
@@ -726,27 +768,96 @@ function DeadlineCard({ snapshot, now, language, onEdit, onEditAll, onOpenTask }
         <div className="phase-lanes" data-phase-lanes={lanes.length}>
           {lanes.map((lane, laneIndex) => (
             <div key={laneIndex} className="phase-lane">
-              {lane.map((phase) => (
-                <button
-                  type="button"
-                  key={phase.id}
-                  className={`phase-bar is-${phase.state}`}
-                  style={{ left: `${phase.startAt * 100}%`, width: `${Math.max((phase.at - phase.startAt) * 100, 0.8)}%` }}
-                  title={`${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`}
-                  onClick={() => (phase.source === "clickup" ? onOpenTask(phase.taskId, phase.label) : onEdit(phase.id))}
-                  data-phase={phase.id}
-                >
-                  <span className="phase-bar-label">
-                    {phase.label} · {shortDate(phase.start)} → {shortDate(phase.date)}
+              {lane.map((phase) => {
+                const insideText = phaseText(phase);
+                const placement = phase.placement;
+                const isKey = next && next.id === phase.id && next.isPhaseEnd;
+                return (
+                  <span key={phase.id} className="phase-bar-group">
+                    <button
+                      type="button"
+                      className={`phase-bar is-${phase.state}${isKey ? " is-key" : ""}`}
+                      style={{ left: `${phase.startAt * 100}%`, width: `${Math.max((phase.at - phase.startAt) * 100, 0.8)}%` }}
+                      title={`${phase.label} · ${shortDate(phase.start)} → ${shortDate(phase.date)}`}
+                      onClick={() => (phase.source === "clickup" ? onOpenTask(phase.taskId, phase.label) : onEdit(phase.id))}
+                      data-phase={phase.id}
+                    >
+                      {placement === "inside" && <span className={phase.moreInside ? "phase-bar-label has-more" : "phase-bar-label"}>{insideText}</span>}
+                    </button>
+                    {placement !== "inside" && (
+                      <span
+                        className={`phase-bar-outside is-${placement}`}
+                        style={placement === "right" ? { left: `calc(${phase.at * 100}% + 26px)` } : { right: `calc(${(1 - phase.startAt) * 100}% + 6px)` }}
+                        title={insideText}
+                      >
+                        {phaseText(phase, true)}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="phase-bar-more"
+                      style={{ left: phase.moreInside || phase.at > 0.97 ? `calc(${phase.at * 100}% - 20px)` : `calc(${phase.at * 100}% + 3px)` }}
+                      title={translate("projects.phaseMenu")}
+                      aria-label={translate("projects.phaseMenu")}
+                      onClick={(event) => setPhaseMenu({ phase, anchor: event.currentTarget.getBoundingClientRect() })}
+                      data-phase-more={phase.id}
+                    >
+                      …
+                    </button>
                   </span>
-                </button>
-              ))}
+                );
+              })}
             </div>
           ))}
           <div className="phase-today" style={{ left: `${timeline.elapsedFraction * 100}%` }} />
         </div>
       )}
-      {sourceNote && <div className="deadline-source project-dim" data-deadline-source>{sourceNote}</div>}
+      {phaseMenu && (
+        <PopupMenu anchor={phaseMenu.anchor} align="left" onClose={() => setPhaseMenu(null)}>
+          <MenuLabel>{phaseMenu.phase.label}</MenuLabel>
+          {next && next.reason === "pinned" && next.id === phaseMenu.phase.id ? (
+            <MenuItem
+              onClick={() => {
+                setPhaseMenu(null);
+                onPinDeadline(null);
+              }}
+            >
+              {translate("projects.unpinKeyDeadline")}
+            </MenuItem>
+          ) : (
+            <MenuItem
+              onClick={() => {
+                setPhaseMenu(null);
+                onPinDeadline(phaseMenu.phase.id);
+              }}
+            >
+              📌 {translate("projects.pinKeyDeadline")}
+            </MenuItem>
+          )}
+          <MenuItem
+            onClick={() => {
+              setPhaseMenu(null);
+              onHideDeadline(phaseMenu.phase.id);
+            }}
+          >
+            {translate("projects.hideDeadline")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            onClick={() => {
+              setPhaseMenu(null);
+              onEditAll();
+            }}
+          >
+            {translate("projects.editDeadlines")}
+          </MenuItem>
+        </PopupMenu>
+      )}
+      {(sourceNote || hiddenNote) && (
+        <div className="deadline-source project-dim" data-deadline-source>
+          {[sourceNote, hiddenNote].filter(Boolean).join(" · ")}
+        </div>
+      )}
       {pace && (
         <div className="deadline-pace" data-deadline-pace>
           <span className="computed-tag" title={translate("projects.computedHint")}>
@@ -840,14 +951,18 @@ function StatsCards({ snapshot, activeStat, onStat }) {
             </div>
           </div>
           <div className="stat-counters" data-stats-counters>
-            <button type="button" className="stat-counter" onClick={() => onStat({ kind: "specsToWrite" })} data-stat-counter="specsToWrite">
-              <b>{stats.specsToWrite}</b>
-              {translate("projects.specsToWrite")}
-            </button>
-            <button type="button" className="stat-counter is-gold" onClick={() => onStat({ kind: "specsInReview" })} data-stat-counter="specsInReview">
-              <b>{stats.specsInReview}</b>
-              {translate("projects.specsInReview")}
-            </button>
+            {snapshot.mode !== "git" && (
+              <>
+                <button type="button" className="stat-counter" onClick={() => onStat({ kind: "specsToWrite" })} data-stat-counter="specsToWrite">
+                  <b>{stats.specsToWrite}</b>
+                  {translate("projects.specsToWrite")}
+                </button>
+                <button type="button" className="stat-counter is-gold" onClick={() => onStat({ kind: "specsInReview" })} data-stat-counter="specsInReview">
+                  <b>{stats.specsInReview}</b>
+                  {translate("projects.specsInReview")}
+                </button>
+              </>
+            )}
             <button type="button" className={stats.redPullRequests > 0 ? "stat-counter is-coral" : "stat-counter"} onClick={() => onStat({ kind: "redCi" })} data-stat-counter="redCi">
               <b>{stats.redPullRequests}</b>
               {translate("projects.redCi")}
@@ -1114,7 +1229,7 @@ function TaskCard({
       <div className="task-card-main">
         <div className="task-card-title">
           <span className={card.kind === "build" ? "kind-tag is-build" : "kind-tag is-spec"}>
-            {translate(card.kind === "build" ? "projects.kindBuild" : "projects.kindSpec")}
+            {translate(card.source === "git" ? "projects.kindBranch" : card.kind === "build" ? "projects.kindBuild" : "projects.kindSpec")}
           </span>
           <span className="task-card-name">{card.name}</span>
         </div>
@@ -1137,7 +1252,7 @@ function TaskCard({
         </div>
       </div>
       <div className="task-card-pipelines">
-        <Pipeline label={translate("projects.pipelineSpec")} stage={card.spec} emptyText="" />
+        {card.source !== "git" && <Pipeline label={translate("projects.pipelineSpec")} stage={card.spec} emptyText="" />}
         {card.kind === "build" ? (
           <Pipeline
             label={translate("projects.pipelineBuild")}
@@ -1266,6 +1381,11 @@ function TaskDetails({ card, now, language, onSelectSession }) {
   // The comments are not in the list answer; they are read (GET only) when
   // the card is opened.
   useEffect(() => {
+    // A branch of a project without ClickUp has nothing more to read.
+    if (card.source === "git") {
+      setDetail({ task: null, comments: [] });
+      return undefined;
+    }
     let canceled = false;
     window.clauding
       .getBoardTaskDetail(card.id)
@@ -1282,7 +1402,7 @@ function TaskDetails({ card, now, language, onSelectSession }) {
     return () => {
       canceled = true;
     };
-  }, [card.id]);
+  }, [card.id, card.source]);
 
   const description = card.description || (detail && detail.task ? detail.task.description : "");
   const commentsText = detail
@@ -1302,8 +1422,12 @@ function TaskDetails({ card, now, language, onSelectSession }) {
           {(card.fields || []).map((field) => (
             <FieldRow key={field.name} field={field} />
           ))}
-          <span className="detail-key">{translate("projects.comments")}</span>
-          <span>{commentsText}</span>
+          {card.source !== "git" && (
+            <>
+              <span className="detail-key">{translate("projects.comments")}</span>
+              <span>{commentsText}</span>
+            </>
+          )}
         </div>
         {description ? <p className="detail-description">{description}</p> : <p className="project-dim">{translate("projects.noDescription")}</p>}
       </div>
