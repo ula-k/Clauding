@@ -1,7 +1,7 @@
 // The menu bar, as a value.
 //
-// It is the same menu everywhere — Clauding / Edit / Skills / Projects / View /
-// Window —
+// It is the same menu everywhere — Clauding / Edit / Skills / Projects /
+// Terminal / View / Window —
 // but macOS and Windows disagree about what belongs in the first one. macOS
 // puts Services, Hide, Hide Others, Show All and Quit into the application
 // menu and draws it at the top of the screen; Windows has none of those
@@ -54,7 +54,17 @@ export function applicationMenuTemplate({
   onFindInConversation = () => {},
   // macOS only, and only when main.js hands one in: Clauding's own paste
   // (see electron/pasteSmart.js). Without it the item stays the plain role.
-  onPaste = null
+  onPaste = null,
+  // macOS only, like onPaste: Edit → Undo (⌘Z) inside a terminal types the
+  // CLI's own undo (Ctrl+_) instead of doing nothing; elsewhere it is the
+  // ordinary undo. Without a handler it stays the plain role.
+  onUndo = null,
+  undoLabel = "Undo",
+  // Terminal → the two ways out of a terminal that stopped answering,
+  // without restarting the whole app (electron/terminals.js).
+  onResumeSuspended = () => {},
+  onRestartTerminal = () => {},
+  terminalLabels = { menu: "Terminal", resume: "Resume suspended session", restart: "Restart terminal" }
 } = {}) {
   const onMac = isMacOS(platform);
   const applicationSubmenu = [
@@ -84,6 +94,7 @@ export function applicationMenuTemplate({
   // into the terminal and falls back to the ordinary paste everywhere else.
   // On Windows it stays the plain role — Ctrl+V there is what Claude Code's
   // own image paste is bound to, and nothing about it changes.
+  const undoItem = onMac && onUndo ? { label: undoLabel, accelerator: "CommandOrControl+Z", click: onUndo } : { role: "undo" };
   const pasteItem = onMac && onPaste ? { label: pasteLabel, accelerator: "CommandOrControl+V", click: onPaste } : { role: "paste" };
 
   return [
@@ -94,7 +105,7 @@ export function applicationMenuTemplate({
     {
       label: "Edit",
       submenu: [
-        { role: "undo" },
+        undoItem,
         { role: "redo" },
         { type: "separator" },
         { role: "cut" },
@@ -111,6 +122,13 @@ export function applicationMenuTemplate({
         { label: "Manual setup…", click: onManualProject },
         { type: "separator" },
         { label: "Project Settings…", click: onProjectSettings }
+      ]
+    },
+    {
+      label: terminalLabels.menu,
+      submenu: [
+        { label: terminalLabels.resume, click: onResumeSuspended },
+        { label: terminalLabels.restart, click: onRestartTerminal }
       ]
     },
     {

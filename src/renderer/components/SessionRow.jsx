@@ -44,6 +44,11 @@ export function SessionRowContent({ session, agent = null, tags = [], now }) {
       <span className="row-main">
         <span className="row-title">{titleWithoutAgentEmoji(session.title, session.agent)}</span>
         {session.needsAnswer && <span className="row-needs-answer">{translate("row.needsAnswer")}</span>}
+        {session.wasOpen && (
+          <span className="row-was-open" title={translate("row.wasOpenHint")} data-row-was-open={session.sessionId}>
+            {translate("row.wasOpen")}
+          </span>
+        )}
         {tags.map((tag) => (
           <span className="tag-pill" key={tag.id} style={{ "--tag-color": `var(${tag.color})` }} data-row-tag={tag.id}>
             {tag.label}

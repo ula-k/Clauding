@@ -7,7 +7,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { commandKeyPressed } from "./platform.js";
-import { localPagePattern, terminalKeyDecision } from "./terminalKeys.js";
+import { CLAUDE_UNDO_INPUT, localPagePattern, terminalKeyDecision } from "./terminalKeys.js";
 
 const SCROLLBACK_LINES = 10000;
 const instances = new Map();
@@ -133,14 +133,18 @@ export function lastTerminalDimensions() {
 
 // What Cmd / Ctrl plus a letter means in the terminal lives in
 // terminalKeys.js, so it can be checked without xterm.
-function customKeyHandler(terminal) {
+function customKeyHandler(terminal, terminalId) {
   return function handleKey(event) {
     const decision = terminalKeyDecision(event);
     if (decision === "clear") {
       terminal.clear();
       return false;
     }
-    return decision !== "leave-to-menu";
+    if (decision === "undo-instead-of-suspend") {
+      window.clauding.writeToTerminal(terminalId, CLAUDE_UNDO_INPUT);
+      return false;
+    }
+    return decision !== "leave-to-menu" && decision !== "swallow";
   };
 }
 
@@ -168,7 +172,7 @@ export function ensureInstance(terminalId) {
     })
   );
   terminal.registerLinkProvider(localPageLinkProvider(terminal, terminalId));
-  terminal.attachCustomKeyEventHandler(customKeyHandler(terminal));
+  terminal.attachCustomKeyEventHandler(customKeyHandler(terminal, terminalId));
   terminal.onData((data) => {
     window.clauding.writeToTerminal(terminalId, data);
   });

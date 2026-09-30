@@ -50,6 +50,8 @@ import { openUpdateSheet } from "./updateSheet.js";
 import { runAssignSmoke } from "./smokeAssign.js";
 import { runEmojiSmoke } from "./smokeEmoji.js";
 import { runKickoffSmoke } from "./smokeKickoff.js";
+import { runSuspendSmoke } from "./smokeSuspend.js";
+import { runRestoreSmoke } from "./smokeRestore.js";
 import { createSessionGroupStore } from "./sessionGroups.js";
 import { createAgentStore, inspectDefinitionFolder, inspectDefinitionFile } from "./agents.js";
 import { createSettingsStore } from "./settings.js";
@@ -66,6 +68,7 @@ import { createCommandRequestHandler } from "./lib/commandRequests.js";
 import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
 import { createFileWatchRegistry, watchFile } from "./fileWatch.js";
+import { createOpenTerminalsStore, OPEN_TERMINALS_FILE_NAME } from "./openTerminals.js";
 
 // A GUI-launched app inherits a minimal PATH; the Claude CLI and the tools it
 // runs need ~/.local/bin, Homebrew and /usr/local/bin like in a terminal.
@@ -155,6 +158,8 @@ const smokeSessionFlagsMode = process.env.CLAUDING_SMOKE_SESSION_FLAGS === "1";
 const smokeEmojiMode = process.env.CLAUDING_SMOKE_EMOJI === "1";
 const smokeKickoffMode = process.env.CLAUDING_SMOKE_KICKOFF === "1";
 const smokePasteMode = process.env.CLAUDING_SMOKE_PASTE === "1";
+const smokeSuspendMode = process.env.CLAUDING_SMOKE_SUSPEND === "1";
+const smokeRestoreMode = process.env.CLAUDING_SMOKE_RESTORE === "1" || process.env.CLAUDING_SMOKE_RESTORE === "2";
 // Any automation at all: the first-run questions stay out of its way.
 const anySmokeMode =
   smokeTerminalMode ||
@@ -170,7 +175,9 @@ const anySmokeMode =
   smokeSessionFlagsMode ||
   smokeEmojiMode ||
   smokeKickoffMode ||
-  smokePasteMode;
+  smokePasteMode ||
+  smokeSuspendMode ||
+  smokeRestoreMode;
 
 // The screenshot hook and the smoke runs drive the real window with things
 // only macOS has — `capturePage` against an inset title bar, the standard
@@ -211,6 +218,12 @@ const promptDirectory = path.join(userDataDirectory, "prompts");
 // Images pasted into a terminal as raw clipboard data are written here, so
 // the CLI has a file to read; the folder keeps the last 50 (pasteSmart.js).
 const pastedDirectory = path.join(userDataDirectory, "pasted");
+// The terminals open in the app, rewritten on every change, and what the
+// previous run left there offered back on this start (openTerminals.js).
+const openTerminals = createOpenTerminalsStore({
+  filePath: path.join(userDataDirectory, OPEN_TERMINALS_FILE_NAME),
+  log: console.log
+});
 
 // A pty killed on quit never runs its exit handler, so a prompt file can
 // outlive the app. They are all thrown away at the next start — no terminal
@@ -307,9 +320,14 @@ function linkPendingTerminals() {
   }
 }
 
+function persistOpenTerminals() {
+  openTerminals.update(terminalRegistry.list(), panelSelection.terminalId);
+}
+
 const terminalRegistry = createTerminalRegistry({
   sendToWindow,
   onChange() {
+    persistOpenTerminals();
     // A terminal linking to a session (or leaving) changes ownership in the list.
     linkTerminalsToAgents();
     syncHiddenWithLiveStatus();
@@ -735,6 +753,33 @@ function createWindow() {
         window: mainWindow,
         registry: terminalRegistry,
         agents,
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeRestoreMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runRestoreSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        userDataDirectory,
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeSuspendMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runSuspendSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
         sendCommand(command) {
           sendToWindow(CHANNELS.smokeCommand, command);
         },
@@ -1213,8 +1258,8 @@ async function runUpdateNow() {
     type: "info",
     message: "Clauding was updated.",
     detail:
-      "Relaunching closes every terminal open in the app — the conversations themselves are kept " +
-      "and can be resumed afterwards.",
+      "Relaunching closes every terminal open in the app. The conversations are kept, and the ones " +
+      "that were open are marked “was open” in the list — click one to resume it.",
     buttons: ["Relaunch now", "Later"],
     defaultId: 0,
     cancelId: 1
@@ -1353,6 +1398,39 @@ async function pasteIntoFocus() {
   }
 }
 
+// Edit -> Undo (Cmd+Z). Inside a terminal it types Claude Code's own undo,
+// Ctrl+_ — the same thing Ctrl+Z is turned into there
+// (src/renderer/terminalKeys.js), so neither key can suspend the CLI.
+// Everywhere else it is the ordinary undo.
+async function undoInFocus() {
+  const terminalId = await focusedTerminalId();
+  if (terminalId) {
+    terminalRegistry.write(terminalId, "\x1f");
+    return;
+  }
+  const focused = typeof webContents.getFocusedWebContents === "function" ? webContents.getFocusedWebContents() : null;
+  const target = focused || (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null);
+  if (target) {
+    target.undo();
+  }
+}
+
+// Terminal -> Resume suspended session / Restart terminal: the terminal with
+// the keyboard, or else the one looked at last.
+async function actOnMenuTerminal(action) {
+  let terminalId = await focusedTerminalId();
+  if (!terminalId) {
+    const recent = terminalRegistry.mostRecentlyFocused();
+    terminalId = recent ? recent.terminalId : null;
+  }
+  if (!terminalId) {
+    console.log(`[terminal] menu ${action}: no terminal to act on`);
+    return;
+  }
+  const result = action === "resume" ? terminalRegistry.resumeSuspended(terminalId) : terminalRegistry.restartInPlace(terminalId);
+  console.log(`[terminal] menu ${action} on ${terminalId}: ${JSON.stringify(result)}`);
+}
+
 // The Edit roles are what make Cmd+C work inside the terminal (Electron turns
 // it into a copy event on xterm's hidden textarea), and Cmd+V is the item
 // above — on Windows Ctrl+V stays the plain role. The template itself, and
@@ -1389,7 +1467,14 @@ function installApplicationMenu() {
         onFindInConversation() {
           sendToWindow(CHANNELS.transcriptFindShow, {});
         },
-        onPaste: pasteIntoFocus
+        onPaste: pasteIntoFocus,
+        onUndo: undoInFocus,
+        onResumeSuspended() {
+          actOnMenuTerminal("resume");
+        },
+        onRestartTerminal() {
+          actOnMenuTerminal("restart");
+        }
       })
     )
   );
@@ -1597,7 +1682,12 @@ function registerIpc() {
   ipcMain.handle(CHANNELS.sessionsList, async (event, options) => {
     const offset = Number(options && options.offset) || 0;
     const limit = Number(options && options.limit) || DEFAULT_PAGE_SIZE;
-    return listSessionsPage({ offset, limit, ownedStates: terminalRegistry.ownedStates() });
+    return listSessionsPage({
+      offset,
+      limit,
+      ownedStates: terminalRegistry.ownedStates(),
+      offeredSessions: openTerminals.offeredBySession()
+    });
   });
 
   ipcMain.handle(CHANNELS.boardsGet, async () => projectBoards.getState());
@@ -1646,7 +1736,7 @@ function registerIpc() {
   ipcMain.handle(CHANNELS.boardsTaskDetail, async (event, { taskId }) => projectData.taskDetail(taskId));
 
   ipcMain.handle(CHANNELS.sessionsGet, async (event, { sessionId }) => {
-    return getSession(sessionId, terminalRegistry.ownedStates());
+    return getSession(sessionId, terminalRegistry.ownedStates(), openTerminals.offeredBySession());
   });
 
   ipcMain.handle(CHANNELS.sessionsRename, async (event, { sessionId, title }) => {
@@ -1711,6 +1801,12 @@ function registerIpc() {
 
   ipcMain.handle(CHANNELS.terminalOpen, async (event, request) => {
     const record = terminalRegistry.open(request || {});
+    // A resume the registry would not start: a `claude` outside the app has
+    // that conversation. The window shows its "running elsewhere" note, for
+    // which it needs the live status it may not have fetched yet.
+    if (record.refused) {
+      return { ...record, liveStatus: collectLiveStatus().get(record.sessionId) || null };
+    }
     // "Pick the agent and it already knows where it works": the folder this
     // session started in is what the sheet offers next time.
     if (record.agentId) {
@@ -1751,6 +1847,10 @@ function registerIpc() {
   // line: Enter in the pane, or a click on its row.
   ipcMain.handle(CHANNELS.terminalRestart, async (event, { terminalId }) => {
     return terminalRegistry.restart(terminalId);
+  });
+
+  ipcMain.handle(CHANNELS.terminalRestoreOffer, async () => {
+    return openTerminals.restoreOffer();
   });
 
   ipcMain.handle(CHANNELS.groupsGet, async () => {
@@ -2011,6 +2111,7 @@ function registerIpc() {
     if (terminalId) {
       terminalRegistry.markFocused(terminalId);
     }
+    persistOpenTerminals();
   });
 
   ipcMain.handle(CHANNELS.panelGet, async (event, { sessionKey }) => {
@@ -2299,6 +2400,10 @@ app.on("window-all-closed", () => {
 
 // Every pty is hung up on quit so no `claude` process outlives the window.
 app.on("before-quit", () => {
+  // The list is written one last time and then left alone, so hanging every
+  // terminal up below does not empty it (openTerminals.js).
+  persistOpenTerminals();
+  openTerminals.freeze();
   terminalRegistry.closeAll();
   if (stopCommandSocket) {
     stopCommandSocket();

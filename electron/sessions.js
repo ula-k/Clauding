@@ -176,7 +176,10 @@ function needsAnswer(sessionId, liveStatus, lastModified) {
   return needsAnswerCache.lookup(sessionId, { ...transcript, busy: false });
 }
 
-export function enrichSession(session, statusBySession, ownedStates = new Map()) {
+// `offeredSessions` (sessionId -> entry) are the sessions that were open in
+// the app when it last closed and have not been opened again since
+// (electron/openTerminals.js): their rows say "was open".
+export function enrichSession(session, statusBySession, ownedStates = new Map(), offeredSessions = new Map()) {
   const ownedState = ownedStates.get(session.sessionId) || null;
   let liveStatus = statusBySession.get(session.sessionId) || null;
   let statusGroup = liveStatus ? liveStatus.group : STATUS_GROUPS.recent;
@@ -209,12 +212,18 @@ export function enrichSession(session, statusBySession, ownedStates = new Map())
     statusGroup,
     needsAnswer: needsAnswer(session.sessionId, liveStatus, session.lastModified),
     ownedByApp: Boolean(ownedState),
+    wasOpen: !ownedState && offeredSessions.has(session.sessionId) ? offeredSessions.get(session.sessionId) : null,
     liveStatus
   };
 }
 
 // One page of sessions across all projects, newest first.
-export async function listSessionsPage({ offset = 0, limit = DEFAULT_PAGE_SIZE, ownedStates = new Map() } = {}) {
+export async function listSessionsPage({
+  offset = 0,
+  limit = DEFAULT_PAGE_SIZE,
+  ownedStates = new Map(),
+  offeredSessions = new Map()
+} = {}) {
   const statusBySession = collectLiveStatus();
   // We ask for one extra row to know whether another page exists.
   const rows = await listSessions({ offset, limit: limit + 1 });
@@ -223,7 +232,7 @@ export async function listSessionsPage({ offset = 0, limit = DEFAULT_PAGE_SIZE, 
     (session) => !isScratchWorkingDirectory(session.cwd)
   );
   return {
-    sessions: pageRows.map((session) => enrichSession(session, statusBySession, ownedStates)),
+    sessions: pageRows.map((session) => enrichSession(session, statusBySession, ownedStates, offeredSessions)),
     offset,
     limit,
     hasMore,
@@ -231,12 +240,12 @@ export async function listSessionsPage({ offset = 0, limit = DEFAULT_PAGE_SIZE, 
   };
 }
 
-export async function getSession(sessionId, ownedStates = new Map()) {
+export async function getSession(sessionId, ownedStates = new Map(), offeredSessions = new Map()) {
   const session = await getSessionInfo(sessionId);
   if (!session) {
     return null;
   }
-  return enrichSession(session, collectLiveStatus(), ownedStates);
+  return enrichSession(session, collectLiveStatus(), ownedStates, offeredSessions);
 }
 
 export async function renameSessionTitle(sessionId, title) {

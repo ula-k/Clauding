@@ -361,6 +361,9 @@ function HeaderToolbar({ titleNode, items, signature, trailing, renderMenuButton
 //   "elsewhere"  a terminal or job outside the app owns the session: a short
 //                note and nothing else — this window is for talking, and that
 //                conversation is not ours to talk in
+//   "was-open"   the session was open when the app last closed and is
+//                selected again on start, with no terminal yet: a click on
+//                its row resumes it (electron/openTerminals.js)
 //   "opening"    the click's terminal is still being spawned (or spawning
 //                failed, which also raises an alert)
 function columnMode({ session, terminal }) {
@@ -369,6 +372,9 @@ function columnMode({ session, terminal }) {
   }
   if (session && session.liveStatus && session.liveStatus.source !== "app") {
     return "elsewhere";
+  }
+  if (session && session.wasOpen) {
+    return "was-open";
   }
   return "opening";
 }
@@ -463,8 +469,12 @@ export default function MiddleColumn({
                   <FolderIcon />
                   {projectLabel}
                 </div>
-                <p className="elsewhere-text">
-                  {mode === "elsewhere" ? translate("middle.runningElsewhere") : translate("middle.opening")}
+                <p className="elsewhere-text" data-middle-mode={mode}>
+                  {mode === "elsewhere"
+                    ? translate("middle.runningElsewhere")
+                    : mode === "was-open"
+                      ? translate("middle.wasOpen")
+                      : translate("middle.opening")}
                 </p>
                 {mode === "elsewhere" && onFork && session && session.sessionId && <ForkButton onFork={onFork} standalone />}
               </div>

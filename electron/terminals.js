@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import nodePty from "node-pty";
 import channels from "./channels.cjs";
 import {
@@ -25,6 +26,14 @@ import { isWindows } from "./lib/platformPaths.js";
 import { currentRegistryPaths } from "./claudeHome.js";
 import { buildClaudeArguments, buildTerminalEnvironment, mergeExtraArguments } from "./lib/claudeArguments.js";
 import { exitNoticeText, exitPlan } from "./lib/exitPlan.js";
+import { resumeOpenDecision } from "./lib/openGuard.js";
+import {
+  parseProcessStates,
+  processStateCommand,
+  scanForSuspendMessage,
+  suspendDecision,
+  suspendNoticeText
+} from "./lib/suspendWatch.js";
 import { buildAgentSystemPrompt } from "./agents.js";
 import { isProcessAlive } from "./liveStatus.js";
 import {
@@ -58,6 +67,9 @@ function sessionsRegistryDirectory() {
 // Everywhere else SIGHUP is the polite hang-up and SIGKILL the last resort.
 const HANG_UP_SIGNAL = isWindows() ? undefined : "SIGHUP";
 const FORCE_SIGNAL = isWindows() ? undefined : "SIGKILL";
+// Ctrl+Z makes `claude` stop itself, and with no shell around it nothing
+// would ever continue it (lib/suspendWatch.js). Windows has no such state.
+const WATCH_FOR_SUSPENDED = !isWindows();
 
 function readJsonQuietly(filePath) {
   try {
@@ -101,6 +113,30 @@ function registryEntryByFolder(workingDirectory, startedAt, claimedSessionIds) {
     return record;
   }
   return null;
+}
+
+// Every live registry entry that names this session, for the guard against
+// resuming one conversation twice (lib/openGuard.js).
+function registryEntriesForSession(sessionId) {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(sessionsRegistryDirectory());
+  } catch (error) {
+    return [];
+  }
+  const found = [];
+  for (const fileName of entries) {
+    if (!fileName.endsWith(".json")) {
+      continue;
+    }
+    const record = readJsonQuietly(path.join(sessionsRegistryDirectory(), fileName));
+    if (!record || record.sessionId !== sessionId) {
+      continue;
+    }
+    const processId = Number(record.pid);
+    found.push({ sessionId, pid: processId, alive: isProcessAlive(processId) });
+  }
+  return found;
 }
 
 // CLAUDING_DRY_SPAWN=1 (dev only): compose everything a terminal would be
@@ -173,6 +209,12 @@ export function createTerminalRegistry({
 }) {
   const terminals = new Map();
   let linkPoller = null;
+  // One `ps` at a time: a slow one is not stacked under the next tick.
+  let processStateCheckRunning = false;
+  // Session ids whose resume is between "asked for" and "record registered".
+  // open() is synchronous, so today a second request cannot land in that
+  // gap — this keeps it that way should anything in there ever wait.
+  const sessionsBeingOpened = new Set();
 
   function logLine(line) {
     if (log) {
@@ -202,6 +244,16 @@ export function createTerminalRegistry({
       // it, and it is what the log line says.
       commandArguments: record.commandArguments.slice(),
       sessionExtraArguments: record.sessionExtraArguments,
+      // Whether `claude --resume` of its session id would find a
+      // conversation: resumed, or something was said in it. What the list of
+      // terminals to offer back after a restart is made of.
+      // A fork's new id has no transcript of its own until its first turn,
+      // so a fork counts only once something was said in it.
+      resumable:
+        Boolean(record.sessionId) &&
+        Boolean(
+          (record.resumeSessionId && !record.forkedFromSessionId) || record.typedByHand || record.kickoffState === "sent"
+        ),
       // null when this terminal was opened without a first message of its
       // own; otherwise "waiting", "sent" or "needsMessage" (see deliverKickoff).
       kickoffState: record.kickoffState,
@@ -298,7 +350,138 @@ export function createTerminalRegistry({
       announceChange();
     }
     closeUntouchedIdleTerminals();
+    checkForSuspendedProcesses();
     updatePoller();
+  }
+
+  // Sends SIGCONT to the terminal's process group — the pty's child leads a
+  // session of its own, so that is `claude` and anything it had running —
+  // and to the pid itself in case the group is not there any more.
+  function sendContinue(record) {
+    if (!WATCH_FOR_SUSPENDED || !record.pid) {
+      return false;
+    }
+    let delivered = false;
+    for (const target of [-record.pid, record.pid]) {
+      try {
+        process.kill(target, "SIGCONT");
+        delivered = true;
+      } catch (error) {
+        // No such group, or the process is already gone.
+      }
+    }
+    return delivered;
+  }
+
+  // The CLI's "has been suspended, run `fg`" sentence, spotted as the
+  // output goes by; the next look below acts on it.
+  function watchOutputForSuspend(record, data) {
+    if (!WATCH_FOR_SUSPENDED) {
+      return;
+    }
+    const scan = scanForSuspendMessage(record.suspendScanText, data);
+    record.suspendScanText = scan.carriedText;
+    if (scan.suspended) {
+      record.suspendMessageSeenAt = Date.now();
+      logLine(`${record.terminalId}: claude says it has been suspended (Ctrl+Z)`);
+    }
+  }
+
+  // Once a second, with the link poller: which live terminals have a
+  // suspended `claude` — its own sentence in the output, or `ps` saying it
+  // is stopped (lib/suspendWatch.js explains why it is usually the first)?
+  // Each one is continued, and the first look that finds it suspended
+  // writes the dim note into its pane.
+  function checkForSuspendedProcesses() {
+    if (!WATCH_FOR_SUSPENDED || dryRunSpawn || processStateCheckRunning) {
+      return;
+    }
+    const live = Array.from(terminals.values()).filter((record) => !record.exited && record.pid);
+    const command = processStateCommand(live.map((record) => record.pid));
+    if (!command) {
+      return;
+    }
+    processStateCheckRunning = true;
+    // `ps` exits with 1 when one of the pids is gone; what it printed about
+    // the others is still right, so the output is read either way.
+    execFile(command.file, command.commandArguments, { timeout: 5000 }, (error, standardOutput) => {
+      processStateCheckRunning = false;
+      const states = parseProcessStates(standardOutput || (error && error.stdout) || "");
+      for (const record of live) {
+        if (record.exited || !terminals.has(record.terminalId)) {
+          continue;
+        }
+        const decision = suspendDecision({
+          processState: states.get(record.pid),
+          wasStopped: record.suspended,
+          messageSeenAt: record.suspendMessageSeenAt,
+          now: Date.now()
+        });
+        if (decision.announce) {
+          logLine(`${record.terminalId}: claude (pid ${record.pid}) was suspended (state ${states.get(record.pid)}), resuming it`);
+          // The note first, then SIGCONT: the CLI redraws its prompt when it
+          // continues, so the note ends up above it instead of inside it.
+          queueOutput(record, suspendNoticeText());
+          flushOutput(record);
+        }
+        if (decision.resume) {
+          sendContinue(record);
+          // The sentence has been answered; only a new one counts again.
+          record.suspendMessageSeenAt = 0;
+        } else if (record.suspended) {
+          logLine(`${record.terminalId}: claude (pid ${record.pid}) is running again`);
+        }
+        record.suspended = decision.stopped;
+      }
+    });
+  }
+
+  // Terminal -> Resume suspended session in the menu bar: SIGCONT by hand,
+  // whatever the last look said, for the rare case the watcher did not help.
+  function resumeSuspended(terminalId) {
+    const record = terminals.get(terminalId);
+    if (!record || record.exited) {
+      return { resumed: false };
+    }
+    const delivered = sendContinue(record);
+    logLine(`${terminalId}: SIGCONT sent from the menu (pid ${record.pid})${delivered ? "" : " — it did not arrive"}`);
+    return { resumed: delivered, terminalId, pid: record.pid };
+  }
+
+  // Terminal -> Restart terminal in the menu bar: the same session in the
+  // same pane, without restarting the app. A pane that was kept after its
+  // `claude` ended is simply started again; a live one is hung up first and
+  // started again from handleExit, through the same `restart()` Enter uses.
+  function restartInPlace(terminalId) {
+    const record = terminals.get(terminalId);
+    if (!record) {
+      return { restarted: false };
+    }
+    if (record.exited) {
+      return restart(terminalId);
+    }
+    record.restartWhenExited = true;
+    logLine(`${terminalId}: restart asked for from the menu, hanging up pid ${record.pid}`);
+    // A stopped process only acts on a hang-up once it runs again.
+    sendContinue(record);
+    try {
+      record.process.kill(HANG_UP_SIGNAL);
+    } catch (error) {
+      // Already gone.
+    }
+    if (record.closeTimer) {
+      clearTimeout(record.closeTimer);
+    }
+    record.closeTimer = setTimeout(() => {
+      if (!record.exited) {
+        try {
+          record.process.kill(FORCE_SIGNAL);
+        } catch (error) {
+          // Already gone.
+        }
+      }
+    }, CLOSE_GRACE_MILLISECONDS);
+    return { restarted: true, terminalId, pending: true };
   }
 
   function closeUntouchedIdleTerminals() {
@@ -342,6 +525,12 @@ export function createTerminalRegistry({
       clearTimeout(record.flushTimer);
     }
     flushOutput(record);
+    if (record.restartWhenExited) {
+      record.restartWhenExited = false;
+      logLine(`${record.terminalId}: exited with ${exitCode} for the restart asked for, starting it again`);
+      restart(record.terminalId);
+      return;
+    }
     const plan = record.closingOnPurpose
       ? { keep: false, reason: "the app asked it to close" }
       : exitPlan({ code: exitCode, uptimeMs: Date.now() - record.startedAt, hadPrompt: record.sawPrompt });
@@ -418,9 +607,16 @@ export function createTerminalRegistry({
     record.statusChangedAt = Date.now();
     record.sawPrompt = false;
     record.closingOnPurpose = false;
+    record.restartWhenExited = false;
+    record.suspended = false;
+    record.suspendMessageSeenAt = 0;
+    record.suspendScanText = "";
     record.exited = false;
     record.exitCode = null;
-    child.onData((data) => queueOutput(record, data));
+    child.onData((data) => {
+      queueOutput(record, data);
+      watchOutputForSuspend(record, data);
+    });
     child.onExit(({ exitCode }) => handleExit(record, exitCode));
     // The appended prompt itself is thousands of characters; the log shows
     // that it was passed, not what it said.
@@ -571,6 +767,66 @@ export function createTerminalRegistry({
     if (forkSession && !resumeSessionId) {
       throw new Error("A fork needs the session id it copies.");
     }
+    // One conversation, one `claude`: a resume of a session that already has
+    // a process shows that terminal (or refuses) instead of starting a
+    // second writer on the same transcript (lib/openGuard.js).
+    if (resumeSessionId && !forkSession && sessionsBeingOpened.has(resumeSessionId)) {
+      logLine(`resume of ${resumeSessionId} refused: it is being opened right now`);
+      return { refused: true, reason: "being-opened", sessionId: resumeSessionId };
+    }
+    const guard = resumeOpenDecision({
+      sessionId: resumeSessionId,
+      forkSession,
+      records: Array.from(terminals.values()),
+      registryEntries: resumeSessionId && !forkSession ? registryEntriesForSession(resumeSessionId) : []
+    });
+    if (guard.action === "show" || guard.action === "restart") {
+      logLine(`${guard.terminalId}: already has session ${resumeSessionId}, ${guard.action === "show" ? "showing it" : "starting its pane again"} instead of a second claude`);
+      if (guard.action === "restart") {
+        restart(guard.terminalId);
+      }
+      markFocused(guard.terminalId);
+      return { ...publicRecord(terminals.get(guard.terminalId)), reused: true };
+    }
+    if (guard.action === "refuse") {
+      logLine(`resume of ${resumeSessionId} refused: claude pid ${guard.pid} outside the app has it`);
+      return { refused: true, reason: guard.reason, sessionId: resumeSessionId, pid: guard.pid };
+    }
+    if (resumeSessionId && !forkSession) {
+      sessionsBeingOpened.add(resumeSessionId);
+    }
+    try {
+      return openNewTerminal({
+        workingDirectory,
+        resumeSessionId,
+        forkSession,
+        sessionName,
+        agentId,
+        taskPrompt,
+        kickoffMessage,
+        extraArguments,
+        columns,
+        rows,
+        openedByClick
+      });
+    } finally {
+      sessionsBeingOpened.delete(resumeSessionId);
+    }
+  }
+
+  function openNewTerminal({
+    workingDirectory,
+    resumeSessionId,
+    forkSession,
+    sessionName,
+    agentId,
+    taskPrompt,
+    kickoffMessage,
+    extraArguments,
+    columns,
+    rows,
+    openedByClick
+  }) {
     const terminalId = randomUUID();
     const agent = agentId && resolveAgent ? resolveAgent(agentId) : null;
     const preamble = readPreamble ? readPreamble() : "";
@@ -861,6 +1117,8 @@ export function createTerminalRegistry({
     resize,
     close,
     restart,
+    restartInPlace,
+    resumeSuspended,
     forget,
     closeAll,
     list,

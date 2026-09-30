@@ -249,7 +249,7 @@ one this script wrote (it leaves a `clauding-install.json` behind to know).
 | the app's data folder | `~/Library/Application Support/Clauding` | `%APPDATA%\Clauding` |
 | the pty | a posix pty | **ConPTY** (`useConpty: true`); a `claude.cmd` is a batch file and is started through `cmd.exe /c`, a `claude.exe` directly |
 | the title bar | inset traffic lights, the app draws its own header | the standard Windows frame, the menu bar inside the window |
-| the menu bar | Clauding / Edit / Skills / View / Window, with Services, Hide, Hide Others, Show All | the same five menus; Windows has no Services or Hide roles, so the Clauding menu is About, the version check, Settings… and Quit |
+| the menu bar | Clauding / Edit / Skills / Projects / Terminal / View / Window, with Services, Hide, Hide Others, Show All | the same menus; Windows has no Services or Hide roles, so the Clauding menu is About, the version check, Settings… and Quit |
 | shortcuts | ⌘⌫ hides a session, ⌘, Settings, ⌘K clears, ⌘+click opens in the system browser | Ctrl+Backspace (or Ctrl+Delete), Ctrl+`,`, Ctrl+K, Ctrl+click. **Ctrl+C stays the interrupt** in the terminal, as in every Windows console — copy with a selection and the Edit menu |
 | pasting a file | ⌘V with a file on the clipboard types its path into the terminal (Edit → Paste is Clauding's own item); Ctrl+V still goes to the CLI's own image paste | Ctrl+V stays Electron's `paste` role — it is what Claude Code's image paste is bound to there — so the file flavors are not read; dropping a file on the pane works the same as on a Mac |
 | the emoji field | a 🙂 button opens the macOS character palette (⌃⌘Space) | Electron has no call for the Windows picker, so that button is not drawn; the built-in emoji grid next to it is unchanged, and Win+. types into the field |
@@ -381,6 +381,11 @@ electron/smokeTerminal.js  CLAUDING_SMOKE_TERMINAL automation (dev only)
 electron/smokePaste.js     CLAUDING_SMOKE_PASTE: pasting a file and a clipboard image into a terminal (dev only)
 electron/smokeFork.js      CLAUDING_SMOKE_FORK automation for the Fork button (dev only)
 electron/smokeKickoff.js   CLAUDING_SMOKE_KICKOFF: the two meta actions start on their own (dev only)
+electron/smokeSuspend.js   CLAUDING_SMOKE_SUSPEND: Ctrl+Z recovery and Terminal -> Restart terminal (dev only)
+electron/smokeRestore.js   CLAUDING_SMOKE_RESTORE: terminals offered back after a restart, one claude per session (dev only)
+electron/openTerminals.js  open-terminals.json: the terminals offered back on the next start
+electron/lib/openGuard.js  may this resume spawn? (show / restart / refuse / spawn; pure)
+electron/lib/suspendWatch.js  spotting a suspended claude and the SIGCONT decision (pure)
 electron/smokePreamble.js  CLAUDING_SMOKE_PREAMBLE: the preamble on a resumed session (dev only)
 electron/smokeResize.js    CLAUDING_SMOKE_RESIZE: the two drag handles (dev only)
 electron/recentProjects.js recent project folders from ~/.claude.json for "+ New"
@@ -606,6 +611,10 @@ palette, `--text`, `--accent` for the lavender block cursor), font
 scrollback, translucent surface over the window gradient. Cmd+C goes through
 Electron's default Edit menu, which turns it into a copy event on xterm's
 hidden textarea; Cmd+K clears. Ctrl+C is the interrupt, as in any terminal.
+**Ctrl+Z (and ⌘Z) never suspend the CLI**: there is no shell in the pane, so
+`fg` could never bring it back. Both type Claude Code's own undo (Ctrl+_)
+instead — see "Ctrl+Z, a session resumed twice, and terminals after a
+restart" below.
 Option is left alone so Polish letters type normally.
 
 **Pasting and dropping a file.** Edit → Paste (⌘V) is Clauding's own item on
@@ -749,6 +758,53 @@ either.
 The decision is one pure function, `exitPlan({ code, uptimeMs, hadPrompt })`
 in `electron/lib/exitPlan.js`, covered by `test/exitPlan.test.js` — no pty
 is needed to check it.
+
+## Ctrl+Z, a session resumed twice, and terminals after a restart
+
+**Ctrl+Z.** Claude Code binds Ctrl+Z to "suspend" ("Run `fg` to bring Claude
+Code back"). A Clauding pane has no shell, so there is nobody to type `fg`
+to, and the pane used to stay frozen until the app was restarted. There are
+three layers against it:
+
+1. *Prevent* — the terminal's key handler (`src/renderer/terminalKeys.js`)
+   turns Ctrl+Z into Ctrl+_ (byte 0x1f), the CLI's own undo, on every
+   system. ⌘Z on macOS is Edit → Undo, which types the same thing when a
+   terminal has the keyboard and is the ordinary undo everywhere else.
+2. *Recover* — once a second, with the link poller, `electron/terminals.js`
+   looks at every live terminal and sends SIGCONT to a suspended one, then
+   logs it and writes a dim line into the pane ("Claude was suspended
+   (Ctrl+Z) — resumed automatically."). The CLI clears the screen when it
+   comes back, so that line is usually drawn over at once. "Suspended" is
+   spotted in two ways (`electron/lib/suspendWatch.js`): the CLI's own
+   sentence in the output, and `ps -o stat=` saying `T`. The first is the
+   usual one: the pty's child leads an orphaned process group, the kernel
+   discards SIGTSTP for those, and the CLI sits in its "suspended" mode
+   waiting for a SIGCONT while its process is still in state `S`. Not on
+   Windows.
+3. *By hand* — **Terminal → Resume suspended session** sends SIGCONT to the
+   terminal with the keyboard, and **Terminal → Restart terminal** hangs its
+   `claude` up and starts the same session in the same pane (the same
+   `restart()` Enter uses on a kept pane, with `--resume` added). Neither one
+   restarts the app.
+
+**One conversation, one `claude`.** Every resume first goes through
+`resumeOpenDecision` (`electron/lib/openGuard.js`). If one of the app's
+terminals already has the session, that terminal is shown (a kept pane is
+started again) and nothing new is spawned. If a live `claude` outside the app
+has it (its `~/.claude/sessions/<pid>.json`), the resume is refused and the
+column shows the "running elsewhere" note. A fork always gets a terminal of
+its own, and a terminal the app is hanging up on purpose (the restart behind
+Assign / Extra flags) does not count as the owner. The window also drops a
+second click on a row whose resume has not been answered yet.
+
+**After a restart.** `<userData>/open-terminals.json` is rewritten on every
+change to the app's terminals: session id, folder, agent, the session's own
+flags, and which one was on screen. Only terminals with a conversation to
+resume are kept. It is written once more on quit and then frozen, so the
+hang-ups of quitting do not empty it. On the next start those rows say **WAS
+OPEN** and the one that was on screen is selected, with a note saying to
+click its row. **Nothing is spawned** until a row is clicked. An entry stays
+on offer until its session is opened again.
 
 ## Fork
 
@@ -2408,6 +2464,21 @@ CLAUDING_SMOKE_FORK=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     prints the fork's output tail so any CLI warning about the session being
     in use would show -> fork-busy.png. Exits every terminal and deletes the
     group it borrowed. On failure: fork-failed.png.
+
+CLAUDING_SMOKE_SUSPEND=1 [CLAUDING_SMOKE_SCREENSHOT=/path.png] npx electron . --user-data-dir=/tmp/profile
+    Ctrl+Z recovery, in the scratch folder only (`npm run build` first):
+    writes the raw 0x1a byte straight into the pty (past the key handler),
+    waits for the CLI to suspend, then for the watcher to continue it; asks
+    "Reply with exactly: ok" -> ctrl-z-recovered.png; then runs Terminal ->
+    Restart terminal's path: the same terminal id must come back with
+    --resume -> ctrl-z-restarted.png.
+
+CLAUDING_SMOKE_RESTORE=1, then =2 (same --user-data-dir, CLAUDING_SMOKE_FOLDER elsewhere)
+    phase 1 opens a terminal in CLAUDING_SMOKE_RESTORE_FOLDER, gets one
+    answer, quits; phase 2 checks nothing was spawned, the row says WAS OPEN
+    and is selected -> restore-offer.png; clicks the row twice fast and asks
+    for the same resume twice straight over IPC: exactly one
+    `claude --resume <id>` may exist -> restore-resumed.png.
 
 CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the two meta actions, in the scratch folder only: opens a terminal, gets

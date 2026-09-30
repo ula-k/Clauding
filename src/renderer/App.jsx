@@ -266,6 +266,11 @@ export default function App() {
   const selectionRef = useRef({ sessionIds: [], anchorId: null });
   const selectedTerminalIdRef = useRef(null);
   const terminalsRef = useRef([]);
+  // Session ids whose resume has been asked of the main process and not
+  // answered yet: a second click in that moment does not ask again. The main
+  // process refuses a second `claude` on one conversation anyway
+  // (electron/lib/openGuard.js); this only saves the round trip.
+  const resumesInFlightRef = useRef(new Set());
   const sessionsRef = useRef([]);
   // sessionAgents as it is right now, for the callbacks that must not be
   // rebuilt on every change of it (selecting a session, forking one).
@@ -441,6 +446,19 @@ export default function App() {
         }
       }
       setTerminals(list);
+      // A fresh start (no terminals alive, so not a renderer reload): the
+      // session that was on screen when the app last closed is selected
+      // again — its row, not a terminal. Its note says to click the row to
+      // resume it; nothing is started until then (electron/openTerminals.js).
+      if (list.length === 0) {
+        const offer = await window.clauding.terminalRestoreOffer();
+        if (!disposed && offer && offer.selectedSessionId) {
+          setSelectedSessionId((current) => current || offer.selectedSessionId);
+          setSelection((current) =>
+            current.sessionIds.length > 0 ? current : { sessionIds: [offer.selectedSessionId], anchorId: offer.selectedSessionId }
+          );
+        }
+      }
     });
     const stopData = window.clauding.onTerminalData(({ terminalId, data }) => {
       writeToInstance(terminalId, data);
@@ -708,6 +726,21 @@ export default function App() {
         rows: dimensions.rows,
         openedByClick
       });
+      // A resume the main process would not start, because a `claude`
+      // outside the app has that conversation: the row stays selected and
+      // the column shows the "running elsewhere" note.
+      if (record && record.refused) {
+        if (record.liveStatus) {
+          setSessions((previous) =>
+            previous.map((session) =>
+              session.sessionId === record.sessionId ? { ...session, liveStatus: record.liveStatus } : session
+            )
+          );
+        }
+        setSelectedSessionId(record.sessionId);
+        setSelectedTerminalId(null);
+        return null;
+      }
       ensureInstance(record.terminalId);
       if (groupId) {
         pendingGroupByTerminalRef.current.set(record.terminalId, groupId);
@@ -759,21 +792,31 @@ export default function App() {
     if (session.liveStatus && session.liveStatus.source !== "app") {
       return;
     }
+    if (resumesInFlightRef.current.has(sessionId)) {
+      return;
+    }
     // Resume as the agent this session is assigned to: the definition goes
     // into the system prompt of the resumed terminal, so an old session
     // attached to an agent behaves as that agent from its next message on.
-    const agentId = agentLinksRef.current[sessionId] || null;
+    // A session offered back after a restart ("was open") comes back as the
+    // agent and with the flags its terminal had.
+    const offered = session.wasOpen || null;
+    const agentId = agentLinksRef.current[sessionId] || (offered && offered.agentId) || null;
     // Assigned while the old terminal was still running: this resume is the
     // moment the definition is finally read, so the session introduces
     // itself in its new role instead of the change staying invisible.
     const agentName = awaitingAssignmentKickoffRef.current.get(sessionId) || null;
     awaitingAssignmentKickoffRef.current.delete(sessionId);
+    resumesInFlightRef.current.add(sessionId);
     openTerminal({
       workingDirectory: session.workingDirectory,
       resumeSessionId: sessionId,
       agentId,
       kickoffMessage: agentId && agentName ? agentAssignmentKickoffMessage(agentName) : null,
+      extraArguments: offered && offered.extraArguments ? offered.extraArguments : null,
       openedByClick: true
+    }).finally(() => {
+      resumesInFlightRef.current.delete(sessionId);
     });
   }, [openTerminal]);
 

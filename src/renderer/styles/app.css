@@ -620,6 +620,7 @@ a {
    waiting color, a tag in its own. NEEDS ANSWER is the system one — it is
    always drawn first and cannot be taken off. */
 .session-row .row-needs-answer,
+.session-row .row-was-open,
 .session-row .tag-pill {
   flex: 0 0 auto;
 }
@@ -632,6 +633,20 @@ a {
   white-space: nowrap;
   color: var(--status-waiting);
   background: var(--status-waiting-soft);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+}
+
+/* WAS OPEN: the session had a terminal when the app last closed. The same
+   pill as NEEDS ANSWER, in the quiet text color — a reminder, not a call. */
+.session-row .row-was-open {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-dim);
+  background: var(--surface-hover);
   padding: 1px 6px;
   border-radius: var(--radius-pill);
 }

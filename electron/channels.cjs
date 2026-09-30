@@ -112,6 +112,7 @@ const CHANNELS = {
   // "Press Enter to start again" on a pane that was kept after its `claude`
   // ended: the same command line into the same terminal id.
   terminalRestart: "terminal:restart",
+  terminalRestoreOffer: "terminal:restore-offer",
   terminalData: "terminal:data",
   terminalExit: "terminal:exit",
   terminalChanged: "terminal:changed",

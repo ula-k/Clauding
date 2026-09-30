@@ -340,6 +340,11 @@ contextBridge.exposeInMainWorld("clauding", {
   restartTerminal(terminalId) {
     return ipcRenderer.invoke(CHANNELS.terminalRestart, { terminalId });
   },
+  // The sessions that were open when the app last closed, and which one was
+  // on screen (electron/openTerminals.js). Nothing is started by asking.
+  terminalRestoreOffer() {
+    return ipcRenderer.invoke(CHANNELS.terminalRestoreOffer);
+  },
   onTerminalData(listener) {
     return subscribe(CHANNELS.terminalData, listener);
   },
