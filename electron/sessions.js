@@ -11,6 +11,7 @@ import { claudeRegistryPaths } from "./lib/platformPaths.js";
 import { currentClaudeHome } from "./claudeHome.js";
 import { searchTranscriptFiles } from "./lib/transcriptSearch.js";
 import { TAIL_BYTES, createNeedsAnswerCache, isRecentEnoughToAsk } from "./lib/needsAnswer.js";
+import { groupForModState, modStateNeedsAnswer } from "./lib/modState.js";
 import { OPENING_BYTES, openingTextFromTranscript } from "./lib/transcriptOpening.js";
 import { cwdValuesInText, decodeProjectFolderName, resolveSessionFolder } from "./lib/sessionFolder.js";
 
@@ -144,6 +145,10 @@ function pickTitle(session) {
 // registry already knows busy / idle; only the ownership is added here so
 // the renderer shows the terminal instead of a "running elsewhere" banner.
 function ownedGroup(ownedState, liveStatus) {
+  // The Clauding mod said what the session is doing: that wins.
+  if (ownedState.modState) {
+    return groupForModState(ownedState.modState, STATUS_GROUPS);
+  }
   if (liveStatus) {
     return liveStatus.group;
   }
@@ -258,7 +263,15 @@ export function readSessionOpening(sessionId) {
 // again whenever the list changes, and each answer is kept under the
 // transcript's size and modification time, so the file is only read when it
 // has really moved.
-function needsAnswer(sessionId, liveStatus, lastModified) {
+//
+// A session running in one of the app's terminals **with the Clauding mod**
+// does not need any of this: the mod reported its state the moment it
+// changed (electron/lib/modState.js), and that word is the answer.
+function needsAnswer(sessionId, liveStatus, lastModified, modState = null) {
+  if (modState) {
+    needsAnswerCache.forget(sessionId);
+    return modStateNeedsAnswer(modState);
+  }
   if (liveStatus && (Boolean(liveStatus.needs) || liveStatus.rawStatus === "blocked")) {
     return true;
   }
@@ -321,7 +334,8 @@ export function enrichSession(session, statusBySession, ownedStates = new Map(),
     fileSize: session.fileSize || null,
     tag: session.tag || null,
     statusGroup,
-    needsAnswer: needsAnswer(session.sessionId, liveStatus, session.lastModified),
+    needsAnswer: needsAnswer(session.sessionId, liveStatus, session.lastModified, ownedState ? ownedState.modState : null),
+    modState: ownedState && ownedState.modState ? ownedState.modState : null,
     ownedByApp: Boolean(ownedState),
     wasOpen: !ownedState && offeredSessions.has(session.sessionId) ? offeredSessions.get(session.sessionId) : null,
     liveStatus

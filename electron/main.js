@@ -53,6 +53,7 @@ import { runEmojiSmoke } from "./smokeEmoji.js";
 import { runKickoffSmoke } from "./smokeKickoff.js";
 import { runSuspendSmoke } from "./smokeSuspend.js";
 import { runRestoreSmoke } from "./smokeRestore.js";
+import { runModSmoke } from "./smokeMod.js";
 import { createSessionGroupStore } from "./sessionGroups.js";
 import { createAgentStore, inspectDefinitionFolder, inspectDefinitionFile } from "./agents.js";
 import { createSettingsStore } from "./settings.js";
@@ -70,6 +71,8 @@ import { startCommandSocket } from "./commandSocket.js";
 import { readPreamble, refreshStoredPreamble } from "./preamble.js";
 import { createFileWatchRegistry, watchFile } from "./fileWatch.js";
 import { createOpenTerminalsStore, OPEN_TERMINALS_FILE_NAME } from "./openTerminals.js";
+import { createModBridge } from "./modBridge.js";
+import { modStateIsBusy, modStateNeedsAnswer } from "./lib/modState.js";
 
 // A GUI-launched app inherits a minimal PATH; the Claude CLI and the tools it
 // runs need ~/.local/bin, Homebrew and /usr/local/bin like in a terminal.
@@ -161,6 +164,7 @@ const smokeKickoffMode = process.env.CLAUDING_SMOKE_KICKOFF === "1";
 const smokePasteMode = process.env.CLAUDING_SMOKE_PASTE === "1";
 const smokeSuspendMode = process.env.CLAUDING_SMOKE_SUSPEND === "1";
 const smokeRestoreMode = process.env.CLAUDING_SMOKE_RESTORE === "1" || process.env.CLAUDING_SMOKE_RESTORE === "2";
+const smokeModMode = process.env.CLAUDING_SMOKE_MOD === "1";
 // Any automation at all: the first-run questions stay out of its way.
 const anySmokeMode =
   smokeTerminalMode ||
@@ -178,7 +182,8 @@ const anySmokeMode =
   smokeKickoffMode ||
   smokePasteMode ||
   smokeSuspendMode ||
-  smokeRestoreMode;
+  smokeRestoreMode ||
+  smokeModMode;
 
 // The screenshot hook and the smoke runs drive the real window with things
 // only macOS has — `capturePage` against an inset title bar, the standard
@@ -249,6 +254,11 @@ function clearStalePromptFiles() {
 // is shown to a window that has never been set up — no answer yet, no
 // project, no agent of the user's own — so an app that is already in use
 // never sees it after an update.
+function modSupportForRenderer() {
+  const support = modBridge.modSupport();
+  return { supported: support.supported, version: support.version, minimumVersion: support.minimumVersion };
+}
+
 function settingsForRenderer() {
   const current = settings.get();
   const ownAgents = agents ? agents.get().agents.filter((agent) => !agent.builtin).length : 0;
@@ -262,6 +272,9 @@ function settingsForRenderer() {
       (screenshotFirstRun || (!screenshotPath && !anySmokeMode)),
     setupWorkingDirectory: setupWorkingDirectory(),
     claudeHomeInUse: currentClaudeHome(),
+    // Whether this `claude` can load the Clauding mod (Settings says so
+    // when it cannot, and nothing is added to the command line then).
+    modSupport: modSupportForRenderer(),
     claudeBinaryInUse: claudeExecutablePath()
   };
 }
@@ -325,6 +338,23 @@ function persistOpenTerminals() {
   openTerminals.update(terminalRegistry.list(), panelSelection.terminalId);
 }
 
+// The Clauding mod (electron/modBridge.js): the `--plugin-dir` each new
+// terminal gets, and the states the mod reports back over `clauding state`.
+const modBridge = createModBridge({
+  terminals: () => terminalRegistry,
+  readSettings: () => (settings ? settings.get() : null),
+  readPanelSelection: () => panelSelection,
+  getWindow: () => mainWindow,
+  sendToWindow,
+  channels: CHANNELS,
+  async lookUpSessionTitle(sessionId) {
+    const session = await getSession(sessionId, terminalRegistry.ownedStates());
+    return session ? session.title : null;
+  },
+  linkedTaskForSession: (sessionId) => (projectData ? projectData.linkedTaskForSession(sessionId) : null),
+  log: (line) => console.log(line)
+});
+
 const terminalRegistry = createTerminalRegistry({
   sendToWindow,
   onChange() {
@@ -368,6 +398,9 @@ const terminalRegistry = createTerminalRegistry({
   },
   resolveSessionFolder(sessionId) {
     return resolveFolderForSession(sessionId);
+  },
+  readModPlan() {
+    return modBridge.readModPlan();
   }
 });
 
@@ -408,6 +441,14 @@ let panelSelection = { terminalId: null, sessionKey: null };
 // against a fake app in test/commandProtocol.test.js.
 const commandRequests = createCommandRequestHandler({
   terminals: terminalRegistry,
+  mod: {
+    reportState(terminalId, report) {
+      return modBridge.reportState(terminalId, report);
+    },
+    sessionInfo(terminalId) {
+      return modBridge.sessionInfo(terminalId);
+    }
+  },
   panelTabs: {
     open(sessionKey, description, options) {
       return panelTabs.open(sessionKey, description, options);
@@ -581,8 +622,13 @@ function collectSessionActivity() {
   }
   // One of our own terminals counts as busy only while it is working. An
   // idle pane is not an event, and hiding closes the pane anyway.
+  // With the Clauding mod, its word decides instead.
   for (const [sessionId, ownedState] of terminalRegistry.ownedStates()) {
     const previous = activity.get(sessionId) || { busy: false, needsAnswer: false };
+    if (ownedState.modState) {
+      activity.set(sessionId, { busy: modStateIsBusy(ownedState.modState), needsAnswer: modStateNeedsAnswer(ownedState.modState) });
+      continue;
+    }
     activity.set(sessionId, { ...previous, busy: previous.busy || ownedState.registryStatus === "busy" });
   }
   return activity;
@@ -782,6 +828,19 @@ function createWindow() {
   } else if (smokeSuspendMode) {
     mainWindow.webContents.once("did-finish-load", () => {
       runSuspendSmoke({
+        window: mainWindow,
+        registry: terminalRegistry,
+        sendCommand(command) {
+          sendToWindow(CHANNELS.smokeCommand, command);
+        },
+        quit() {
+          app.quit();
+        }
+      });
+    });
+  } else if (smokeModMode) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      runModSmoke({
         window: mainWindow,
         registry: terminalRegistry,
         sendCommand(command) {

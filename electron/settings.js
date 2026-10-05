@@ -41,6 +41,15 @@
 //                  setup agent's `clauding onboarding done`, or "I'll set
 //                  it up myself"), then "done"
 //
+// And the Clauding mod's switches (Settings → "Clauding mod", see
+// electron/lib/modState.js and builtin/mod/clauding-mod/): modEnabled (the
+// overall one: whether `--plugin-dir` is added at all), modStateReports,
+// modNotifications, modSound (the only one off by default), modStatusLine,
+// modContextBar, modGuard, and modGuardPatterns — the guard's rules, one
+// regular expression per line; an empty field means the defaults. A session
+// cannot change these with `clauding settings set`: the guard is not
+// something the session it guards may switch off.
+//
 // File shape (version 1):
 //   { "version": 1, "agentsRoot": "/Users/<you>/Clauding/agents",
 //     "skillsRoot": "/Users/<you>/.claude/skills",
@@ -57,6 +66,8 @@ import path from "node:path";
 import { mergeExtraArguments } from "./lib/claudeArguments.js";
 import { LANGUAGE_CODES, MAXIMUM_PREAMBLE_EXTRA_CHARACTERS } from "./lib/settingCommands.js";
 import { claudeHomeFolder, claudeRegistryPaths, expandHomeFolder, samePath } from "./lib/platformPaths.js";
+import { MOD_SWITCH_KEYS, cleanGuardPatterns, cleanModSwitches } from "./lib/modState.js";
+import { DEFAULT_GUARD_PATTERNS } from "../builtin/mod/clauding-mod/hooks/commandGuard.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_EXTRA_ARGUMENTS_LENGTH = 500;
@@ -133,7 +144,9 @@ function sanitize(saved) {
     preambleExtra: cleanPreambleExtra(source.preambleExtra),
     claudeBinary: cleanFolder(source.claudeBinary, ""),
     claudeHome,
-    onboarding: ONBOARDING_STATES.includes(source.onboarding) ? source.onboarding : ""
+    onboarding: ONBOARDING_STATES.includes(source.onboarding) ? source.onboarding : "",
+    ...cleanModSwitches(source),
+    modGuardPatterns: cleanGuardPatterns(source.modGuardPatterns, DEFAULT_GUARD_PATTERNS)
   };
 }
 
@@ -146,7 +159,9 @@ const COMPARED_KEYS = [
   "preambleExtra",
   "claudeBinary",
   "claudeHome",
-  "onboarding"
+  "onboarding",
+  ...MOD_SWITCH_KEYS,
+  "modGuardPatterns"
 ];
 
 function sameSettings(first, second) {

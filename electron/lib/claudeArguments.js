@@ -33,6 +33,11 @@ export function cleanSessionDisplayName(rawName) {
 //   --append-system-prompt <text>  the same text inline when it did not
 //   --system-prompt-snapshot off   always, whenever something is appended, so
 //                                  a resumed session gets the preamble too
+//   <the user's extra flags>
+//   --plugin-dir <mod folder>      the Clauding mod, last, when it is on and
+//                                  the CLI can load mods (lib/modState.js:
+//                                  modArguments). Only the `claude` this app
+//                                  starts gets it; nothing is installed.
 // `agent` is only read for the fallback display name; the prompt text itself
 // is built by the caller (buildAgentSystemPrompt in electron/agents.js).
 export function buildClaudeArguments({
@@ -42,7 +47,8 @@ export function buildClaudeArguments({
   agent = null,
   appendedPrompt = "",
   promptFilePath = null,
-  extraArguments = []
+  extraArguments = [],
+  pluginArguments = []
 } = {}) {
   const commandArguments = resumeSessionId ? ["--resume", resumeSessionId] : [];
   if (forkSession) {
@@ -68,6 +74,7 @@ export function buildClaudeArguments({
       commandArguments.push(token);
     }
   }
+  commandArguments.push(...(pluginArguments || []));
   return { commandArguments, displayName };
 }
 

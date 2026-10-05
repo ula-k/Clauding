@@ -236,6 +236,14 @@ contextBridge.exposeInMainWorld("clauding", {
   onSettingsChanged(listener) {
     return subscribe(CHANNELS.settingsChanged, listener);
   },
+  // The Clauding mod: a session finished or waits for the user (a toast),
+  // and a click on its macOS notification (show that terminal).
+  onModNotice(listener) {
+    return subscribe(CHANNELS.modNotice, listener);
+  },
+  onModNoticeOpen(listener) {
+    return subscribe(CHANNELS.modNoticeOpen, listener);
+  },
   // "Clauding → Settings…" in the menu bar asking for the settings popover.
   onShowSettings(listener) {
     return subscribe(CHANNELS.settingsShow, listener);

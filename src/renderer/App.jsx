@@ -35,6 +35,8 @@ import AssignAgentDialog from "./components/AssignAgentDialog.jsx";
 import SessionFlagsDialog from "./components/SessionFlagsDialog.jsx";
 import DeleteSessionDialog from "./components/DeleteSessionDialog.jsx";
 import AgentPickerSheet from "./components/AgentPickerSheet.jsx";
+import ModToasts from "./components/ModToasts.jsx";
+import { applyModStateToSession } from "../../electron/lib/modState.js";
 
 const PAGE_SIZE = 60;
 const LEFT_WIDTH_MIN = 240;
@@ -120,7 +122,7 @@ const SETUP_AGENT_MARKER = "setup";
 // A row for a session a terminal of ours just started, shown until
 // listSessions() sees the transcript file on disk (written at the first prompt).
 function placeholderSession(terminal, language) {
-  return {
+  return applyModStateToSession({
     sessionId: terminal.sessionId,
     title: terminal.sessionName || translateInLanguage(language, "newSession.untitled"),
     customTitle: terminal.sessionName || null,
@@ -140,7 +142,7 @@ function placeholderSession(terminal, language) {
     ownedByApp: true,
     liveStatus: { group: terminal.registryStatus === "idle" ? "waiting" : "running", source: "app", terminalId: terminal.terminalId },
     isPlaceholder: true
-  };
+  }, terminal);
 }
 
 export default function App() {
@@ -1605,8 +1607,13 @@ export default function App() {
       // A terminal whose pane was kept keeps its row too, in the same place.
       .filter((terminal) => terminal.sessionId && !listedIds.has(terminal.sessionId))
       .map((terminal) => placeholderSession(terminal, language));
+    // What the Clauding mod reported for a live terminal moves its row's dot
+    // and NEEDS ANSWER tag at once, before the list is read again.
+    const liveTerminalBySession = new Map(
+      terminals.filter((terminal) => terminal.sessionId && !terminal.exited).map((terminal) => [terminal.sessionId, terminal])
+    );
     return placeholders.concat(sessions).map((session) => ({
-      ...session,
+      ...applyModStateToSession(session, liveTerminalBySession.get(session.sessionId)),
       agent: agentByTerminalSession.get(session.sessionId) || agentForSession(session.sessionId)
     }));
   }, [sessions, terminals, language, agentById, agentForSession]);
@@ -2060,6 +2067,33 @@ export default function App() {
     [openTerminal]
   );
 
+  // A Clauding mod toast (or its macOS notification) was clicked: show that
+  // session, through its row when it has one, else its terminal directly.
+  const openFromModNotice = useCallback(
+    ({ terminalId, sessionId }) => {
+      const owner = terminalsRef.current.find((record) => record.terminalId === terminalId) || null;
+      const targetSessionId = sessionId || (owner ? owner.sessionId : null);
+      setLeftTab("sessions");
+      if (targetSessionId) {
+        selectSession(targetSessionId);
+        return;
+      }
+      if (owner) {
+        ensureInstance(owner.terminalId);
+        setSelectedTerminalId(owner.terminalId);
+      }
+    },
+    [selectSession]
+  );
+
+  const titleForSession = useCallback(
+    (sessionId) => {
+      const session = sessionsRef.current.find((record) => record.sessionId === sessionId);
+      return session ? session.title : null;
+    },
+    []
+  );
+
   const windowToolsNode = (
     <WindowTools
       settings={settings}
@@ -2067,6 +2101,7 @@ export default function App() {
       onSettingsOpenChange={setSettingsMenuOpen}
       onPickAgentsRoot={() => window.clauding.pickAgentsRoot().then(setSettings)}
       onSaveExtraFlags={(flags) => window.clauding.updateSettings({ extraClaudeArguments: flags }).then(setSettings)}
+      onSaveModSettings={(draft) => window.clauding.updateSettings(draft).then(setSettings)}
     />
   );
 
@@ -2271,6 +2306,7 @@ export default function App() {
           />
         )}
         {draggingHandle ? <div className="drag-overlay" data-drag-overlay /> : null}
+        <ModToasts titleForSession={titleForSession} onOpen={openFromModNotice} />
       </div>
     </LanguageContext.Provider>
   );

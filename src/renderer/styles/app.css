@@ -6205,3 +6205,131 @@ button.burn-down-number:hover b {
 .project-refreshing {
   color: var(--text-faint);
 }
+
+/* Settings → "Clauding mod": the switches and the guard's rules. */
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.settings-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.settings-checks {
+  margin-left: 16px;
+}
+
+.settings-checks.is-off {
+  opacity: 0.5;
+}
+
+.settings-subname {
+  margin-top: 10px;
+}
+
+.settings-textarea {
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.45;
+  font-size: 11px;
+  white-space: pre;
+}
+
+/* The Clauding mod's notices: a session finished, or waits for an answer or
+   a permission, while another one is on screen. Top-right, over everything,
+   one click opens that session. */
+.mod-toasts {
+  position: fixed;
+  top: 54px;
+  right: 18px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.mod-toast {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-small, 8px);
+  border: 1px solid var(--border-lavender);
+  background: var(--surface-lavender-raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  animation: mod-toast-in 160ms ease-out;
+}
+
+.mod-toast-body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mod-toast-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-working);
+}
+
+.mod-toast.is-needsAnswer .mod-toast-dot,
+.mod-toast.is-needsPermission .mod-toast-dot {
+  background: var(--status-waiting);
+}
+
+.mod-toast-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mod-toast-open {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.mod-toast-close {
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.mod-toast-close:hover {
+  color: var(--text);
+}
+
+@keyframes mod-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

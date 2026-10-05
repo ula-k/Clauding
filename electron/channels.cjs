@@ -57,6 +57,11 @@ const CHANNELS = {
   settingsChanged: "settings:changed",
   // The Settings… item in the macOS menu bar asking for the settings popover.
   settingsShow: "settings:show",
+  // The Clauding mod reported that a session finished or waits for the user
+  // (a toast in the window), and a click on the macOS notification asking the
+  // window to show that terminal.
+  modNotice: "mod:notice",
+  modNoticeOpen: "mod:notice-open",
   skillsList: "skills:list",
   // The native Skills menu asking the window to open the skills popover.
   skillsShow: "skills:show",

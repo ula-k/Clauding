@@ -31,6 +31,16 @@
 //
 // Everything here is pure: text in, a boolean out. The file reading, the
 // cache stamp and the wiring live in electron/sessions.js.
+//
+// Rules 2–4 are one shared function, `textAsksSomething`, kept in the
+// Clauding mod's folder (builtin/mod/clauding-mod/hooks/questionHeuristic.js)
+// because the mod asks the very same question of a turn's final answer the
+// moment the turn ends — and a mod can only import files of its own. For a
+// session that runs with the mod, the mod's report wins over this file
+// (electron/lib/modState.js); this stays the answer for every other session.
+import { EXPLICIT_ASK_PHRASES, NEEDS_INPUT_WINDOW, textAsksSomething } from "../../builtin/mod/clauding-mod/hooks/questionHeuristic.js";
+
+export { EXPLICIT_ASK_PHRASES, NEEDS_INPUT_WINDOW, textAsksSomething };
 
 // How much of the end of the transcript is read. A single message is rarely
 // more than a few kB, so this holds the last several of them — and a
@@ -54,23 +64,6 @@ export function isRecentEnoughToAsk(lastModified, now = Date.now()) {
   // recent rather than hiding it.
   return now - stamp <= NEEDS_ANSWER_MAX_AGE_MILLISECONDS;
 }
-
-// How far back from the end of a message "needs input" still counts as the
-// session asking for something, rather than a word in the middle of a long
-// explanation.
-export const NEEDS_INPUT_WINDOW = 300;
-
-// The short list, deliberately short: phrases that are an ask and nothing
-// else, in the two languages this app is used in. Matching is
-// case-insensitive.
-export const EXPLICIT_ASK_PHRASES = [
-  "czekam na twoją decyzję",
-  "czekam na twoją odpowiedź",
-  "waiting for your",
-  "say the word",
-  "daj znać, czy",
-  "powiedz, czy"
-];
 
 // Every JSONL line that parses, in order. A tail begins in the middle of a
 // line and a session may be writing the last one at this very moment, so a
@@ -139,31 +132,6 @@ export function lastAssistantTurn(entries) {
     }
   }
   return turn ? { ...turn, resultAfterwards } : null;
-}
-
-// Does this piece of text read as a question to the user?
-export function textAsksSomething(rawText) {
-  const text = String(rawText || "").trim();
-  if (!text) {
-    return false;
-  }
-  const lowerCase = text.toLowerCase();
-  for (const line of lowerCase.split("\n")) {
-    if (line.trim().startsWith("needs input:")) {
-      return true;
-    }
-  }
-  if (lowerCase.slice(-NEEDS_INPUT_WINDOW).includes("needs input")) {
-    return true;
-  }
-  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-  const lastLine = lines[lines.length - 1] || "";
-  // A question mark at the very end, with nothing but closing punctuation
-  // after it ("…, czy tak?**").
-  if (/\?[)\]*_"'`»”]*$/.test(lastLine)) {
-    return true;
-  }
-  return EXPLICIT_ASK_PHRASES.some((phrase) => lowerCase.includes(phrase));
 }
 
 // The whole decision for one session, from the tail of its transcript.

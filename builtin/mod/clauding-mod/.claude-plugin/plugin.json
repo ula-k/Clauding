@@ -1,0 +1,8 @@
+{
+  "name": "clauding-mod",
+  "version": "0.1.0",
+  "description": "Clauding's own mod: reports each session's state to the app, shows the linked task, branch and context under the prompt, and asks before risky shell commands. Does nothing outside a Clauding terminal.",
+  "author": {
+    "name": "Ula Kuczyńska"
+  }
+}

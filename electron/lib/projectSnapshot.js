@@ -578,3 +578,24 @@ function dedupeSessions(list) {
     return true;
   });
 }
+
+// The task a session is linked to in a project view, for the Clauding mod's
+// status line (`clauding session-info`): the first card or subtask whose
+// sessions include it → { id, customId, name } or null. A subtask wins over
+// its card, since it is the narrower answer.
+export function linkedTaskOfSession(snapshot, sessionId) {
+  if (!snapshot || !sessionId || !Array.isArray(snapshot.cards)) {
+    return null;
+  }
+  const holds = (entry) => Array.isArray(entry && entry.sessions) && entry.sessions.some((session) => session && session.sessionId === sessionId);
+  for (const card of snapshot.cards) {
+    const subtask = (card.subtasks || []).find(holds);
+    if (subtask) {
+      return { id: subtask.id, customId: subtask.customId || null, name: subtask.name || null };
+    }
+    if (holds(card)) {
+      return { id: card.id, customId: card.customId || null, name: card.name || null };
+    }
+  }
+  return null;
+}

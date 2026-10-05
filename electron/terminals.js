@@ -25,6 +25,7 @@ import {
 import { isWindows } from "./lib/platformPaths.js";
 import { currentRegistryPaths } from "./claudeHome.js";
 import { buildClaudeArguments, buildTerminalEnvironment, mergeExtraArguments } from "./lib/claudeArguments.js";
+import { reduceModState, replaceModArguments } from "./lib/modState.js";
 import { exitNoticeText, exitPlan } from "./lib/exitPlan.js";
 import { resumeOpenDecision } from "./lib/openGuard.js";
 import {
@@ -208,7 +209,11 @@ export function createTerminalRegistry({
   rememberSessionExtraArguments = null,
   // The folder a session resolves to (electron/sessions.js), for a resume
   // or a fork asked for without one that exists.
-  resolveSessionFolder = null
+  resolveSessionFolder = null,
+  // The Clauding mod: `{ pluginDirectory, arguments }` for a terminal about
+  // to start — `arguments` is `--plugin-dir <folder>` when the mod is on and
+  // the CLI can load it, else empty (electron/lib/modState.js).
+  readModPlan = null
 }) {
   const terminals = new Map();
   let linkPoller = null;
@@ -238,6 +243,10 @@ export function createTerminalRegistry({
       startedAt: record.startedAt,
       focusedAt: record.focusedAt,
       registryStatus: record.registryStatus,
+      // What the Clauding mod last reported for this process ({ state,
+      // detail, changedAt, … }), or null without the mod or before its first
+      // report (electron/lib/modState.js).
+      modState: record.modState || null,
       // When the pty first said anything (null until then): the middle
       // column gives up waiting 15 s after the start without it.
       firstOutputAt: record.firstOutputAt || null,
@@ -611,6 +620,7 @@ export function createTerminalRegistry({
     record.startedAt = Date.now();
     record.registryStatus = null;
     record.statusChangedAt = Date.now();
+    record.modState = null;
     record.sawPrompt = false;
     record.closingOnPurpose = false;
     record.restartWhenExited = false;
@@ -655,6 +665,10 @@ export function createTerminalRegistry({
     if (record.sessionId && hadAConversation && !record.commandArguments.includes("--resume")) {
       record.commandArguments = ["--resume", record.sessionId].concat(record.commandArguments);
       record.resumeSessionId = record.sessionId;
+    }
+    if (readModPlan) {
+      const plan = readModPlan();
+      record.commandArguments = replaceModArguments(record.commandArguments, plan.pluginDirectory, plan.arguments);
     }
     record.replayBuffer = "";
     record.pendingOutput = [];
@@ -898,7 +912,8 @@ export function createTerminalRegistry({
       agent: resumeSessionId && !forkSession ? null : agent,
       appendedPrompt,
       promptFilePath,
-      extraArguments: mergedExtraArguments
+      extraArguments: mergedExtraArguments,
+      pluginArguments: readModPlan ? readModPlan().arguments : []
     });
     const environment = buildTerminalEnvironment({
       baseEnvironment: terminalEnvironment(),
@@ -927,6 +942,7 @@ export function createTerminalRegistry({
       focusedAt: Date.now(),
       registryStatus: null,
       statusChangedAt: Date.now(),
+      modState: null,
       openedByClick: Boolean(openedByClick),
       receivedInput: false,
       // Input that is really somebody typing, as opposed to the answers
@@ -1060,7 +1076,29 @@ export function createTerminalRegistry({
     return record ? record.replayBuffer : "";
   }
 
-  // sessionId -> { terminalId, pid, registryStatus } for live terminals.
+  // A state the Clauding mod reported for this terminal (`clauding state`).
+  // → { previous, next, terminal } or null for a terminal that is not live;
+  // throws on a word that is not a state. The list is told only when the
+  // state actually changed, so the tag and the dot move at once.
+  function reportModState(terminalId, report) {
+    const record = terminals.get(terminalId);
+    if (!record || record.exited) {
+      return null;
+    }
+    const previous = record.modState || null;
+    const next = reduceModState(previous, report);
+    if (!next) {
+      throw new Error(`"${report && report.state}" is not a state (working, needs-answer, needs-permission, done, idle).`);
+    }
+    record.modState = next;
+    if (!previous || previous.state !== next.state || previous.detail !== next.detail) {
+      logLine(`${terminalId}: mod state ${previous ? previous.state : "(none)"} -> ${next.state}${next.detail ? ` (${next.detail})` : ""}`);
+      announceChange();
+    }
+    return { previous, next, terminal: publicRecord(record) };
+  }
+
+  // sessionId -> { terminalId, pid, registryStatus, modState } for live terminals.
   function ownedStates() {
     const states = new Map();
     for (const record of terminals.values()) {
@@ -1068,7 +1106,8 @@ export function createTerminalRegistry({
         states.set(record.sessionId, {
           terminalId: record.terminalId,
           pid: record.pid,
-          registryStatus: record.registryStatus
+          registryStatus: record.registryStatus,
+          modState: record.modState || null
         });
       }
     }
@@ -1147,6 +1186,7 @@ export function createTerminalRegistry({
     replay,
     refreshLinks,
     ownedStates,
+    reportModState,
     setAgent,
     markFocused,
     mostRecentlyFocused,

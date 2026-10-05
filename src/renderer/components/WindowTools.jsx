@@ -4,6 +4,7 @@ import PopupMenu from "./PopupMenu.jsx";
 import { GearIcon } from "./Icons.jsx";
 import { EXTRA_FLAGS_PLACEHOLDER, checkExtraArguments } from "../../../electron/lib/extraFlags.js";
 import { handlePlaceholderKey } from "../placeholderAccept.js";
+import { DEFAULT_GUARD_PATTERNS, parseGuardPatterns } from "../../../builtin/mod/clauding-mod/hooks/commandGuard.js";
 
 // The one window-wide button in the top-right of the middle column, next to
 // "Show panel": the settings gear. It does not belong to a session — it is
@@ -66,7 +67,103 @@ function ExtraFlagsField({ settings, onSave }) {
   );
 }
 
-function SettingsPopover({ anchor, settings, onPickAgentsRoot, onSaveExtraFlags, onReveal, onClose }) {
+// The Clauding mod (builtin/mod/clauding-mod/): the overall switch, one per
+// feature, and the guard's rules. Each checkbox saves at once; the rules
+// save when the field loses focus. A `claude` too old for mods turns the
+// whole block into one note.
+const MOD_SWITCHES = [
+  ["modStateReports", "mod.stateReports"],
+  ["modNotifications", "mod.notifications"],
+  ["modSound", "mod.sound"],
+  ["modStatusLine", "mod.statusLine"],
+  ["modContextBar", "mod.contextBar"],
+  ["modGuard", "mod.guard"]
+];
+
+function ModSettingsBlock({ settings, onSave }) {
+  const { translate } = useTranslation();
+  const [patternDraft, setPatternDraft] = useState(settings.modGuardPatterns || DEFAULT_GUARD_PATTERNS);
+  const support = settings.modSupport || { supported: true };
+  const invalid = parseGuardPatterns(patternDraft).invalid;
+
+  useEffect(() => {
+    setPatternDraft(settings.modGuardPatterns || DEFAULT_GUARD_PATTERNS);
+  }, [settings.modGuardPatterns]);
+
+  if (!support.supported) {
+    return (
+      <div className="settings-block" data-settings-mod>
+        <div className="settings-name">{translate("mod.title")}</div>
+        <div className="settings-hint is-problem" data-settings-mod-unsupported>
+          {translate("mod.unsupported", { minimum: support.minimumVersion || "", version: support.version || "?" })}
+        </div>
+      </div>
+    );
+  }
+  const enabled = settings.modEnabled !== false;
+  return (
+    <div className="settings-block" data-settings-mod>
+      <div className="settings-name">{translate("mod.title")}</div>
+      <div className="settings-hint">{translate("mod.hint")}</div>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => onSave({ modEnabled: event.target.checked })}
+          data-settings-mod-switch="modEnabled"
+        />
+        <span>{translate("mod.enabled")}</span>
+      </label>
+      <div className={enabled ? "settings-checks" : "settings-checks is-off"}>
+        {MOD_SWITCHES.map(([key, labelKey]) => (
+          <label key={key} className="settings-check">
+            <input
+              type="checkbox"
+              disabled={!enabled}
+              checked={settings[key] === true}
+              onChange={(event) => onSave({ [key]: event.target.checked })}
+              data-settings-mod-switch={key}
+            />
+            <span>{translate(labelKey)}</span>
+          </label>
+        ))}
+      </div>
+      <div className="settings-name settings-subname">{translate("mod.guardPatterns")}</div>
+      <textarea
+        className="settings-input settings-textarea"
+        rows={6}
+        spellCheck={false}
+        disabled={!enabled}
+        value={patternDraft}
+        onChange={(event) => setPatternDraft(event.target.value)}
+        onBlur={() => onSave({ modGuardPatterns: patternDraft })}
+        data-settings-mod-patterns
+      />
+      <div className="settings-hint">{translate("mod.guardPatternsHint")}</div>
+      {invalid.map((problem) => (
+        <div key={problem.line} className="settings-hint is-problem">
+          {translate("mod.invalidPattern", { line: problem.line })}
+        </div>
+      ))}
+      <div className="settings-actions">
+        <button
+          type="button"
+          className="button is-ghost is-small"
+          disabled={!enabled}
+          onClick={() => {
+            setPatternDraft(DEFAULT_GUARD_PATTERNS);
+            onSave({ modGuardPatterns: "" });
+          }}
+        >
+          {translate("mod.restoreDefaults")}
+        </button>
+      </div>
+      <div className="settings-hint">{translate("mod.appliesToNew")}</div>
+    </div>
+  );
+}
+
+function SettingsPopover({ anchor, settings, onPickAgentsRoot, onSaveExtraFlags, onSaveModSettings, onReveal, onClose }) {
   const { translate } = useTranslation();
   return (
     <PopupMenu anchor={anchor} variant="wide" onClose={onClose}>
@@ -101,11 +198,13 @@ function SettingsPopover({ anchor, settings, onPickAgentsRoot, onSaveExtraFlags,
       </div>
       <div className="popup-menu-separator" />
       <ExtraFlagsField settings={settings} onSave={onSaveExtraFlags} />
+      <div className="popup-menu-separator" />
+      <ModSettingsBlock settings={settings} onSave={onSaveModSettings} />
     </PopupMenu>
   );
 }
 
-export default function WindowTools({ settings, settingsOpen, onSettingsOpenChange, onPickAgentsRoot, onSaveExtraFlags }) {
+export default function WindowTools({ settings, settingsOpen, onSettingsOpenChange, onPickAgentsRoot, onSaveExtraFlags, onSaveModSettings }) {
   const { translate } = useTranslation();
   const [settingsAnchor, setSettingsAnchor] = useState(null);
   const settingsButtonRef = useRef(null);
@@ -141,6 +240,7 @@ export default function WindowTools({ settings, settingsOpen, onSettingsOpenChan
             onPickAgentsRoot();
           }}
           onSaveExtraFlags={onSaveExtraFlags}
+          onSaveModSettings={onSaveModSettings}
           onReveal={(target) => window.clauding.revealInFinder(target)}
           onClose={() => {
             setSettingsAnchor(null);

@@ -22,10 +22,17 @@ import path from "node:path";
 // They reach the app through `setup` (a handful of calls main.js hands in;
 // the dry tests hand in fakes), and every one of them answers with one line
 // — or, for the two inspections, the JSON the agent reads.
+//
+// Two more are not typed by anybody: `state` and `session-info` are how the
+// Clauding mod (builtin/mod/clauding-mod/), running inside a `claude` the app
+// started, tells the app what the session is doing and asks what the app
+// knows about it (the linked task, the branch, the mod's own switches). They
+// reach the app through `mod` (two calls main.js hands in).
 import { inspectDefinitionFolder } from "../agents.js";
 import { describeOneSetting, describeSettings, parseSettingValue } from "./settingCommands.js";
 
 const PANEL_COMMANDS = ["open", "panel", "tabs"];
+const MOD_COMMANDS = ["state", "session-info"];
 const SETUP_COMMANDS = ["settings", "sessions", "skills", "integrations", "project", "repos", "repo", "onboarding"];
 
 // Which tab set a `clauding` command goes to, in order:
@@ -45,6 +52,9 @@ export function createCommandRequestHandler({
   agents = null,
   // Everything the setup commands need from the app (see the file header).
   setup = null,
+  // The Clauding mod's two calls: `reportState(terminalId, { state, detail })`
+  // and `sessionInfo(terminalId)` (see the file header).
+  mod = null,
   log
 }) {
   // The tab set a terminal's commands go to: its session id, or a temporary
@@ -333,7 +343,37 @@ export function createCommandRequestHandler({
   }
 
 
+  // `clauding state <terminal> <state> [detail]` and
+  // `clauding session-info <terminal>`. The terminal is named explicitly
+  // (the mod reads CLAUDING_TERMINAL_ID itself) and must be a live one of
+  // this app: no fallback to the one on screen, a report about the wrong
+  // session would be worse than none.
+  async function handleModRequest(request) {
+    if (!mod) {
+      throw new Error("this window does not take reports from the Clauding mod.");
+    }
+    const terminalId = String(request.target || request.terminalId || "").trim();
+    if (!terminalId) {
+      throw new Error("Use: clauding state <terminal id> <state> [detail] | clauding session-info <terminal id>");
+    }
+    if (request.command === "state") {
+      const applied = mod.reportState(terminalId, { state: request.state, detail: request.detail || "" });
+      if (!applied) {
+        throw new Error(`no live terminal ${terminalId} in this app.`);
+      }
+      return `State ${applied.next.state}.`;
+    }
+    const info = await mod.sessionInfo(terminalId);
+    if (!info) {
+      throw new Error(`no live terminal ${terminalId} in this app.`);
+    }
+    return JSON.stringify(info);
+  }
+
   async function handleCommandRequest(request) {
+    if (MOD_COMMANDS.includes(request.command)) {
+      return handleModRequest(request);
+    }
     if (request.command === "agent") {
       return handleAgentRequest(request);
     }

@@ -52,7 +52,7 @@ import {
 } from "./lib/deadlineSources.js";
 import { fetchRepository, inspectRepository } from "./lib/gitInspector.js";
 import { listPullRequests } from "./lib/pullRequests.js";
-import { buildProjectSnapshot } from "./lib/projectSnapshot.js";
+import { buildProjectSnapshot, linkedTaskOfSession } from "./lib/projectSnapshot.js";
 import { branchTaskMap, tasksFromBranches, usesClickup } from "./lib/gitTasks.js";
 import { cleanBoard } from "./projectBoards.js";
 
@@ -1279,8 +1279,26 @@ export function createProjectDataService({
     return { board: boardStore.addBoard({ ...rest, clickup }) };
   }
 
+  // The task a session is linked to in any project, from the views last
+  // stored on disk (never the network): what the Clauding mod's status line
+  // shows. → { id, customId, name, boardId } or null.
+  function linkedTaskForSession(sessionId) {
+    if (!sessionId || fixture) {
+      return null;
+    }
+    for (const board of boardStore.getState().boards) {
+      const stored = readStoredSnapshot(board.id);
+      const task = stored ? linkedTaskOfSession(stored.snapshot, sessionId) : null;
+      if (task) {
+        return { ...task, boardId: board.id };
+      }
+    }
+    return null;
+  }
+
   return {
     snapshot,
+    linkedTaskForSession,
     refreshInBackground,
     refreshAll,
     summaries,

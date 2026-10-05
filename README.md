@@ -1096,6 +1096,22 @@ the user to look at. It also says, in as many words, that a **claude.ai
 Artifact is not the side panel** and that `ctrl+]` is not the answer either —
 both mistakes a session actually made.
 
+## The Clauding mod
+
+Clauding ships its own [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) in `builtin/mod/clauding-mod/` (a plugin manifest, `hooks/register.mjs`, and two plain modules next to it: `questionHeuristic.js` and `commandGuard.js`). It is plain JavaScript, like the rest of the app.
+
+**What it does**, each part switchable in **Settings → Clauding mod**:
+
+- **Exact NEEDS ANSWER and status dot.** The mod tells the app what the session is doing the moment it changes: `working` (a turn started), `needs-answer` (the turn ended on a question, or Claude's question dialog is open), `needs-permission` (a permission prompt is waiting), `done` (the turn ended, nothing asked), `idle` (at the prompt, or interrupted). It reports with `clauding state <terminal id> <state> [detail]` over the app's own socket. For a terminal that reports, that word wins over the CLI's busy/idle registry and over reading the transcript (`electron/lib/modState.js`); every other session keeps the old reading. "Ends on a question" is one shared rule, `textAsksSomething` in `questionHeuristic.js`, which `electron/lib/needsAnswer.js` imports too.
+- **Session finished.** When a session you are not looking at (another one is on screen, or the window is behind others) reaches `done`, `needs-answer` or `needs-permission`, the window shows a toast in its top-right corner ("<title> finished" / "<title> needs your answer"; a click opens that session) and macOS shows a notification. A soft chime goes with it if you turn the sound on (off by default).
+- **Status line under the prompt:** `<CU-id or —> · <git branch> · <n>% context`. The task is the one the session is linked to in Projects (or the CU- id in the branch name), from `clauding session-info <terminal id>`; the context comes from the CLI.
+- **Context bar above the prompt** (after Anthropic's `token-weather` sample): the context left, green → yellow from 50 % used → red with a warning from 80 %.
+- **Risky-command guard** (after the `blast-radius` sample): before a Bash command matching one of the guard's rules runs — by default `rm -rf`, `git push --force`/`-f`, `git push` to main/master/docker-staging/staging (also a bare `git push` while on one of them), `git merge`, `git rebase`, `git reset --hard`, `git branch -D`, `git clean -fd`, `DROP TABLE`, `TRUNCATE` — the CLI asks "Cancel / Run" with one line of what it would change ("would discard uncommitted changes in 3 files on main"). Cancel is the first option, so nothing picks Run by default; Cancel answers Claude that the user declined. `rm -rf` of temporary folders (`/tmp`, `/var/folders`, `$TMPDIR`, a background job's scratch folder) is let through. The rules are a textarea in Settings, one regular expression per line (`(?i)` ignores case, `#` is a comment, empty restores the defaults). A session cannot switch the guard off: the mod's settings are not in `clauding settings set`.
+
+**How it is loaded.** Only the `claude` processes the app starts itself — new, resumed, forked and restarted terminals — get `--plugin-dir <checkout>/builtin/mod/clauding-mod`, last on the command line, after any extra flags (`electron/lib/claudeArguments.js`, `electron/modBridge.js`). Nothing is installed and nothing is written under `~/.claude`, so a `claude` you start in your own Terminal never sees the mod. Even when loaded elsewhere, the mod checks `CLAUDING_TERMINAL_ID` and does nothing without it. Mods need Claude Code 2.1.287 or newer: the app asks `claude --version` once, and with an older CLI the whole feature is off and Settings says so. The overall switch applies to terminals started or restarted after the change; the per-feature switches and the rules reach running sessions within half a minute.
+
+**Privacy.** A mod runs inside Claude Code with your permissions: it can read files, run commands and see the session's prompts and tool calls. This one runs only in the app's own sessions, talks only to the app's local socket (`clauding state`, `clauding session-info`), runs `git status`/`git clean -n`/`find` in the session's folder to measure what a risky command would change, and sends nothing anywhere else.
+
 ## The session list: your groups, a color, and hiding
 
 The left column has two tabs: **Sessions** (everything below) and **Agents**
@@ -2480,6 +2496,18 @@ CLAUDING_SMOKE_RESTORE=1, then =2 (same --user-data-dir, CLAUDING_SMOKE_FOLDER e
     for the same resume twice straight over IPC: exactly one
     `claude --resume <id>` may exist -> restore-resumed.png.
 
+CLAUDING_SMOKE_MOD=1 CLAUDING_SMOKE_FOLDER=/some/folder npx electron . --user-data-dir=/some/profile
+    the Clauding mod against a real claude, in a scratch git repository only
+    (CLAUDING_SMOKE_MOD_REPO, default <temporary folder>/clauding-smoke/mod-scratch,
+    on a CU- branch with one uncommitted change): prints every state the mod
+    reports with its time and how long after the turn's last message the app
+    had it; "Ask me one question and wait." -> needs-answer -> mod-statusline.png
+    (status line, context bar, NEEDS ANSWER tag); a second terminal on screen
+    while the first finishes -> mod-toast.png; "run git reset --hard" -> the
+    guard's question -> mod-guard.png, Cancel (Claude must say it was
+    declined, the change stays), then Run (the reset happens) ->
+    mod-guard-run.png. On failure: mod-failed.png.
+
 CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
     the two meta actions, in the scratch folder only: opens a terminal, gets
     a "pong" out of it, then presses the real Harvest skills button
@@ -2494,10 +2522,10 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: **524 dry unit tests** of the main-process modules (the setup commands, the settings that used to be baked in, projects without ClickUp, the key deadline and hidden phases, live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder (including the whole command line of a session started with extra flags, argument by argument), what happens to a terminal whose `claude` ended, what Tab means in a field that shows a placeholder, the transcript search, what a paste into a terminal means (the quoting, the
+`npm test` runs `node --test test/*.test.js`: **591 dry unit tests** of the main-process modules (the setup commands, the settings that used to be baked in, projects without ClickUp, the key deadline and hidden phases, live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder (including the whole command line of a session started with extra flags, argument by argument), what happens to a terminal whose `claude` ended, what Tab means in a field that shows a placeholder, the transcript search, what a paste into a terminal means (the quoting, the
 clipboard's file / image / text order, the pasted/ folder), the terminal header's one-line fit, what a click on
 a row selects and what a bulk action would do, the session colors, the
-user's own tags, the skills catalogue, when a session needs an answer, i18n key
+user's own tags, the skills catalogue, when a session needs an answer, the Clauding mod (the `--plugin-dir` of every app spawn, the state reducer, the guard's rules, `session-info`), i18n key
 sets, the installer script, and the Windows code paths). They run against fixtures in temporary folders — no Electron window, no real `claude`, nothing under `~/.claude` or the app's data folder is touched. The behavior they cover is written up as specifications in `docs/specs/` (`CL-01` … `CL-25`, see `docs/specs/README.md`); specs marked manual are checked by hand with a screenshot.
 
 `test/platform.test.js` is the odd one out: it runs on macOS and exercises the **Windows** branches by handing in `platform: "win32"` and made-up Windows paths — the CLI lookup order, the `cmd.exe /c` wrapper, the named pipe, the Ctrl shortcuts, the menu without the macOS-only roles, the whole installer plan, the .ico encoder. It proves the decisions, not that Windows obeys them.

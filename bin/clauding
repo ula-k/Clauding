@@ -24,6 +24,11 @@
 //   clauding repo inspect <folder>
 //   clauding onboarding done
 //
+// And what the Clauding mod (builtin/mod/clauding-mod/) reports with, from
+// inside a `claude` the app started — nobody types these:
+//   clauding state <terminal id> <working|needs-answer|needs-permission|done|idle> [detail]
+//   clauding session-info <terminal id>   (JSON: linked task, branch, switches)
+//
 // It is started as `clauding` on macOS (this file, executable, with the
 // shebang above) and as `clauding.cmd` on Windows (the little batch file next
 // to it, which runs `node` on this same file).
@@ -59,7 +64,9 @@ const FAILURE_VERBS = {
   "project list": "could not list the projects",
   "repos find": "could not look for repositories",
   "repo inspect": "could not inspect the repository",
-  "onboarding done": "could not mark setup as done"
+  "onboarding done": "could not mark setup as done",
+  state: "could not report the state",
+  "session-info": "could not read the session info"
 };
 
 function failAndExit(reason) {
@@ -77,7 +84,8 @@ function usage() {
       "       clauding sessions count | clauding skills install-builtin | clauding integrations clickup status\n" +
       "       clauding project inspect <link> | clauding project add --json <file> | clauding project list\n" +
       '       clauding project add --name "…" [--list <link or id>] [--repo <folder>]… [--group "…"]\n' +
-      "       clauding repos find [folder …] | clauding repo inspect <folder> | clauding onboarding done\n"
+      "       clauding repos find [folder …] | clauding repo inspect <folder> | clauding onboarding done\n" +
+      "       clauding state <terminal id> <state> [detail] | clauding session-info <terminal id>\n"
   );
   process.exit(1);
 }
@@ -213,6 +221,13 @@ function buildRequest() {
   }
   if (commandName === "onboarding" && commandArguments[0] === "done" && commandArguments.length === 1) {
     return { ...base, command: "onboarding", action: "done" };
+  }
+  if (commandName === "state" && (commandArguments.length === 2 || commandArguments.length === 3)) {
+    const [target, state, detail] = commandArguments;
+    return { ...base, command: "state", target, state, detail: detail || "" };
+  }
+  if (commandName === "session-info" && commandArguments.length === 1) {
+    return { ...base, command: "session-info", target: commandArguments[0] };
   }
   if (commandName === "agent") {
     const [action, ...rest] = commandArguments;

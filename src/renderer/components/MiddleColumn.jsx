@@ -433,6 +433,10 @@ function terminalStatusGroup(terminal, session) {
   if (session && session.ownedByApp) {
     return session.statusGroup;
   }
+  // The Clauding mod's report, when there is one, before the registry's guess.
+  if (terminal.modState) {
+    return terminal.modState.state === "working" ? "running" : "waiting";
+  }
   return terminal.registryStatus === "idle" ? "waiting" : "running";
 }
 
