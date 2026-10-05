@@ -1649,6 +1649,12 @@ export default function App() {
       ? selectedBoardId
       : null;
 
+  // The main process remembers the project on screen: it is where
+  // `clauding calendar add` goes when the command names no project.
+  useEffect(() => {
+    window.clauding.reportBoardOnScreen(projectViewBoardId);
+  }, [projectViewBoardId]);
+
   // The right panel's tabs belong to the session on screen (a terminal that
   // has not registered its session yet uses a temporary key, see panelTabs.js)
   // — or, while a project is on screen, to that project ("project:<id>"), so

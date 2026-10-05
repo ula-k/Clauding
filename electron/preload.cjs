@@ -161,6 +161,31 @@ contextBridge.exposeInMainWorld("clauding", {
   onRunSetupAgent(listener) {
     return subscribe(CHANNELS.onboardingRun, listener);
   },
+  // A project's own calendar: { view, entries } per project id.
+  getCalendar(boardId) {
+    return ipcRenderer.invoke(CHANNELS.calendarGet, { boardId });
+  },
+  addCalendarEntry(boardId, draft) {
+    return ipcRenderer.invoke(CHANNELS.calendarAdd, { boardId, draft });
+  },
+  updateCalendarEntry(boardId, entryId, patch) {
+    return ipcRenderer.invoke(CHANNELS.calendarUpdate, { boardId, entryId, patch });
+  },
+  removeCalendarEntry(boardId, entryId) {
+    return ipcRenderer.invoke(CHANNELS.calendarRemove, { boardId, entryId });
+  },
+  skipCalendarOccurrence(boardId, entryId, day) {
+    return ipcRenderer.invoke(CHANNELS.calendarSkip, { boardId, entryId, day });
+  },
+  setCalendarView(boardId, view) {
+    return ipcRenderer.invoke(CHANNELS.calendarSetView, { boardId, view });
+  },
+  onCalendarChanged(listener) {
+    return subscribe(CHANNELS.calendarChanged, listener);
+  },
+  reportBoardOnScreen(boardId) {
+    ipcRenderer.send(CHANNELS.calendarBoardOnScreen, { boardId: boardId || null });
+  },
   getBoardTaskDetail(taskId) {
     return ipcRenderer.invoke(CHANNELS.boardsTaskDetail, { taskId });
   },

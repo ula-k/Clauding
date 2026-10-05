@@ -30,6 +30,7 @@ import {
 } from "../projectsView.js";
 import ProjectSettingsSheet, { DeadlineRow, blankDeadline, usableDeadlines } from "./ProjectSettingsSheet.jsx";
 import PopupMenu, { MenuItem, MenuLabel, MenuSeparator, MenuSubmenu } from "./PopupMenu.jsx";
+import ProjectCalendar from "./ProjectCalendar.jsx";
 import { DotsIcon, SearchIcon } from "./Icons.jsx";
 
 // The middle column while a project is selected in the Projects tab. It
@@ -139,6 +140,9 @@ export default function ProjectView({
   const [query, setQuery] = useState("");
   const [settingsSection, setSettingsSection] = useState(null);
   const [deadlineEditing, setDeadlineEditing] = useState(null);
+  // Settings → "Show calendar" (board.showCalendar), read from the board
+  // itself so turning it on or off shows at once.
+  const [calendarShown, setCalendarShown] = useState(false);
   const boardRef = useRef(boardId);
   const chipsRef = useRef(null);
   const onLoadedRef = useRef(onLoaded);
@@ -232,6 +236,23 @@ export default function ProjectView({
       unsubscribe();
     };
   }, [boardId, load, show]);
+
+  useEffect(() => {
+    let canceled = false;
+    const pick = (state) => {
+      const board = ((state && state.boards) || []).find((candidate) => candidate.id === boardId);
+      if (!canceled) {
+        setCalendarShown(Boolean(board && board.showCalendar));
+      }
+    };
+    setCalendarShown(false);
+    window.clauding.getBoards().then(pick);
+    const unsubscribe = window.clauding.onBoardsChanged(pick);
+    return () => {
+      canceled = true;
+      unsubscribe();
+    };
+  }, [boardId]);
 
   // Projects → Project Settings… in the menu bar.
   useEffect(() => {
@@ -384,6 +405,17 @@ export default function ProjectView({
               }
               onPinDeadline={(deadlineId) => changeBoard(() => ({ keyDeadlineId: deadlineId }))}
             />
+            {calendarShown && (
+              <ProjectCalendar
+                boardId={boardId}
+                snapshot={snapshot}
+                now={now}
+                language={language}
+                sessions={sessions}
+                onOpenTask={onOpenTask}
+                onSelectSession={onSelectSession}
+              />
+            )}
             {snapshot.cards.length > 0 && <StatsCards snapshot={snapshot} activeStat={statFilter} onStat={chooseStat} />}
             {snapshot.cards.length === 0 && state.kind === "ok" && (
               <div className="project-banner" data-project-state="empty">

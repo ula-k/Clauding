@@ -96,6 +96,16 @@ const CHANNELS = {
   boardsBrowse: "boards:browse",
   boardsLinkTerminal: "boards:link-terminal",
   boardsMenu: "boards:menu",
+  // A project's own calendar (project-calendars.json); the renderer also
+  // reports which project is on screen, for `clauding calendar add`.
+  calendarGet: "calendar:get",
+  calendarAdd: "calendar:add",
+  calendarUpdate: "calendar:update",
+  calendarRemove: "calendar:remove",
+  calendarSkip: "calendar:skip",
+  calendarSetView: "calendar:set-view",
+  calendarChanged: "calendar:changed",
+  calendarBoardOnScreen: "calendar:board-on-screen",
   // Clauding → Run setup agent… in the menu bar.
   onboardingRun: "onboarding:run",
   // View → Zoom In / Out / Actual Size while a side-panel page has the focus.

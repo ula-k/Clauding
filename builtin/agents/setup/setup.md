@@ -219,6 +219,7 @@ Compose it from what is actually there — not every project has ClickUp.
 | `clauding agent add <folder>` / `clauding agent list` | register an agent definition / list them |
 | `clauding open <file or URL>` | show a page in the side panel |
 | `clauding onboarding done` | the first-run screen does not come back |
+| `clauding calendar add "<title>" [--date …] [--time 14:00-16:00] [--weekly <day>…] [--until …] [--project …]` | an entry in a project's own calendar (`calendar list`, `calendar remove <id>`); the project turns the calendar on in its Settings |
 
 ## Out of scope
 

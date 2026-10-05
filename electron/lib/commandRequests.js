@@ -28,6 +28,9 @@ import path from "node:path";
 // started, tells the app what the session is doing and asks what the app
 // knows about it (the linked task, the branch, the mod's own switches). They
 // reach the app through `mod` (two calls main.js hands in).
+//
+// `calendar add|list|remove` puts entries in a project's own calendar
+// (lib/calendarCommands.js does the work; `calendar` is handed in).
 import { inspectDefinitionFolder } from "../agents.js";
 import { describeOneSetting, describeSettings, parseSettingValue } from "./settingCommands.js";
 
@@ -55,6 +58,9 @@ export function createCommandRequestHandler({
   // The Clauding mod's two calls: `reportState(terminalId, { state, detail })`
   // and `sessionInfo(terminalId)` (see the file header).
   mod = null,
+  // `clauding calendar add|list|remove` (lib/calendarCommands.js): an object
+  // with `handle(request)`, answering one line.
+  calendar = null,
   log
 }) {
   // The tab set a terminal's commands go to: its session id, or a temporary
@@ -376,6 +382,12 @@ export function createCommandRequestHandler({
     }
     if (request.command === "agent") {
       return handleAgentRequest(request);
+    }
+    if (request.command === "calendar") {
+      if (!calendar) {
+        throw new Error("this window has no project calendars.");
+      }
+      return calendar.handle(request);
     }
     if (SETUP_COMMANDS.includes(request.command)) {
       return handleSetupRequest(request);

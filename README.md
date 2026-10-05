@@ -1039,6 +1039,9 @@ app opens:
 | `clauding repos find [folder …]` | git checkouts under Documents, Projects, projects, Developer, src, code, work, git, repos and Sites (three levels deep), or under the folders given |
 | `clauding repo inspect <folder>` | JSON: a checkout's remote, GitHub slug, remote branches and suggested base/staging branch |
 | `clauding onboarding done` | the first-run screen does not come back |
+| `clauding calendar add "<title>" [--date YYYY-MM-DD] [--time 14:00-16:00] [--daily\|--weekly <mon..sun>\|--biweekly <day>\|--monthly] [--until YYYY-MM-DD] [--project <name or id>]` | add an entry to a project's own calendar (`today` / `tomorrow` work as dates); without `--project` it goes to the project of the caller's terminal (its linked task, or a repository it works in), else the project on screen, else the only project; the line names the project, the repeat and the new entry's id, and says when that project's calendar is switched off |
+| `clauding calendar list [--project …] [--from YYYY-MM-DD] [--to YYYY-MM-DD]` | the project's entries, one per line with their ids; with `--from` / `--to`, every occurrence in that range |
+| `clauding calendar remove <id>` | delete one entry (all its occurrences) |
 
 Every command prints one line (the two inspections print JSON) and exits 0,
 or prints `clauding: could not … — <reason>` on stderr and exits 1. The
@@ -1595,6 +1598,23 @@ are **only read**; what the tab changes is its own file,
   counters, no spec dots), no ClickUp chip on the cards, and the deadlines
   are the ones typed in the app. The header says "No ClickUp — branches".
   (`electron/lib/gitTasks.js`, covered by `test/setupCommands.test.js`.)
+* **Calendar (optional).** Settings → Project → **Show calendar** (off by
+  default) puts a calendar under the deadline axis. It works the same with or
+  without ClickUp. **Month** or **Week** (remembered per project; the week
+  has no hour grid — seven day columns, each a list, a time only as a small
+  suffix), ‹ › to move, the range label goes back to today, today outlined.
+  It shows your own entries (↻ for repeating ones) and, when the project has
+  ClickUp deadlines, its milestones (◇) and phases (a band named on its first
+  day in view) — those open their task. A click on a day adds an entry on
+  that day ("+ Add" too): title, date, optional time, repeats (never / daily
+  / weekly / every 2 weeks / monthly), an optional last day (ClickUp dates
+  ahead are offered), an optional link to a task or a session. A click on an
+  entry edits it; Delete asks first, and for a repeating entry asks "this
+  occurrence" (kept as a skipped day) or "all". Nothing is fetched — an agent
+  adds entries with `clauding calendar add`. Entries live in
+  `project-calendars.json` (re-read when the file changes on disk);
+  recurrence in `electron/lib/calendarRecurrence.js`, covered by
+  `test/calendar.test.js`.
 * **Manual setup** — **Projects → Manual setup…** in the menu bar (or "Fill
   in the form instead" in the "+" sheet) is the form: paste the **project link** from
   ClickUp's address bar: a list (`…/v/li/<id>`), a saved view of it
@@ -2522,7 +2542,7 @@ CLAUDING_SMOKE_KICKOFF=1 CLAUDING_SMOKE_FOLDER=/some/folder npm run preview
 
 ## Tests
 
-`npm test` runs `node --test test/*.test.js`: **591 dry unit tests** of the main-process modules (the setup commands, the settings that used to be baked in, projects without ClickUp, the key deadline and hidden phases, live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder (including the whole command line of a session started with extra flags, argument by argument), what happens to a terminal whose `claude` ended, what Tab means in a field that shows a placeholder, the transcript search, what a paste into a terminal means (the quoting, the
+`npm test` runs `node --test test/*.test.js`: **606 dry unit tests** of the main-process modules (a project's own calendar and `clauding calendar`, the setup commands, the settings that used to be baked in, projects without ClickUp, the key deadline and hidden phases, live-status mapping, session grouping, groups/agents/panel stores, preamble, the `clauding` protocol, the CLI argument builder (including the whole command line of a session started with extra flags, argument by argument), what happens to a terminal whose `claude` ended, what Tab means in a field that shows a placeholder, the transcript search, what a paste into a terminal means (the quoting, the
 clipboard's file / image / text order, the pasted/ folder), the terminal header's one-line fit, what a click on
 a row selects and what a bulk action would do, the session colors, the
 user's own tags, the skills catalogue, when a session needs an answer, the Clauding mod (the `--plugin-dir` of every app spawn, the state reducer, the guard's rules, `session-info`), i18n key

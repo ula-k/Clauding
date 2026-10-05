@@ -43,7 +43,8 @@
 //         "deadlineHidden": ["clickup-<task id>", …],  // not drawn on the axis
 //         "keyDeadlineId": "clickup-<task id>" | null, // what "Next" counts to
 //         "countSubtasks": true,   // every subtask is a unit of work in the numbers
-//         "includeClosed": true    // tasks ClickUp closed are read and counted
+//         "includeClosed": true,   // tasks ClickUp closed are read and counted
+//         "showCalendar": false    // the project's own calendar under the deadlines
 //       }
 //     ]
 //   }
@@ -225,7 +226,10 @@ export function cleanBoard(raw) {
     // Settings → General: subtasks count as tasks, closed tasks are read.
     // Both on unless the project turned them off.
     countSubtasks: raw.countSubtasks !== false,
-    includeClosed: raw.includeClosed !== false
+    includeClosed: raw.includeClosed !== false,
+    // Settings → General: the calendar under the deadlines
+    // (project-calendars.json). Off unless the project turned it on.
+    showCalendar: raw.showCalendar === true
   };
 }
 

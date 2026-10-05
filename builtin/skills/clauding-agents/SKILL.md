@@ -45,6 +45,14 @@ Anything the user has to *read* — a draft definition, a plan, a comparison —
 goes into the panel. A long Markdown document pasted into the terminal is not
 something anyone reviews.
 
+## Put a date in a project's calendar
+
+`clauding calendar add "QA staging" --weekly tue --time 14:00-16:00 --until 2026-12-23 [--project <name>]`
+adds an entry to a project's own calendar (also `--date YYYY-MM-DD`, `--daily`,
+`--biweekly <day>`, `--monthly`; `clauding calendar list` / `remove <id>`).
+Without `--project` it goes to your terminal's project, else the one on screen.
+Report the printed line verbatim.
+
 ## Rules
 
 * **Approval first.** Never register an agent the user has not seen and

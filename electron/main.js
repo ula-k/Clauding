@@ -64,6 +64,8 @@ import { BUILTIN_SETUP_AGENT, restoreBuiltinAgents, seedBuiltinSkills, seedBuilt
 import { createPanelTabStore, describeTarget } from "./panelTabs.js";
 import { createProjectBoardStore } from "./projectBoards.js";
 import { createProjectDataService } from "./projectData.js";
+import { createProjectCalendarStore } from "./projectCalendars.js";
+import { createCalendarCommands } from "./lib/calendarCommands.js";
 import { describeRepository } from "./lib/gitInspector.js";
 import { findRepositories } from "./lib/repositoryFinder.js";
 import { createCommandRequestHandler } from "./lib/commandRequests.js";
@@ -313,6 +315,42 @@ let sessionFlags = null;
 // ClickUp, git, gh and the sessions for one of them.
 let projectBoards = null;
 let projectData = null;
+// Each project's own calendar (project-calendars.json), and the project the
+// window shows right now (reported by the renderer; null on Sessions/Agents)
+// — where `clauding calendar add` goes when nothing else says.
+let projectCalendars = null;
+let boardOnScreen = null;
+
+// The project a `clauding calendar` request belongs to when it names none:
+// the one whose task the caller's session is linked to, else the one whose
+// repository the caller's terminal (or folder) works in, else the one on
+// screen.
+function calendarProjectFor(request) {
+  if (!projectBoards) {
+    return null;
+  }
+  const boards = projectBoards.getState().boards;
+  const terminal = request.terminalId ? terminalRegistry.get(request.terminalId) : null;
+  if (terminal && terminal.sessionId && projectData) {
+    try {
+      const linked = projectData.linkedTaskForSession(terminal.sessionId);
+      if (linked && linked.boardId) {
+        return linked.boardId;
+      }
+    } catch (error) {
+      // Not linked; try the folder.
+    }
+  }
+  const folder = (terminal && terminal.workingDirectory) || request.cwd || "";
+  if (folder) {
+    const inside = (root) => Boolean(root) && (folder === root || folder.startsWith(`${root}${path.sep}`));
+    const byFolder = boards.find((board) => (board.repositories || []).some((repository) => inside(repository.localPath)));
+    if (byFolder) {
+      return byFolder.id;
+    }
+  }
+  return boardOnScreen;
+}
 // Terminals started from a task card ("Start a session for this task"),
 // waiting for their session id: terminalId → { boardId, taskId }.
 const pendingTaskLinks = new Map();
@@ -467,6 +505,16 @@ const commandRequests = createCommandRequestHandler({
   onPanelCommand(notice) {
     sendToWindow(CHANNELS.panelCommand, notice);
   },
+  calendar: createCalendarCommands({
+    store: () => {
+      if (!projectCalendars) {
+        throw new Error("the calendars are not loaded yet.");
+      }
+      return projectCalendars;
+    },
+    listProjects: () => (projectBoards ? projectBoards.getState().boards : []),
+    defaultProjectFor: calendarProjectFor
+  }),
   // `clauding agent add|list`. The store itself is built later in the
   // start-up (it needs the user-data folder), so it is reached through these
   // two calls rather than handed in.
@@ -1616,7 +1664,8 @@ function watchStoreFiles() {
   const watched = [
     [path.join(userDataDirectory, "session-flags.json"), () => sessionFlags && sessionFlags.reloadFromDisk()],
     [path.join(userDataDirectory, "settings.json"), () => settings && settings.reloadFromDisk()],
-    [path.join(userDataDirectory, "agents.json"), () => agents && agents.reloadFromDisk()]
+    [path.join(userDataDirectory, "agents.json"), () => agents && agents.reloadFromDisk()],
+    [path.join(userDataDirectory, "project-calendars.json"), () => projectCalendars && projectCalendars.reloadFromDisk()]
   ];
   for (const [storagePath, reload] of watched) {
     stopWatchingStoreFiles.push(watchFile(storagePath, reload));
@@ -1786,6 +1835,16 @@ function registerIpc() {
     return projectBoards.getState();
   });
   ipcMain.handle(CHANNELS.boardsSummaries, async () => projectData.summaries());
+  // A project's own calendar (project-calendars.json).
+  ipcMain.handle(CHANNELS.calendarGet, async (event, { boardId }) => projectCalendars.get(boardId));
+  ipcMain.handle(CHANNELS.calendarAdd, async (event, { boardId, draft }) => projectCalendars.addEntry(boardId, draft || {}));
+  ipcMain.handle(CHANNELS.calendarUpdate, async (event, { boardId, entryId, patch }) => projectCalendars.updateEntry(boardId, entryId, patch || {}));
+  ipcMain.handle(CHANNELS.calendarRemove, async (event, { boardId, entryId }) => projectCalendars.removeEntry(entryId, boardId));
+  ipcMain.handle(CHANNELS.calendarSkip, async (event, { boardId, entryId, day }) => projectCalendars.skipOccurrence(boardId, entryId, day));
+  ipcMain.handle(CHANNELS.calendarSetView, async (event, { boardId, view }) => projectCalendars.setView(boardId, view));
+  ipcMain.on(CHANNELS.calendarBoardOnScreen, (event, { boardId }) => {
+    boardOnScreen = boardId ? String(boardId) : null;
+  });
   // { cachedOnly } and { local } answer from disk at once; { refresh } joins
   // (or starts) the project's background refresh and answers with its
   // snapshot (null when it failed — the window keeps what it shows).
@@ -2405,6 +2464,15 @@ app.whenReady().then(() => {
     storagePath: path.join(userDataDirectory, "project-boards.json"),
     onChange(state) {
       sendToWindow(CHANNELS.boardsChanged, state);
+    }
+  });
+  projectCalendars = createProjectCalendarStore({
+    storagePath: path.join(userDataDirectory, "project-calendars.json"),
+    onChange(state) {
+      sendToWindow(CHANNELS.calendarChanged, state);
+    },
+    log(line) {
+      console.log(line);
     }
   });
   projectData = createProjectDataService({

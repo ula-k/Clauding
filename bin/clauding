@@ -9,6 +9,10 @@
 //                                 (--name and --emoji override what
 //                                 the app would suggest from the folder)
 //   clauding agent list           the agents registered in the app
+//   clauding calendar add "<title>" [--date …] [--time 14:00-16:00]
+//       [--daily|--weekly <day>|--biweekly <day>|--monthly] [--until …] [--project …]
+//   clauding calendar list [--project …] [--from …] [--to …]
+//   clauding calendar remove <id>  a project's own calendar (no ClickUp needed)
 //
 // And what the setup agent changes the app with (README: "The `clauding`
 // command"):
@@ -36,6 +40,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { commandChannelPath, defaultUserDataDirectory } from "../electron/lib/platformPaths.js";
+import { CALENDAR_USAGE, parseCalendarArguments } from "../electron/lib/calendarCommands.js";
 
 // The running app exports the address of its own channel into every terminal
 // it opens (CLAUDING_SOCKET); the default below is where the installed app
@@ -54,6 +59,10 @@ const FAILURE_VERBS = {
   tabs: "could not list the tabs",
   "agent add": "could not add agent",
   "agent list": "could not list the agents",
+  "calendar add": "could not add to the calendar",
+  "calendar list": "could not list the calendar",
+  "calendar remove": "could not remove the calendar entry",
+  calendar: "could not use the calendar",
   "settings get": "could not read the settings",
   "settings set": "could not change the setting",
   "sessions count": "could not count the sessions",
@@ -85,7 +94,8 @@ function usage() {
       "       clauding project inspect <link> | clauding project add --json <file> | clauding project list\n" +
       '       clauding project add --name "…" [--list <link or id>] [--repo <folder>]… [--group "…"]\n' +
       "       clauding repos find [folder …] | clauding repo inspect <folder> | clauding onboarding done\n" +
-      "       clauding state <terminal id> <state> [detail] | clauding session-info <terminal id>\n"
+      "       clauding state <terminal id> <state> [detail] | clauding session-info <terminal id>\n" +
+      `       ${CALENDAR_USAGE}\n`
   );
   process.exit(1);
 }
@@ -228,6 +238,13 @@ function buildRequest() {
   }
   if (commandName === "session-info" && commandArguments.length === 1) {
     return { ...base, command: "session-info", target: commandArguments[0] };
+  }
+  if (commandName === "calendar") {
+    try {
+      return { ...base, command: "calendar", ...parseCalendarArguments(commandArguments) };
+    } catch (error) {
+      return failAndExit(error.message);
+    }
   }
   if (commandName === "agent") {
     const [action, ...rest] = commandArguments;

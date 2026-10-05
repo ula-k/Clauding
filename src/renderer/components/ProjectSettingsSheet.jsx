@@ -259,6 +259,13 @@ function GeneralSection({ draft, change }) {
         </label>
       </div>
       <p className="sheet-hint">{translate("projectSettings.countingHint")}</p>
+      <div className="settings-checks">
+        <label className="settings-check">
+          <input type="checkbox" checked={draft.showCalendar === true} onChange={(event) => change({ showCalendar: event.target.checked })} data-show-calendar />
+          {translate("projectSettings.showCalendar")}
+        </label>
+      </div>
+      <p className="sheet-hint">{translate("projectSettings.showCalendarHint")}</p>
     </Section>
   );
 }

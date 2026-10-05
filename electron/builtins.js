@@ -80,7 +80,9 @@ export function builtinSkillSource(skillName) {
 const PREVIOUS_BUILTIN_SKILL_HASHES = [
   // clauding-agents, before agents stopped having a color (--color went
   // from `clauding agent add`).
-  "a25f50cf370dc0458286044b12e89a4c61436ffcd068abca63e20af5d8d88b2c"
+  "a25f50cf370dc0458286044b12e89a4c61436ffcd068abca63e20af5d8d88b2c",
+  // clauding-agents, before it mentioned `clauding calendar add`.
+  "6b55743ce0169473ebde8acc40ba5bdd52d3384c9e085973d2a0372ebe0615c2"
 ];
 
 function hashOf(text) {
