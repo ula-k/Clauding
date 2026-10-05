@@ -12,6 +12,7 @@ import { currentClaudeHome } from "./claudeHome.js";
 import { searchTranscriptFiles } from "./lib/transcriptSearch.js";
 import { TAIL_BYTES, createNeedsAnswerCache, isRecentEnoughToAsk } from "./lib/needsAnswer.js";
 import { OPENING_BYTES, openingTextFromTranscript } from "./lib/transcriptOpening.js";
+import { cwdValuesInText, decodeProjectFolderName, resolveSessionFolder } from "./lib/sessionFolder.js";
 
 export const DEFAULT_PAGE_SIZE = 60;
 
@@ -32,6 +33,106 @@ const JOB_SCRATCH_PATTERN = /[\\/]\.claude[\\/]jobs[\\/][^\\/]+[\\/]t[m]p([\\/]|
 export function isScratchWorkingDirectory(workingDirectory) {
   const folder = String(workingDirectory || "");
   return JOB_SCRATCH_PATTERN.test(folder) || isInsideSmokeFolder(folder);
+}
+
+// ------------------------------------------------------------ folders ---
+//
+// The folder a row resumes in. The SDK's `cwd` is read from the first 64 KiB
+// of the transcript only, and a renamed or forked long conversation can
+// carry more than that before its first `cwd` line — the row then had no
+// folder and a click opened nothing. The chain (the transcript's project
+// folder, the SDK's `cwd`, the transcript's own `cwd` lines) is
+// electron/lib/sessionFolder.js; this does the reading.
+
+const HEAD_CHUNK_BYTES = 256 * 1024;
+const HEAD_MAXIMUM_BYTES = 4 * 1024 * 1024;
+const FOLDER_TAIL_BYTES = 64 * 1024;
+
+function readFileRange(handle, start, length) {
+  const buffer = Buffer.alloc(length);
+  const bytesRead = fs.readSync(handle, buffer, 0, length, start);
+  return buffer.subarray(0, bytesRead).toString("utf8");
+}
+
+// The first `cwd` values of a transcript (reading on, a chunk at a time,
+// until one turns up or 4 MiB have gone by) and the ones in its last 64 KiB.
+// Kept per transcript stamp, so a file is read again only when it changed.
+const transcriptFoldersCache = new Map();
+
+export function readTranscriptFolders(filePath) {
+  let handle = null;
+  try {
+    handle = fs.openSync(filePath, "r");
+    const { size, mtimeMs } = fs.fstatSync(handle);
+    const stamp = `${mtimeMs}:${size}`;
+    const cached = transcriptFoldersCache.get(filePath);
+    if (cached && cached.stamp === stamp) {
+      return cached.folders;
+    }
+    let headFolders = [];
+    let carried = "";
+    for (let start = 0; start < Math.min(size, HEAD_MAXIMUM_BYTES) && headFolders.length === 0; start += HEAD_CHUNK_BYTES) {
+      // The last partial line of one chunk is carried into the next, so a
+      // `cwd` cut by the chunk edge is still found.
+      const text = carried + readFileRange(handle, start, Math.min(HEAD_CHUNK_BYTES, size - start));
+      const lastNewline = text.lastIndexOf("\n");
+      headFolders = cwdValuesInText(lastNewline >= 0 ? text.slice(0, lastNewline) : text);
+      carried = lastNewline >= 0 ? text.slice(lastNewline + 1) : "";
+    }
+    const tailStart = Math.max(0, size - FOLDER_TAIL_BYTES);
+    const tailFolders = cwdValuesInText(readFileRange(handle, tailStart, size - tailStart));
+    const folders = { headFolders, tailFolders };
+    transcriptFoldersCache.set(filePath, { stamp, folders });
+    return folders;
+  } catch (error) {
+    return { headFolders: [], tailFolders: [] };
+  } finally {
+    if (handle !== null) {
+      try {
+        fs.closeSync(handle);
+      } catch (error) {
+        // Already closed.
+      }
+    }
+  }
+}
+
+function listSubfolders(folder) {
+  return fs
+    .readdirSync(folder, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+    .map((entry) => entry.name);
+}
+
+const decodedProjectFolders = new Map();
+
+function decodeProjectFolder(encodedName) {
+  if (!decodedProjectFolders.has(encodedName)) {
+    decodedProjectFolders.set(encodedName, decodeProjectFolderName(encodedName, listSubfolders, path.sep));
+  }
+  return decodedProjectFolders.get(encodedName);
+}
+
+function folderExists(folder) {
+  try {
+    return fs.statSync(folder).isDirectory();
+  } catch (error) {
+    return false;
+  }
+}
+
+// { folder, source, exists } for one session. The transcript itself is only
+// read when neither its project folder nor the SDK gives a folder that is
+// there — the rows the SDK got right cost one stat each.
+export function resolveFolderForSession(sessionId, sdkFolder = null) {
+  const transcriptPath = transcriptPathFor(sessionId);
+  const projectFolderName = transcriptPath ? path.basename(path.dirname(transcriptPath)) : null;
+  const quick = resolveSessionFolder({ projectFolderName, decodeProjectFolder, sdkFolder, folderExists });
+  if (quick.exists || !transcriptPath) {
+    return quick;
+  }
+  const { headFolders, tailFolders } = readTranscriptFolders(transcriptPath);
+  return resolveSessionFolder({ projectFolderName, decodeProjectFolder, sdkFolder, headFolders, tailFolders, folderExists });
 }
 
 function pickTitle(session) {
@@ -193,17 +294,27 @@ export function enrichSession(session, statusBySession, ownedStates = new Map(),
       pid: ownedState.pid
     };
   }
+  // The folder the row resumes in: the SDK's, or — when it has none, or one
+  // that is gone — the next answer along the chain (resolveFolderForSession).
+  const resolved = resolveFolderForSession(session.sessionId, session.cwd || null);
+  const folder = resolved.folder;
   return {
     sessionId: session.sessionId,
     title: pickTitle(session),
     customTitle: session.customTitle || null,
     summary: session.summary || null,
     firstPrompt: session.firstPrompt || null,
-    workingDirectory: session.cwd || null,
-    workingDirectoryShort: shortenHomePath(session.cwd || ""),
-    projectName: projectShortName(session.cwd),
-    projectLabel: projectFolderLabel(session.cwd),
-    projectColorIndex: projectColorIndex(session.cwd),
+    workingDirectory: folder,
+    workingDirectoryShort: shortenHomePath(folder || ""),
+    // Where the folder came from ("sdk", "stored", "transcript", "parent",
+    // "project", "none"), and whether it is still on disk. A row whose
+    // folder is unknown or gone is not resumed on a click: the middle column
+    // asks for a folder instead.
+    folderSource: resolved.source,
+    folderMissing: !folder || !resolved.exists,
+    projectName: projectShortName(folder),
+    projectLabel: projectFolderLabel(folder),
+    projectColorIndex: projectColorIndex(folder),
     gitBranch: session.gitBranch || null,
     lastModified: session.lastModified,
     createdAt: session.createdAt || null,
@@ -232,7 +343,9 @@ export async function listSessionsPage({
     (session) => !isScratchWorkingDirectory(session.cwd)
   );
   return {
-    sessions: pageRows.map((session) => enrichSession(session, statusBySession, ownedStates, offeredSessions)),
+    sessions: pageRows
+      .map((session) => enrichSession(session, statusBySession, ownedStates, offeredSessions))
+      .filter((session) => !isScratchWorkingDirectory(session.workingDirectory)),
     offset,
     limit,
     hasMore,

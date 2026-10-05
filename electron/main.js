@@ -14,6 +14,7 @@ import {
   forgetNeedsAnswer,
   searchSessionTranscript,
   readSessionOpening,
+  resolveFolderForSession,
   DEFAULT_PAGE_SIZE
 } from "./sessions.js";
 import { watchLiveStatus, collectLiveStatus, STATUS_GROUPS } from "./liveStatus.js";
@@ -364,6 +365,9 @@ const terminalRegistry = createTerminalRegistry({
     if (sessionFlags) {
       sessionFlags.remember(sessionId, flags);
     }
+  },
+  resolveSessionFolder(sessionId) {
+    return resolveFolderForSession(sessionId);
   }
 });
 

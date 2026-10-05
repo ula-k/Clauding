@@ -1979,6 +1979,46 @@ input:focus-visible {
   color: var(--text-faint);
 }
 
+/* "This session's folder is unknown or gone" and "the terminal did not
+   start": the same quiet note, the first line in the normal text color,
+   and one text link under it. */
+.elsewhere-note .folder-missing .elsewhere-text:first-child,
+.elsewhere-note .opening-problem .elsewhere-text:first-child {
+  color: var(--text-dim);
+}
+
+.elsewhere-note .folder-missing-path,
+.elsewhere-note .folder-missing-hint {
+  margin-top: 8px;
+}
+
+.elsewhere-note .folder-missing .text-link,
+.elsewhere-note .opening-problem .text-link {
+  margin-top: 12px;
+}
+
+.terminal-silent-note {
+  position: absolute;
+  left: 28px;
+  right: 16px;
+  bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.terminal-silent-note .elsewhere-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.terminal-silent-note .text-link {
+  margin-top: 6px;
+}
+
 /* ---------- Terminal pane ---------- */
 
 .terminal-host {

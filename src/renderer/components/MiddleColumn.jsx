@@ -9,6 +9,7 @@ import PopupMenu, { MenuItem, MenuLabel, MenuNote, MenuSeparator, MenuSubmenu } 
 import { AgentChip } from "./AgentBadge.jsx";
 import { MENU_AGENT_LIMIT, titleWithoutAgentEmoji } from "../agentConstants.js";
 import { fitToolbar, HEADER_ITEM_PRIORITY } from "../toolbarFit.js";
+import { OPENING_TIMEOUT_MILLISECONDS, openingState } from "../openingState.js";
 
 // The title never gets squeezed below this; it truncates with an ellipsis
 // instead, and the controls to its right fall into the "…" one by one.
@@ -356,6 +357,43 @@ function HeaderToolbar({ titleNode, items, signature, trailing, renderMenuButton
   );
 }
 
+// "This session's folder is unknown or gone": which folder it was, if any
+// is known, and the way on — resume it in a folder picked now. The CLI finds
+// a conversation by its id from any folder; its tools then work there.
+function FolderMissingNote({ session, onChooseFolder }) {
+  const { translate } = useTranslation();
+  const knownFolder = session && session.workingDirectoryShort;
+  return (
+    <div className="folder-missing" data-middle-mode="folder-missing">
+      <p className="elsewhere-text">{translate("middle.folderMissing")}</p>
+      {knownFolder && <p className="elsewhere-text folder-missing-path">{translate("middle.folderMissingWas", { folder: knownFolder })}</p>}
+      <p className="elsewhere-text folder-missing-hint">{translate("middle.folderMissingHint")}</p>
+      <button
+        type="button"
+        className="text-link"
+        data-choose-folder="1"
+        onClick={() => onChooseFolder && session && onChooseFolder(session.sessionId)}
+      >
+        {translate("middle.chooseFolder")}
+      </button>
+    </div>
+  );
+}
+
+// The wait for a terminal ran out, or the spawn threw: what happened, and
+// "Restart terminal".
+function OpeningProblemNote({ message, onRestart }) {
+  const { translate } = useTranslation();
+  return (
+    <div className="opening-problem" data-middle-mode="opening-problem">
+      <p className="elsewhere-text">{message}</p>
+      <button type="button" className="text-link" data-restart-terminal="1" onClick={onRestart}>
+        {translate("middle.restartTerminal")}
+      </button>
+    </div>
+  );
+}
+
 // What the middle column shows:
 //   "terminal"   a live terminal of this app (new, or resumed here)
 //   "elsewhere"  a terminal or job outside the app owns the session: a short
@@ -364,14 +402,21 @@ function HeaderToolbar({ titleNode, items, signature, trailing, renderMenuButton
 //   "was-open"   the session was open when the app last closed and is
 //                selected again on start, with no terminal yet: a click on
 //                its row resumes it (electron/openTerminals.js)
-//   "opening"    the click's terminal is still being spawned (or spawning
-//                failed, which also raises an alert)
+//   "folder-missing"  the session's folder is unknown or no longer exists
+//                (electron/lib/sessionFolder.js): nothing was started, and
+//                the column offers "Choose a folder…" to resume it in one
+//   "opening"    the click's terminal is still being spawned; after 15 s
+//                without it, or at once when the spawn threw, the column
+//                says so and offers "Restart terminal" (openingState.js)
 function columnMode({ session, terminal }) {
   if (terminal) {
     return "terminal";
   }
   if (session && session.liveStatus && session.liveStatus.source !== "app") {
     return "elsewhere";
+  }
+  if (session && session.folderMissing) {
+    return "folder-missing";
   }
   if (session && session.wasOpen) {
     return "was-open";
@@ -407,6 +452,9 @@ export default function MiddleColumn({
   onHarvestSkills,
   onEditSessionFlags,
   onDeleteSession,
+  openAttempt = null,
+  onChooseFolder,
+  onRestartTerminal,
   reader,
   onCloseReader,
   onOpenReaderInPanel,
@@ -418,6 +466,33 @@ export default function MiddleColumn({
   const [renameRequest, setRenameRequest] = useState(0);
   const mode = columnMode({ session, terminal });
   const sessionId = (terminal && terminal.sessionId) || (session && session.sessionId) || null;
+  // When this session's wait began, for a wait no click stamped (a row
+  // selected some other way), so even that one has an end.
+  const waitStartRef = useRef({ key: null, startedAt: 0 });
+  const waitKey = `${sessionId || ""}:${mode}:${terminal ? terminal.terminalId : ""}`;
+  if (waitStartRef.current.key !== waitKey) {
+    waitStartRef.current = { key: waitKey, startedAt: Date.now() };
+  }
+  const waitStartedAt =
+    mode === "terminal" && terminal
+      ? terminal.startedAt || waitStartRef.current.startedAt
+      : (openAttempt && openAttempt.startedAt) || waitStartRef.current.startedAt;
+  const [now, setNow] = useState(Date.now());
+  const waitState =
+    mode === "terminal" && terminal
+      ? openingState({ startedAt: waitStartedAt, now, firstOutputAt: terminal.firstOutputAt, exited: terminal.exited })
+      : mode === "opening"
+        ? openingState({ startedAt: waitStartedAt, now, error: openAttempt ? openAttempt.error : null })
+        : "ready";
+  // One wake-up when the wait runs out, so the note appears without a click.
+  useEffect(() => {
+    if (waitState !== "opening") {
+      return undefined;
+    }
+    const remaining = Math.max(50, waitStartedAt + OPENING_TIMEOUT_MILLISECONDS - Date.now() + 50);
+    const timer = setTimeout(() => setNow(Date.now()), remaining);
+    return () => clearTimeout(timer);
+  }, [waitState, waitStartedAt]);
   // With the reader open the window tools move into its header, so they are
   // rendered once and stay in the same corner of the window.
   // The Projects view covers the column the same way the reader does: the
@@ -469,13 +544,22 @@ export default function MiddleColumn({
                   <FolderIcon />
                   {projectLabel}
                 </div>
-                <p className="elsewhere-text" data-middle-mode={mode}>
-                  {mode === "elsewhere"
-                    ? translate("middle.runningElsewhere")
-                    : mode === "was-open"
-                      ? translate("middle.wasOpen")
-                      : translate("middle.opening")}
-                </p>
+                {mode === "folder-missing" ? (
+                  <FolderMissingNote session={session} onChooseFolder={onChooseFolder} />
+                ) : mode === "opening" && (waitState === "failed" || waitState === "silent") ? (
+                  <OpeningProblemNote
+                    message={waitState === "failed" ? openAttempt.error : translate("middle.openingSilent")}
+                    onRestart={() => onRestartTerminal && onRestartTerminal(sessionId, null)}
+                  />
+                ) : (
+                  <p className="elsewhere-text" data-middle-mode={mode}>
+                    {mode === "elsewhere"
+                      ? translate("middle.runningElsewhere")
+                      : mode === "was-open"
+                        ? translate("middle.wasOpen")
+                        : translate("middle.opening")}
+                  </p>
+                )}
                 {mode === "elsewhere" && onFork && session && session.sessionId && <ForkButton onFork={onFork} standalone />}
               </div>
             </div>
@@ -656,6 +740,14 @@ export default function MiddleColumn({
             />
           )}
           <TerminalPane terminalId={terminal.terminalId} />
+          {waitState === "silent" && (
+            <div className="terminal-silent-note">
+              <OpeningProblemNote
+                message={translate("middle.openingSilent")}
+                onRestart={() => onRestartTerminal && onRestartTerminal(sessionId, terminal)}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

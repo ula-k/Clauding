@@ -205,7 +205,10 @@ export function createTerminalRegistry({
   // agent's own come off the agent record itself.
   readGlobalExtraArguments = null,
   readSessionExtraArguments = null,
-  rememberSessionExtraArguments = null
+  rememberSessionExtraArguments = null,
+  // The folder a session resolves to (electron/sessions.js), for a resume
+  // or a fork asked for without one that exists.
+  resolveSessionFolder = null
 }) {
   const terminals = new Map();
   let linkPoller = null;
@@ -235,6 +238,9 @@ export function createTerminalRegistry({
       startedAt: record.startedAt,
       focusedAt: record.focusedAt,
       registryStatus: record.registryStatus,
+      // When the pty first said anything (null until then): the middle
+      // column gives up waiting 15 s after the start without it.
+      firstOutputAt: record.firstOutputAt || null,
       openedByClick: record.openedByClick,
       receivedInput: record.receivedInput,
       // The flags this terminal was actually started with, so the header can
@@ -613,7 +619,12 @@ export function createTerminalRegistry({
     record.suspendScanText = "";
     record.exited = false;
     record.exitCode = null;
+    record.firstOutputAt = null;
     child.onData((data) => {
+      if (!record.firstOutputAt) {
+        record.firstOutputAt = Date.now();
+        announceChange();
+      }
       queueOutput(record, data);
       watchOutputForSuspend(record, data);
     });
@@ -761,8 +772,18 @@ export function createTerminalRegistry({
     rows = 30,
     openedByClick = false
   }) {
+    // A resume or a fork asked for without a folder that exists (the row's
+    // SDK folder was empty): the session's own resolved folder is used —
+    // for a fork that is the original's, so a copy never starts folderless.
+    if ((!workingDirectory || !fs.existsSync(workingDirectory)) && resumeSessionId && resolveSessionFolder) {
+      const resolved = resolveSessionFolder(resumeSessionId);
+      if (resolved && resolved.folder && resolved.exists) {
+        logLine(`no folder given for ${resumeSessionId}; using ${resolved.folder} (${resolved.source})`);
+        workingDirectory = resolved.folder;
+      }
+    }
     if (!workingDirectory || !fs.existsSync(workingDirectory)) {
-      throw new Error(`The folder does not exist: ${workingDirectory}`);
+      throw new Error(workingDirectory ? `The folder does not exist: ${workingDirectory}` : "This session's folder is unknown.");
     }
     if (forkSession && !resumeSessionId) {
       throw new Error("A fork needs the session id it copies.");

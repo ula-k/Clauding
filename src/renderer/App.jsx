@@ -174,6 +174,10 @@ export default function App() {
   // SKILL.md or an agent's definition, { kind, name, filePath, folder }. The
   // terminal underneath keeps running; null means "show the terminal".
   const [reader, setReader] = useState(null);
+  // The resume a click asked for, while the middle column waits for its
+  // terminal: { sessionId, startedAt, error }. The column gives up after
+  // 15 s, or at once with the error the spawn threw (lib/sessionFolder.js).
+  const [openAttempt, setOpenAttempt] = useState(null);
   // Definition folders that appeared under the agents root while the app was
   // running — what the Agent Maker leaves behind. Each one is offered as
   // "Add as agent" at the top of the Agents tab until it is added or waved
@@ -755,7 +759,16 @@ export default function App() {
       return record;
     } catch (error) {
       console.error("Could not open the terminal", error);
-      window.alert(String(error && error.message ? error.message : error));
+      const message = String(error && error.message ? error.message : error);
+      // A resume from a click: the middle column says it, next to "Restart
+      // terminal", instead of an alert over a column that keeps waiting.
+      if (resumeSessionId && !forkSession) {
+        setOpenAttempt((previous) =>
+          previous && previous.sessionId === resumeSessionId ? { ...previous, error: message } : previous
+        );
+        return null;
+      }
+      window.alert(message);
       return null;
     }
   }, []);
@@ -786,7 +799,11 @@ export default function App() {
     }
     setSelectedTerminalId(null);
     const session = sessionsRef.current.find((record) => record.sessionId === sessionId);
-    if (!session || !session.workingDirectory) {
+    // A folder that is unknown or gone opens nothing: the middle column asks
+    // for one ("Choose a folder…") instead of waiting on a terminal that
+    // was never asked for.
+    if (!session || !session.workingDirectory || session.folderMissing) {
+      setOpenAttempt(null);
       return;
     }
     if (session.liveStatus && session.liveStatus.source !== "app") {
@@ -808,6 +825,7 @@ export default function App() {
     const agentName = awaitingAssignmentKickoffRef.current.get(sessionId) || null;
     awaitingAssignmentKickoffRef.current.delete(sessionId);
     resumesInFlightRef.current.add(sessionId);
+    setOpenAttempt({ sessionId, startedAt: Date.now(), error: null });
     openTerminal({
       workingDirectory: session.workingDirectory,
       resumeSessionId: sessionId,
@@ -819,6 +837,55 @@ export default function App() {
       resumesInFlightRef.current.delete(sessionId);
     });
   }, [openTerminal]);
+
+  // "Choose a folder…" on a session whose folder is unknown or gone. The CLI
+  // finds a conversation by its id whatever folder it is started in, so the
+  // session is resumed right there; the app files that folder under the
+  // session (session-folders.json) once the terminal registers.
+  const resumeInChosenFolder = useCallback(async (sessionId) => {
+    if (!sessionId) {
+      return;
+    }
+    const folder = await window.clauding.pickProjectFolder();
+    if (!folder) {
+      return;
+    }
+    const agentId = agentLinksRef.current[sessionId] || null;
+    setSessions((previous) =>
+      previous.map((session) =>
+        session.sessionId === sessionId
+          ? { ...session, workingDirectory: folder, workingDirectoryShort: shortenHomeFolder(folder), folderMissing: false }
+          : session
+      )
+    );
+    setOpenAttempt({ sessionId, startedAt: Date.now(), error: null });
+    openTerminal({ workingDirectory: folder, resumeSessionId: sessionId, agentId, openedByClick: true });
+  }, [openTerminal]);
+
+  // "Restart terminal" after the column gave up waiting: a terminal that
+  // never said anything is hung up first, then the session is resumed again.
+  const restartStuckTerminal = useCallback(
+    async (sessionId, terminal) => {
+      if (terminal && terminal.terminalId) {
+        await window.clauding.closeTerminal(terminal.terminalId);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      const targetSessionId = sessionId || (terminal && (terminal.sessionId || terminal.resumeSessionId)) || null;
+      if (!targetSessionId) {
+        return;
+      }
+      const session = sessionsRef.current.find((record) => record.sessionId === targetSessionId) || null;
+      const workingDirectory = (terminal && terminal.workingDirectory) || (session && session.workingDirectory) || null;
+      setOpenAttempt({ sessionId: targetSessionId, startedAt: Date.now(), error: null });
+      openTerminal({
+        workingDirectory,
+        resumeSessionId: targetSessionId,
+        agentId: (terminal && terminal.agentId) || agentLinksRef.current[targetSessionId] || null,
+        openedByClick: true
+      });
+    },
+    [openTerminal]
+  );
 
   // A click on a row, with whatever modifier was held. What it means is
   // worked out in selectionPlan.js and nowhere else: a plain click is one
@@ -864,11 +931,12 @@ export default function App() {
       return null;
     }
     const sourceSession = sessionsRef.current.find((record) => record.sessionId === sourceSessionId) || null;
+    // No folder known here is no reason to give up: the main process then
+    // starts the fork in the original's own resolved folder
+    // (electron/sessions.js resolveFolderForSession), so a copy never ends
+    // up folderless.
     const workingDirectory =
       (activeTerminal && activeTerminal.workingDirectory) || (sourceSession && sourceSession.workingDirectory) || null;
-    if (!workingDirectory) {
-      return null;
-    }
     const sourceTitle = sourceSession ? sourceSession.title : translateInLanguage(language, "newSession.untitled");
     return openTerminal({
       workingDirectory,
@@ -1372,11 +1440,10 @@ export default function App() {
       }
       const sourceSession = sessionsRef.current.find((record) => record.sessionId === sourceSessionId) || null;
       const owner = terminalsRef.current.find((record) => record.sessionId === sourceSessionId) || null;
+      // Without a folder here the main process uses the original's resolved
+      // one (see forkSelectedSession).
       const workingDirectory =
         (owner && owner.workingDirectory) || (sourceSession && sourceSession.workingDirectory) || null;
-      if (!workingDirectory) {
-        return null;
-      }
       const sourceTitle = sourceSession ? sourceSession.title : translateInLanguage(language, "newSession.untitled");
       return openTerminal({
         workingDirectory,
@@ -2088,6 +2155,9 @@ export default function App() {
           onHarvestSkills={() => harvestSkillsFromConversation(null)}
           onEditSessionFlags={requestSessionFlags}
           onDeleteSession={requestSessionDelete}
+          openAttempt={openAttempt && selectedSession && openAttempt.sessionId === selectedSession.sessionId ? openAttempt : null}
+          onChooseFolder={resumeInChosenFolder}
+          onRestartTerminal={restartStuckTerminal}
           reader={reader}
           onCloseReader={() => setReader(null)}
           onOpenReaderInPanel={openReaderInPanel}
