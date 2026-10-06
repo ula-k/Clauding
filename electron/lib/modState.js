@@ -63,7 +63,7 @@ export const MOD_SETTING_DEFAULTS = {
   modSound: false,
   modStatusLine: true,
   modContextBar: true,
-  modGuard: true
+  modGuard: false
 };
 
 export const MOD_SWITCH_KEYS = Object.keys(MOD_SETTING_DEFAULTS);
@@ -116,7 +116,7 @@ export function modSwitchesForSession(settings) {
     stateReports: settings.modStateReports !== false,
     statusLine: settings.modStatusLine !== false,
     contextBar: settings.modContextBar !== false,
-    guard: settings.modGuard !== false,
+    guard: settings.modGuard === true,
     guardPatterns: settings.modGuardPatterns
   };
 }
