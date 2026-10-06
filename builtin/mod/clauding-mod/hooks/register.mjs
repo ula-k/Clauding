@@ -10,12 +10,13 @@
 //                   so the app's NEEDS ANSWER tag and status dot know at
 //                   once instead of guessing from files.
 //                   States: working, needs-answer, needs-permission, done, idle.
-//   status line     `CU-<task> · <branch> · <n>% context` under the prompt;
+//   status line     `CU-<task> · <branch> · <n>% context used` under the prompt;
 //                   the task and branch come from the app
 //                   (`clauding session-info <terminal>`), the context from
 //                   $.session.usage().
-//   context bar     the context left, as a colored bar above the prompt
-//                   (after the token-weather sample); a warning from 80 % used.
+//   context bar     the context used, as a colored bar above the prompt
+//                   (after the token-weather sample), labelled with what is
+//                   left; amber from 60 % used, red with a warning from 80 %.
 //   command guard   a Bash command matching one of the guard's rules
 //                   (commandGuard.js; the rules are edited in Settings) is
 //                   held and the user is asked "Run" / "Cancel" in the CLI's
@@ -26,6 +27,7 @@
 // `on(...)` and `$.noun.method(...)` from the source, so they are spelled
 // literally, and every helper that takes `$` is a top-level function.
 import { textAsksSomething } from "./questionHeuristic.js";
+import { CONTEXT_WARNING_PERCENT, contextBarModel, contextStatusText } from "./contextMeter.js";
 import {
   DEFAULT_GUARD_PATTERNS,
   declinedMessage,
@@ -38,7 +40,6 @@ import {
 const NO_TASK = "—";
 const INFO_REFRESH_MILLISECONDS = 30000;
 const COMMAND_TIMEOUT_MILLISECONDS = 8000;
-const CONTEXT_WARNING_PERCENT = 80;
 const DETAIL_CHARACTERS = 160;
 const RUN_LABEL = "Run";
 const CANCEL_LABEL = "Cancel";
@@ -266,8 +267,7 @@ function showStatusLine($) {
   }
   const task = sessionInfo && sessionInfo.task ? sessionInfo.task.label : NO_TASK;
   const branch = sessionInfo && sessionInfo.branch ? sessionInfo.branch : "no branch";
-  const context = contextReading ? `${contextReading.percent}% context` : "context —";
-  $.ui.status(`${task} · ${branch} · ${context}`);
+  $.ui.status(`${task} · ${branch} · ${contextStatusText(contextReading)}`);
 }
 
 // ---- the guard's one-line summary ----------------------------------------
@@ -337,22 +337,21 @@ async function summarizeRisk($, risky, folder) {
 
 // ---- drawing ----------------------------------------------------------------
 
-// The context left as a bar: green while most of it is free, yellow from
-// half, red with a warning from 80 % used.
+// The context used as a bar (contextMeter.js): it fills as the context fills,
+// green → amber from 60 % used → red with a warning from 80 %; the label says
+// what is left.
 function contextBar(Box, Text, columns) {
-  const used = Math.max(0, Math.min(100, contextReading.percent));
-  const left = 100 - used;
   const width = Math.max(10, Math.min(30, columns - 50));
-  const filled = Math.round((left / 100) * width);
-  const color = used >= CONTEXT_WARNING_PERCENT ? "red" : used >= 50 ? "yellow" : "green";
+  const meter = contextBarModel(contextReading.percent, width);
   const parts = [
     Text({ key: "label", dimColor: true, children: "Context " }),
-    Text({ key: "bar", color, children: `${"█".repeat(filled)}${"░".repeat(width - filled)}` }),
-    Text({ key: "left", color, bold: used >= CONTEXT_WARNING_PERCENT, children: ` ${left}% left` }),
+    Text({ key: "bar", color: meter.color, children: "█".repeat(meter.filled) }),
+    Text({ key: "rest", dimColor: true, children: "░".repeat(meter.empty) }),
+    Text({ key: "left", color: meter.color, bold: meter.warning, children: ` ${meter.label}` }),
     Text({ key: "tokens", dimColor: true, children: `  ${shortNumber(contextReading.tokens)} / ${shortNumber(contextReading.window)}` })
   ];
-  if (used >= CONTEXT_WARNING_PERCENT) {
-    parts.push(Text({ key: "warning", color: "red", children: "  ⚠ over 80% used — consider /compact" }));
+  if (meter.warning) {
+    parts.push(Text({ key: "warning", color: "red", children: `  ⚠ over ${CONTEXT_WARNING_PERCENT}% used — consider /compact` }));
   }
   return Box({ flexDirection: "row", paddingX: 1, children: parts });
 }

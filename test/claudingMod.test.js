@@ -34,6 +34,7 @@ import {
   isScratchPath,
   parseGuardPatterns
 } from "../builtin/mod/clauding-mod/hooks/commandGuard.js";
+import { contextBarModel, contextStatusText } from "../builtin/mod/clauding-mod/hooks/contextMeter.js";
 import { createCommandRequestHandler } from "../electron/lib/commandRequests.js";
 import { linkedTaskOfSession } from "../electron/lib/projectSnapshot.js";
 
@@ -399,4 +400,27 @@ test("`clauding state` and `clauding session-info` reach the mod bridge, for the
   const info = JSON.parse(await handler.handleCommandRequest({ command: "session-info", target: "terminal-one" }));
   assert.equal(info.branch, "main");
   await assert.rejects(handler.handleCommandRequest({ command: "session-info", target: "terminal-gone" }), /no live terminal/);
+});
+
+test("the context bar fills with the context used and says what is left", () => {
+  const expectations = [
+    { percent: 0, filled: 0, color: "green", warning: false, label: "100% left" },
+    { percent: 5, filled: 1, color: "green", warning: false, label: "95% left" },
+    { percent: 60, filled: 12, color: "yellow", warning: false, label: "40% left" },
+    { percent: 85, filled: 17, color: "red", warning: true, label: "15% left" },
+    { percent: 100, filled: 20, color: "red", warning: true, label: "0% left" }
+  ];
+  for (const expected of expectations) {
+    const meter = contextBarModel(expected.percent, 20);
+    assert.equal(meter.filled, expected.filled, `${expected.percent}% used fills ${expected.filled} of 20`);
+    assert.equal(meter.filled + meter.empty, 20);
+    assert.equal(meter.color, expected.color, `${expected.percent}% used is ${expected.color}`);
+    assert.equal(meter.warning, expected.warning);
+    assert.equal(meter.label, expected.label);
+  }
+  assert.equal(contextBarModel(59, 20).color, "green", "amber starts at 60%");
+  assert.equal(contextBarModel(79, 20).color, "yellow", "red starts at 80%");
+  assert.equal(contextBarModel(140, 20).filled, 20, "a reading over 100% stays inside the bar");
+  assert.equal(contextStatusText({ percent: 5 }), "5% context used");
+  assert.equal(contextStatusText(null), "context —");
 });
