@@ -80,6 +80,7 @@ export function createOpenTerminalsStore({ filePath, log = null }) {
   let offered = readOpenTerminals(filePath);
   let frozen = false;
   let lastWritten = null;
+  let lastLive = [];
 
   function logLine(line) {
     if (log) {
@@ -97,10 +98,15 @@ export function createOpenTerminalsStore({ filePath, log = null }) {
     if (frozen) {
       return;
     }
-    const live = openTerminalEntries(terminals, selectedTerminalId);
-    const liveIds = new Set(live.map((entry) => entry.sessionId));
+    lastLive = openTerminalEntries(terminals, selectedTerminalId);
+    const liveIds = new Set(lastLive.map((entry) => entry.sessionId));
     offered = offered.filter((entry) => !liveIds.has(entry.sessionId));
-    const merged = mergeOpenTerminalLists({ live, offered });
+    writeOffered();
+  }
+
+  // The live terminals as last reported, plus what is still on offer.
+  function writeOffered() {
+    const merged = mergeOpenTerminalLists({ live: lastLive, offered });
     const text = `${JSON.stringify({ version: 1, terminals: merged }, null, 2)}\n`;
     if (text === lastWritten) {
       return;
@@ -134,5 +140,27 @@ export function createOpenTerminalsStore({ filePath, log = null }) {
     return { terminals: offered.slice(), selectedSessionId: selected ? selected.sessionId : null };
   }
 
-  return { update, freeze, offeredBySession, restoreOffer };
+  // A session offered back that went on under another id (Claude Code sent
+  // it to the background, lib/continuedIn.js) is offered as that one: a
+  // restore must never resume the stale copy. Written at once, so the file
+  // says the same thing the next time the app starts.
+  function carry(fromSessionId, toSessionId) {
+    if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) {
+      return false;
+    }
+    if (!offered.some((entry) => entry.sessionId === fromSessionId)) {
+      return false;
+    }
+    const alreadyOffered = offered.some((entry) => entry.sessionId === toSessionId);
+    offered = alreadyOffered
+      ? offered.filter((entry) => entry.sessionId !== fromSessionId)
+      : offered.map((entry) => (entry.sessionId === fromSessionId ? { ...entry, sessionId: toSessionId } : entry));
+    logLine(`${fromSessionId} continued in ${toSessionId}: offered back as the continuation`);
+    if (!frozen) {
+      writeOffered();
+    }
+    return true;
+  }
+
+  return { update, freeze, offeredBySession, restoreOffer, carry };
 }

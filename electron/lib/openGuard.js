@@ -13,6 +13,10 @@
 //   "refuse"   a live `claude` outside the app has it (the CLI's registry
 //              says so): nothing is started, the window shows its
 //              "running elsewhere" note
+//   "attach"   the live process is the CLI's own background daemon
+//              (registry `"kind": "bg"`): a plain `claude --resume <id>`
+//              attaches to it instead of starting a second writer, so that
+//              is what is started (lib/continuedIn.js)
 //   "spawn"    nobody has it: go ahead
 //
 // A fork is never refused or redirected — it gets a session id of its own,
@@ -26,7 +30,7 @@
 
 // `records` are the app's terminal records (terminalId, sessionId, pid,
 // exited, closingOnPurpose); `registryEntries` the CLI's
-// ~/.claude/sessions/<pid>.json entries as { sessionId, pid, alive }.
+// ~/.claude/sessions/<pid>.json entries as { sessionId, pid, alive, kind }.
 export function resumeOpenDecision({ sessionId, forkSession = false, records = [], registryEntries = [] }) {
   if (!sessionId || forkSession) {
     return { action: "spawn" };
@@ -39,8 +43,35 @@ export function resumeOpenDecision({ sessionId, forkSession = false, records = [
   const elsewhere = registryEntries.find(
     (entry) => entry.sessionId === sessionId && entry.alive && !ownProcessIds.has(entry.pid)
   );
+  if (elsewhere && elsewhere.kind === "bg") {
+    return { action: "attach", pid: elsewhere.pid };
+  }
   if (elsewhere) {
     return { action: "refuse", reason: "running-elsewhere", pid: elsewhere.pid };
   }
   return { action: "spawn" };
+}
+
+// One conversation can carry several ids: Claude Code sends a session to the
+// background under a new id, and `claude --resume <old>` then runs and
+// registers the new one (lib/continuedIn.js). The guard compares
+// conversations, not spellings: every terminal record and registry entry
+// whose id — or, for a terminal that was a plain resume, the id it was
+// started with — leads through that chain to `sessionId` counts as having
+// it. Without this, four `claude --resume <old>` were started for one
+// conversation: each registered the new id, so none of them ever matched.
+export function conversationGuardInput({ sessionId, forkSession = false, records = [], registryEntries = [], resolveContinuation = null }) {
+  if (!sessionId || forkSession) {
+    return { sessionId, forkSession, records, registryEntries: [] };
+  }
+  const resolved = (candidate) => (resolveContinuation && candidate ? resolveContinuation(candidate) || candidate : candidate);
+  const sameConversation = (candidate) => Boolean(candidate) && (candidate === sessionId || resolved(candidate) === sessionId);
+  const matchedRecords = records.map((record) => {
+    const startedAsResume = !record.forkedFromSessionId && sameConversation(record.resumeSessionId);
+    return sameConversation(record.sessionId) || startedAsResume ? { ...record, sessionId } : record;
+  });
+  const matchedEntries = registryEntries
+    .filter((entry) => entry && sameConversation(entry.sessionId))
+    .map((entry) => ({ ...entry, sessionId }));
+  return { sessionId, forkSession, records: matchedRecords, registryEntries: matchedEntries };
 }

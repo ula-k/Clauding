@@ -23,6 +23,15 @@ import { taskKickoffMessage } from "./projectsView.js";
 import { assignmentPlan, definitionLoadsOnNextResume } from "./assignmentPlan.js";
 import { bulkSessionPlan, confirmationTitles, selectionPlan, selectionWithin } from "./selectionPlan.js";
 import { flagsChangePlan } from "./sessionFlagsPlan.js";
+import {
+  collidingTitleSuffixes,
+  findKnownSession,
+  lookupFailureKey,
+  mergeSessionPages,
+  openPlanForSession,
+  rememberFetchedSession,
+  selectionRoute
+} from "./sessionLookup.js";
 import { rankAgentsByUse } from "./agentConstants.js";
 import SessionsColumn from "./components/SessionsColumn.jsx";
 import MiddleColumn from "./components/MiddleColumn.jsx";
@@ -240,6 +249,13 @@ export default function App() {
   // The Sessions list only holds the pages it has loaded, so without these
   // an agent's older work would be missing from the Agents tab.
   const [linkedAgentSessions, setLinkedAgentSessions] = useState([]);
+  // Sessions read by id because a click (or the restore offer) named one the
+  // loaded list does not hold (src/renderer/sessionLookup.js). They stay
+  // beside the list, so the middle column keeps its row.
+  const [fetchedSessions, setFetchedSessions] = useState([]);
+  // A by-id reading under way or failed, for the middle column:
+  // { sessionId, state: "loading" | "failed", messageKey, detail }.
+  const [sessionLookup, setSessionLookup] = useState(null);
   const [leftWidth, setLeftWidth] = useState(loadLeftWidth);
   // With a session on screen the panel follows that session's own flag;
   // panelOpenWithoutSession is reset to false as soon as one is selected, so
@@ -278,6 +294,14 @@ export default function App() {
   // (electron/lib/openGuard.js); this only saves the round trip.
   const resumesInFlightRef = useRef(new Set());
   const sessionsRef = useRef([]);
+  const linkedAgentSessionsRef = useRef([]);
+  const fetchedSessionsRef = useRef([]);
+  // The session the last click asked for, so a by-id reading that answers
+  // late does not open a session the user has since clicked away from.
+  const lastRequestedSessionRef = useRef(null);
+  // Ids already read by id once for a plain selection (no click), so a
+  // session that is really gone is not asked for on every render.
+  const lookedUpSessionIdsRef = useRef(new Set());
   // sessionAgents as it is right now, for the callbacks that must not be
   // rebuilt on every change of it (selecting a session, forking one).
   const agentLinksRef = useRef({});
@@ -412,8 +436,10 @@ export default function App() {
     const limit = reset ? Math.max(PAGE_SIZE, loadedCountRef.current) : PAGE_SIZE;
     try {
       const page = await window.clauding.listSessions({ offset, limit });
-      setSessions((previous) => (reset ? page.sessions : previous.concat(page.sessions)));
-      loadedCountRef.current = offset + page.sessions.length;
+      // The first page also carries every session linked to an agent or
+      // offered back as "was open", so a later page can repeat one.
+      setSessions((previous) => (reset ? page.sessions : mergeSessionPages(previous, page.sessions)));
+      loadedCountRef.current = Number.isFinite(page.nextOffset) ? page.nextOffset : offset + page.sessions.length;
       setHasMore(page.hasMore);
       setSessionsError(null);
     } catch (error) {
@@ -778,37 +804,17 @@ export default function App() {
   // A click on a session is a terminal, immediately: a session already open
   // in the app shows its terminal, one running outside the app stays a
   // read-only preview, and anything else gets `claude --resume` right away.
-  const selectSession = useCallback((sessionId) => {
-    setNewSheetOpen(false);
-    // Picking another conversation leaves whatever page was being read: the
-    // reader belongs to the moment, not to the session.
-    setReader(null);
-    setSelectedSessionId(sessionId);
-    // A plain click is one row: whatever was picked out before is dropped,
-    // wherever the click came from (the list, the Agents tab, a smoke run).
-    setSelection({ sessionIds: [sessionId], anchorId: sessionId });
-    const owner = terminalsRef.current.find((record) => record.sessionId === sessionId);
-    if (owner) {
-      setSelectedTerminalId(owner.terminalId);
-      // A row whose pane was kept after its `claude` ended: the click is the
-      // second half of "Press Enter to start again".
-      if (owner.exited) {
-        window.clauding.restartTerminal(owner.terminalId).catch((error) => {
-          console.error("Could not start the terminal again", error);
-        });
-      }
-      return;
-    }
-    setSelectedTerminalId(null);
-    const session = sessionsRef.current.find((record) => record.sessionId === sessionId);
+  const resumeKnownSession = useCallback((session) => {
+    const sessionId = session.sessionId;
+    const plan = openPlanForSession(session);
     // A folder that is unknown or gone opens nothing: the middle column asks
     // for one ("Choose a folder…") instead of waiting on a terminal that
-    // was never asked for.
-    if (!session || !session.workingDirectory || session.folderMissing) {
+    // was never asked for. One running outside the app stays a preview.
+    if (plan === "folder") {
       setOpenAttempt(null);
       return;
     }
-    if (session.liveStatus && session.liveStatus.source !== "app") {
+    if (plan === "elsewhere") {
       return;
     }
     if (resumesInFlightRef.current.has(sessionId)) {
@@ -839,6 +845,84 @@ export default function App() {
       resumesInFlightRef.current.delete(sessionId);
     });
   }, [openTerminal]);
+
+  // A session read by id: kept beside the list so its row is there for the
+  // middle column. `{ session }` or `{ failed }` with the locale key.
+  const readSessionById = useCallback(async (sessionId) => {
+    setSessionLookup({ sessionId, state: "loading", messageKey: null, detail: null });
+    let answer = null;
+    try {
+      answer = await window.clauding.lookupSession(sessionId);
+    } catch (error) {
+      answer = { session: null, reason: "unreadable", detail: String(error && error.message ? error.message : error) };
+    }
+    if (answer && answer.session) {
+      fetchedSessionsRef.current = rememberFetchedSession(fetchedSessionsRef.current, answer.session);
+      setFetchedSessions(fetchedSessionsRef.current);
+      setSessionLookup((current) => (current && current.sessionId === sessionId ? null : current));
+      return { session: answer.session };
+    }
+    const failure = {
+      sessionId,
+      state: "failed",
+      messageKey: lookupFailureKey(answer ? answer.reason : "unreadable"),
+      detail: answer && answer.detail ? answer.detail : null
+    };
+    console.error("Could not open the session", sessionId, failure);
+    setSessionLookup((current) => (current && current.sessionId === sessionId ? failure : current));
+    return { failed: failure };
+  }, []);
+
+  const selectSession = useCallback((sessionId) => {
+    setNewSheetOpen(false);
+    // Picking another conversation leaves whatever page was being read: the
+    // reader belongs to the moment, not to the session.
+    setReader(null);
+    setSelectedSessionId(sessionId);
+    lastRequestedSessionRef.current = sessionId;
+    setSessionLookup(null);
+    // A plain click is one row: whatever was picked out before is dropped,
+    // wherever the click came from (the list, the Agents tab, a smoke run).
+    setSelection({ sessionIds: [sessionId], anchorId: sessionId });
+    const route = selectionRoute(sessionId, {
+      terminals: terminalsRef.current,
+      loaded: [sessionsRef.current, fetchedSessionsRef.current],
+      linked: linkedAgentSessionsRef.current
+    });
+    if (route.kind === "terminal") {
+      const owner = route.terminal;
+      setSelectedTerminalId(owner.terminalId);
+      // A row whose pane was kept after its `claude` ended: the click is the
+      // second half of "Press Enter to start again".
+      if (owner.exited) {
+        window.clauding.restartTerminal(owner.terminalId).catch((error) => {
+          console.error("Could not start the terminal again", error);
+        });
+      }
+      return;
+    }
+    setSelectedTerminalId(null);
+    if (route.kind === "known") {
+      resumeKnownSession(route.session);
+      return;
+    }
+    // Not in the loaded list. An agent's sub-row carries a row read by id
+    // already; anything else (a search hit, a project card, a command) is
+    // read now. Either way it is kept beside the list, so the middle column
+    // has a row to show — never a silent "Pick a session".
+    if (route.kind === "linked") {
+      fetchedSessionsRef.current = rememberFetchedSession(fetchedSessionsRef.current, route.session);
+      setFetchedSessions(fetchedSessionsRef.current);
+      resumeKnownSession(route.session);
+      return;
+    }
+    lookedUpSessionIdsRef.current.add(sessionId);
+    readSessionById(sessionId).then((answer) => {
+      if (answer.session && lastRequestedSessionRef.current === sessionId) {
+        resumeKnownSession(answer.session);
+      }
+    });
+  }, [readSessionById, resumeKnownSession]);
 
   // "Choose a folder…" on a session whose folder is unknown or gone. The CLI
   // finds a conversation by its id whatever folder it is started in, so the
@@ -876,7 +960,7 @@ export default function App() {
       if (!targetSessionId) {
         return;
       }
-      const session = sessionsRef.current.find((record) => record.sessionId === targetSessionId) || null;
+      const session = findKnownSession(targetSessionId, [sessionsRef.current, fetchedSessionsRef.current]);
       const workingDirectory = (terminal && terminal.workingDirectory) || (session && session.workingDirectory) || null;
       setOpenAttempt({ sessionId: targetSessionId, startedAt: Date.now(), error: null });
       openTerminal({
@@ -1596,7 +1680,11 @@ export default function App() {
   );
 
   const allSessions = useMemo(() => {
-    const listedIds = new Set(sessions.map((session) => session.sessionId));
+    // Rows read by id (a click on a session the pages did not hold) join the
+    // list until a page brings the same session.
+    const pageIds = new Set(sessions.map((session) => session.sessionId));
+    const listedSessions = sessions.concat(fetchedSessions.filter((session) => !pageIds.has(session.sessionId)));
+    const listedIds = new Set(listedSessions.map((session) => session.sessionId));
     const agentByTerminalSession = new Map();
     for (const terminal of terminals) {
       if (terminal.sessionId && terminal.agentId) {
@@ -1612,12 +1700,28 @@ export default function App() {
     const liveTerminalBySession = new Map(
       terminals.filter((terminal) => terminal.sessionId && !terminal.exited).map((terminal) => [terminal.sessionId, terminal])
     );
-    return placeholders.concat(sessions).map((session) => ({
+    return placeholders.concat(listedSessions).map((session) => ({
       ...applyModStateToSession(session, liveTerminalBySession.get(session.sessionId)),
       agent: agentByTerminalSession.get(session.sessionId) || agentForSession(session.sessionId)
     }));
-  }, [sessions, terminals, language, agentById, agentForSession]);
+  }, [sessions, fetchedSessions, terminals, language, agentById, agentForSession]);
   sessionsRef.current = allSessions;
+  linkedAgentSessionsRef.current = linkedAgentSessions;
+
+  // Two sessions with one title (a session sent to the background goes on
+  // in a copy that keeps its name): their rows show a short id on hover.
+  const titleSuffixes = useMemo(
+    () => collidingTitleSuffixes(allSessions.concat(linkedAgentSessions)),
+    [allSessions, linkedAgentSessions]
+  );
+  const withTitleSuffix = useCallback(
+    (list) =>
+      list.map((session) =>
+        titleSuffixes.has(session.sessionId) ? { ...session, titleSuffix: titleSuffixes.get(session.sessionId) } : session
+      ),
+    [titleSuffixes]
+  );
+  const listedSessions = useMemo(() => withTitleSuffix(allSessions), [withTitleSuffix, allSessions]);
 
   // What the Agents tab draws from: the rows already on screen, plus every
   // linked session the list has not loaded. A link whose session is gone from
@@ -1630,7 +1734,29 @@ export default function App() {
     return allSessions.concat(extra);
   }, [allSessions, linkedAgentSessions, agentForSession]);
 
+  const agentListSessions = useMemo(() => withTitleSuffix(agentTabSessions), [withTitleSuffix, agentTabSessions]);
+
   const selectedSession = allSessions.find((session) => session.sessionId === selectedSessionId) || null;
+
+  // Selected without a click (the session that was on screen when the app
+  // closed, offered back on start) and not in any loaded page: read it by id
+  // once, so the column shows that session, or says why it cannot.
+  useEffect(() => {
+    if (!selectedSessionId || selectedSession || activeTerminal || sessionsLoading) {
+      return;
+    }
+    if (findKnownSession(selectedSessionId, [linkedAgentSessions])) {
+      const linked = findKnownSession(selectedSessionId, [linkedAgentSessions]);
+      fetchedSessionsRef.current = rememberFetchedSession(fetchedSessionsRef.current, linked);
+      setFetchedSessions(fetchedSessionsRef.current);
+      return;
+    }
+    if (lookedUpSessionIdsRef.current.has(selectedSessionId)) {
+      return;
+    }
+    lookedUpSessionIdsRef.current.add(selectedSessionId);
+    readSessionById(selectedSessionId);
+  }, [selectedSessionId, selectedSession, activeTerminal, sessionsLoading, linkedAgentSessions, readSessionById]);
   // The chip in the terminal header. A terminal that has not registered its
   // session yet still knows which agent it was started as.
   const selectedAgent =
@@ -2123,7 +2249,7 @@ export default function App() {
       >
         <div className="title-drag-region" />
         <SessionsColumn
-          sessions={allSessions}
+          sessions={listedSessions}
           loading={sessionsLoading}
           error={sessionsError}
           hasMore={hasMore}
@@ -2143,7 +2269,7 @@ export default function App() {
           onConfirmNewSession={startNewSession}
           groupState={groupState}
           groupActions={groupActions}
-          agentSessions={agentTabSessions}
+          agentSessions={agentListSessions}
           agents={agentState.agents}
           menuAgents={rankedAgents}
           agentActions={agentActions}
@@ -2197,6 +2323,7 @@ export default function App() {
           onEditSessionFlags={requestSessionFlags}
           onDeleteSession={requestSessionDelete}
           openAttempt={openAttempt && selectedSession && openAttempt.sessionId === selectedSession.sessionId ? openAttempt : null}
+          sessionLookup={!selectedSession && sessionLookup && sessionLookup.sessionId === selectedSessionId ? sessionLookup : null}
           onChooseFolder={resumeInChosenFolder}
           onRestartTerminal={restartStuckTerminal}
           reader={reader}

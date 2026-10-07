@@ -7,6 +7,8 @@ import channels from "./channels.cjs";
 import {
   listSessionsPage,
   getSession,
+  lookupSessionForOpen,
+  resolveContinuation,
   enrichSession,
   isScratchWorkingDirectory,
   renameSessionTitle,
@@ -436,6 +438,12 @@ const terminalRegistry = createTerminalRegistry({
   },
   resolveSessionFolder(sessionId) {
     return resolveFolderForSession(sessionId);
+  },
+  resolveContinuation(sessionId) {
+    return resolveContinuation(sessionId);
+  },
+  onSessionContinued(fromSessionId, toSessionId) {
+    carrySessionEverywhere(fromSessionId, toSessionId);
   },
   readModPlan() {
     return modBridge.readModPlan();
@@ -1729,6 +1737,78 @@ function forgetLinkedSessions() {
   linkedSessionCache = new Map();
 }
 
+// --------------------------------------------------------- continuations
+//
+// Claude Code can send a session to the background: it goes on under a new
+// id and the old transcript ends in a `continued-in` line (see
+// lib/continuedIn.js). Every store keyed by session id follows it here —
+// the agent link, the group / color / tags / hiding, the extra flags, the
+// panel tabs and the "was open" offer — so the list shows one row, the live
+// one, and a restore never resumes the stale copy.
+function carrySessionEverywhere(fromSessionId, toSessionId) {
+  if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) {
+    return false;
+  }
+  const moved = [
+    agents ? agents.carrySession(fromSessionId, toSessionId) : false,
+    sessionGroups ? sessionGroups.carrySession(fromSessionId, toSessionId) : false,
+    sessionFlags ? sessionFlags.carry(fromSessionId, toSessionId) : false,
+    openTerminals.carry(fromSessionId, toSessionId)
+  ];
+  if (panelTabs) {
+    panelTabs.migrate(fromSessionId, toSessionId);
+  }
+  linkedSessionCache.delete(fromSessionId);
+  linkedSessionCache.delete(toSessionId);
+  if (moved.some(Boolean)) {
+    console.log(`[continued-in] ${fromSessionId} continued in ${toSessionId}: links, group, flags and restore offer moved over`);
+    return true;
+  }
+  return false;
+}
+
+// Every session id any store knows, checked for a continuation. Cheap: one
+// stat per id, the last 64 KiB of a transcript only when it changed.
+function carryContinuedSessions() {
+  const knownIds = new Set();
+  if (agents) {
+    Object.keys(agents.get().sessionAgents || {}).forEach((sessionId) => knownIds.add(sessionId));
+  }
+  if (sessionGroups) {
+    const groupsState = sessionGroups.get();
+    for (const mapping of [groupsState.membership, groupsState.colors, groupsState.sessionTags, groupsState.hiddenSince]) {
+      Object.keys(mapping || {}).forEach((sessionId) => knownIds.add(sessionId));
+    }
+    (groupsState.hidden || []).forEach((sessionId) => knownIds.add(sessionId));
+  }
+  if (sessionFlags) {
+    Object.keys(sessionFlags.get().sessionFlags || {}).forEach((sessionId) => knownIds.add(sessionId));
+  }
+  for (const sessionId of openTerminals.offeredBySession().keys()) {
+    knownIds.add(sessionId);
+  }
+  let carried = false;
+  for (const sessionId of knownIds) {
+    let continuedIn = sessionId;
+    try {
+      continuedIn = resolveContinuation(sessionId);
+    } catch (error) {
+      continuedIn = sessionId;
+    }
+    if (continuedIn && continuedIn !== sessionId && carrySessionEverywhere(sessionId, continuedIn)) {
+      carried = true;
+    }
+  }
+  return carried;
+}
+
+// The sessions the Sessions list shows whatever page they would fall on:
+// the ones linked to an agent and the ones offered back as "was open".
+function pinnedSessionIds(offeredSessions) {
+  const linkedIds = agents ? Object.keys(agents.get().sessionAgents || {}) : [];
+  return [...new Set(linkedIds.concat([...offeredSessions.keys()]))];
+}
+
 async function collectLinkedAgentSessions() {
   if (!agents) {
     return [];
@@ -1793,12 +1873,17 @@ function scheduleProjectRefreshes() {
 function registerIpc() {
   ipcMain.handle(CHANNELS.sessionsList, async (event, options) => {
     const offset = Number(options && options.offset) || 0;
+    if (offset === 0) {
+      carryContinuedSessions();
+    }
     const limit = Number(options && options.limit) || DEFAULT_PAGE_SIZE;
+    const offeredSessions = openTerminals.offeredBySession();
     return listSessionsPage({
       offset,
       limit,
       ownedStates: terminalRegistry.ownedStates(),
-      offeredSessions: openTerminals.offeredBySession()
+      offeredSessions,
+      pinnedSessionIds: pinnedSessionIds(offeredSessions)
     });
   });
 
@@ -1859,6 +1944,14 @@ function registerIpc() {
 
   ipcMain.handle(CHANNELS.sessionsGet, async (event, { sessionId }) => {
     return getSession(sessionId, terminalRegistry.ownedStates(), openTerminals.offeredBySession());
+  });
+
+  // A click on a session the loaded list does not hold: read it by its id.
+  ipcMain.handle(CHANNELS.sessionsLookup, async (event, { sessionId }) => {
+    return lookupSessionForOpen(sessionId, {
+      ownedStates: terminalRegistry.ownedStates(),
+      offeredSessions: openTerminals.offeredBySession()
+    });
   });
 
   ipcMain.handle(CHANNELS.sessionsRename, async (event, { sessionId, title }) => {

@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld("clauding", {
   getSession(sessionId) {
     return ipcRenderer.invoke(CHANNELS.sessionsGet, { sessionId });
   },
+  lookupSession(sessionId) {
+    return ipcRenderer.invoke(CHANNELS.sessionsLookup, { sessionId });
+  },
   renameSession(sessionId, title) {
     return ipcRenderer.invoke(CHANNELS.sessionsRename, { sessionId, title });
   },

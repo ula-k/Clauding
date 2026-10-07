@@ -14,6 +14,7 @@ import { TAIL_BYTES, createNeedsAnswerCache, isRecentEnoughToAsk } from "./lib/n
 import { groupForModState, modStateNeedsAnswer } from "./lib/modState.js";
 import { OPENING_BYTES, openingTextFromTranscript } from "./lib/transcriptOpening.js";
 import { cwdValuesInText, decodeProjectFolderName, resolveSessionFolder } from "./lib/sessionFolder.js";
+import { continuationFromTail, followContinuations } from "./lib/continuedIn.js";
 
 export const DEFAULT_PAGE_SIZE = 60;
 
@@ -180,6 +181,40 @@ function readFileTail(filePath, byteCount = TAIL_BYTES) {
   }
 }
 
+// ------------------------------------------------------- continuations ---
+//
+// Where a session goes on once Claude Code sent it to the background: the
+// `continued-in` line at the end of its transcript (lib/continuedIn.js).
+// Only the last 64 KiB are read, and the answer is kept per transcript stamp.
+const CONTINUATION_TAIL_BYTES = 64 * 1024;
+const continuationCache = new Map();
+
+function readContinuation(sessionId) {
+  const transcript = transcriptStamp(sessionId);
+  if (!transcript) {
+    return null;
+  }
+  const cached = continuationCache.get(sessionId);
+  if (cached && cached.stamp === transcript.stamp) {
+    return cached.continuedIn;
+  }
+  const continuedIn = continuationFromTail(readFileTail(transcript.filePath, CONTINUATION_TAIL_BYTES));
+  continuationCache.set(sessionId, { stamp: transcript.stamp, continuedIn });
+  return continuedIn;
+}
+
+// The id this session finally lives under: itself, unless its transcript
+// says it continued in another one that exists.
+export function resolveContinuation(sessionId) {
+  if (!sessionId) {
+    return sessionId;
+  }
+  return followContinuations(sessionId, {
+    readContinuation,
+    transcriptExists: (candidate) => Boolean(transcriptPathFor(candidate))
+  });
+}
+
 // One answer per session, kept until its transcript changes size or time
 // (electron/lib/needsAnswer.js decides, this only reads the file).
 const needsAnswerCache = createNeedsAnswerCache({ readTail: (filePath) => readFileTail(filePath) });
@@ -342,18 +377,69 @@ export function enrichSession(session, statusBySession, ownedStates = new Map(),
   };
 }
 
-// One page of sessions across all projects, newest first.
+// Sessions the list must show even when the SDK's page does not hold them:
+// every session linked to an agent (agents.json) and every session offered
+// back as "was open" (open-terminals.json). Two ways they go missing:
+//
+//   - they are simply older than the loaded page, and
+//   - the SDK leaves a session out of listSessions() on purpose once its
+//     transcript ends in a `continued-in` line pointing at another
+//     transcript — what Claude Code writes when a running session is sent to
+//     the background (Ctrl+B, "task:background"): the conversation goes on in
+//     a forked copy with a new id and the same title, and the original is
+//     treated as superseded. getSessionInfo() still reads it.
+//
+// The first page carries all of them, in date order with the rest; later
+// pages leave them out so no row is drawn twice.
+export function mergePinnedSessions(pageRows, pinnedRows, { firstPage = true } = {}) {
+  const pinnedIds = new Set(pinnedRows.map((session) => session.sessionId));
+  if (!firstPage) {
+    return pageRows.filter((session) => !pinnedIds.has(session.sessionId));
+  }
+  const listedIds = new Set(pageRows.map((session) => session.sessionId));
+  const added = pinnedRows.filter((session) => !listedIds.has(session.sessionId));
+  if (added.length === 0) {
+    return pageRows;
+  }
+  return pageRows
+    .concat(added)
+    .sort((first, second) => (Number(second.lastModified) || 0) - (Number(first.lastModified) || 0));
+}
+
+// The pinned sessions the page does not already hold, read one by one. A
+// transcript that is gone or unreadable is skipped, not an error.
+async function readPinnedSessions(sessionIds, alreadyListed, readSessionInfo) {
+  const wanted = [...new Set(sessionIds)].filter((sessionId) => sessionId && !alreadyListed.has(sessionId));
+  const rows = await Promise.all(
+    wanted.map((sessionId) => Promise.resolve(readSessionInfo(sessionId)).catch(() => null))
+  );
+  return rows.filter(Boolean);
+}
+
+// One page of sessions across all projects, newest first. `nextOffset` is
+// where the next page starts in the SDK's own list — not the number of rows
+// sent, which scratch folders and pinned sessions make larger or smaller.
 export async function listSessionsPage({
   offset = 0,
   limit = DEFAULT_PAGE_SIZE,
   ownedStates = new Map(),
-  offeredSessions = new Map()
+  offeredSessions = new Map(),
+  pinnedSessionIds = [],
+  readSessionInfo = getSessionInfo
 } = {}) {
   const statusBySession = collectLiveStatus();
   // We ask for one extra row to know whether another page exists.
   const rows = await listSessions({ offset, limit: limit + 1 });
   const hasMore = rows.length > limit;
-  const pageRows = (hasMore ? rows.slice(0, limit) : rows).filter(
+  const sdkRows = hasMore ? rows.slice(0, limit) : rows;
+  const firstPage = offset === 0;
+  // A pinned session that went on in the background is pinned as its
+  // continuation: one row, the live one.
+  pinnedSessionIds = [...new Set(pinnedSessionIds.map((sessionId) => resolveContinuation(sessionId) || sessionId))];
+  const pinnedRows = firstPage
+    ? await readPinnedSessions(pinnedSessionIds, new Set(sdkRows.map((session) => session.sessionId)), readSessionInfo)
+    : pinnedSessionIds.map((sessionId) => ({ sessionId }));
+  const pageRows = mergePinnedSessions(sdkRows, pinnedRows, { firstPage }).filter(
     (session) => !isScratchWorkingDirectory(session.cwd)
   );
   return {
@@ -362,9 +448,46 @@ export async function listSessionsPage({
       .filter((session) => !isScratchWorkingDirectory(session.workingDirectory)),
     offset,
     limit,
+    nextOffset: offset + sdkRows.length,
     hasMore,
     liveStatus: Object.fromEntries(statusBySession)
   };
+}
+
+// One session by its id, whether or not any page of the list holds it: what
+// a click falls back to when the row it came from (an agent's sub-row, a
+// search hit, a project card, the restore offer) is not in the loaded list.
+// `{ session }` when found, `{ session: null, reason }` when not — the
+// reason is a word the window turns into a sentence, never a silent nothing.
+function resolveContinuationSafely(sessionId) {
+  try {
+    return resolveContinuation(sessionId) || sessionId;
+  } catch (error) {
+    return sessionId;
+  }
+}
+
+export async function lookupSessionForOpen(
+  sessionId,
+  { ownedStates = new Map(), offeredSessions = new Map(), readSessionInfo = getSessionInfo } = {}
+) {
+  if (!sessionId || !/^[A-Za-z0-9._-]+$/.test(String(sessionId))) {
+    return { session: null, reason: "invalid-id" };
+  }
+  // A session that went on under another id opens as that one: the old
+  // transcript stops where the CLI sent it to the background.
+  const liveSessionId = resolveContinuationSafely(sessionId);
+  let info = null;
+  try {
+    info = await readSessionInfo(liveSessionId);
+  } catch (error) {
+    return { session: null, reason: "unreadable", detail: String(error && error.message ? error.message : error) };
+  }
+  if (!info) {
+    return { session: null, reason: "not-found" };
+  }
+  const session = enrichSession(info, collectLiveStatus(), ownedStates, offeredSessions);
+  return { session: liveSessionId !== sessionId ? { ...session, continuedFrom: sessionId } : session, reason: null };
 }
 
 export async function getSession(sessionId, ownedStates = new Map(), offeredSessions = new Map()) {

@@ -35,6 +35,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { mergeExtraArguments } from "./lib/claudeArguments.js";
+import { carryKeyedValue } from "./lib/continuedIn.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_NAME_LENGTH = 60;
@@ -461,6 +462,18 @@ export function createAgentStore({ storagePath, onChange, log }) {
     return true;
   }
 
+  // The session went on under another id (Claude Code sent it to the
+  // background, lib/continuedIn.js): its agent link follows it.
+  function carrySession(fromSessionId, toSessionId) {
+    const carried = carryKeyedValue(state.sessionAgents, fromSessionId, toSessionId);
+    if (carried === state.sessionAgents) {
+      return false;
+    }
+    state.sessionAgents = carried;
+    announce();
+    return true;
+  }
+
   // Called when a terminal's CLI finally registers its session id, so the
   // row in the list can show the agent that started it.
   function linkSession(sessionId, agentId) {
@@ -526,6 +539,7 @@ export function createAgentStore({ storagePath, onChange, log }) {
     ensureBuiltinAgent,
     setSessionAgent,
     forgetSession,
+    carrySession,
     linkSession,
     rememberWorkingDirectory,
     reloadFromDisk

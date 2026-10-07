@@ -457,6 +457,7 @@ export default function MiddleColumn({
   onEditSessionFlags,
   onDeleteSession,
   openAttempt = null,
+  sessionLookup = null,
   onChooseFolder,
   onRestartTerminal,
   reader,
@@ -518,10 +519,27 @@ export default function MiddleColumn({
           <>
             <div className="middle-tools">{underTools}</div>
             <div className="middle-centered">
-              <div className="empty-card">
-                <div className="empty-icon">✿</div>
-                {translate("transcript.empty")}
-              </div>
+              {sessionLookup ? (
+                // A session picked by id that no loaded row holds: it is
+                // being read, or it could not be — never the plain "Pick a
+                // session", which reads as if the click had not happened.
+                <div className="empty-card" data-session-lookup={sessionLookup.state}>
+                  <div className="empty-icon">✿</div>
+                  {sessionLookup.state === "loading"
+                    ? translate("middle.sessionLookingUp")
+                    : translate(sessionLookup.messageKey || "middle.sessionUnreadable")}
+                  {sessionLookup.state === "failed" && (
+                    <div className="empty-card-detail" title={sessionLookup.detail || ""}>
+                      {sessionLookup.sessionId}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="empty-card">
+                  <div className="empty-icon">✿</div>
+                  {translate("transcript.empty")}
+                </div>
+              )}
             </div>
           </>
         )}

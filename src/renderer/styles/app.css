@@ -1940,6 +1940,21 @@ input:focus-visible {
   margin-bottom: 8px;
 }
 
+.middle-centered .empty-card[data-session-lookup] {
+  max-width: 420px;
+}
+
+.middle-centered .empty-card[data-session-lookup="failed"] {
+  color: var(--text);
+}
+
+.middle-centered .empty-card .empty-card-detail {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-mono, monospace);
+}
+
 .elsewhere-note {
   max-width: 420px;
   text-align: center;

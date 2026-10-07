@@ -27,7 +27,8 @@ import { currentRegistryPaths } from "./claudeHome.js";
 import { buildClaudeArguments, buildTerminalEnvironment, mergeExtraArguments } from "./lib/claudeArguments.js";
 import { reduceModState, replaceModArguments } from "./lib/modState.js";
 import { exitNoticeText, exitPlan } from "./lib/exitPlan.js";
-import { resumeOpenDecision } from "./lib/openGuard.js";
+import { conversationGuardInput, resumeOpenDecision } from "./lib/openGuard.js";
+import { adoptedSessionId, attachArguments } from "./lib/continuedIn.js";
 import {
   parseProcessStates,
   processStateCommand,
@@ -116,8 +117,10 @@ function registryEntryByFolder(workingDirectory, startedAt, claimedSessionIds) {
   return null;
 }
 
-// Every live registry entry that names this session, for the guard against
-// resuming one conversation twice (lib/openGuard.js).
+// Every live registry entry that names this session (every entry at all
+// when `sessionId` is null — the guard then picks the ones in the same
+// continued-in chain), for the guard against resuming one conversation
+// twice (lib/openGuard.js).
 function registryEntriesForSession(sessionId) {
   let entries = [];
   try {
@@ -131,11 +134,11 @@ function registryEntriesForSession(sessionId) {
       continue;
     }
     const record = readJsonQuietly(path.join(sessionsRegistryDirectory(), fileName));
-    if (!record || record.sessionId !== sessionId) {
+    if (!record || typeof record.sessionId !== "string" || (sessionId !== null && record.sessionId !== sessionId)) {
       continue;
     }
     const processId = Number(record.pid);
-    found.push({ sessionId, pid: processId, alive: isProcessAlive(processId) });
+    found.push({ sessionId: record.sessionId, pid: processId, alive: isProcessAlive(processId), kind: record.kind || null });
   }
   return found;
 }
@@ -213,7 +216,12 @@ export function createTerminalRegistry({
   // The Clauding mod: `{ pluginDirectory, arguments }` for a terminal about
   // to start — `arguments` is `--plugin-dir <folder>` when the mod is on and
   // the CLI can load it, else empty (electron/lib/modState.js).
-  readModPlan = null
+  readModPlan = null,
+  // The id a session goes on under once Claude Code sent it to the
+  // background (electron/sessions.js, lib/continuedIn.js), and who is told
+  // when a terminal's session moved there, so every store follows it.
+  resolveContinuation = null,
+  onSessionContinued = null
 }) {
   const terminals = new Map();
   let linkPoller = null;
@@ -336,17 +344,44 @@ export function createTerminalRegistry({
           logLine(`${record.terminalId}: linked by folder fallback (pid ${entry.pid})`);
         }
       }
+      if (!entry && record.sessionId && resolveContinuation) {
+        // The CLI in this pane became a client of its background daemon and
+        // may have no registry entry of its own any more: the transcript's
+        // `continued-in` line is what says where the conversation went.
+        const continued = resolveContinuation(record.sessionId);
+        if (continued && continued !== record.sessionId) {
+          moveRecordToContinuation(record, continued);
+          changed = true;
+        }
+      }
       if (!entry) {
         continue;
       }
-      if (entry.sessionId !== record.sessionId) {
-        record.sessionId = entry.sessionId;
+      // The id the registry reports for this terminal's own pid is the
+      // session on screen — followed through any `continued-in` chain. A
+      // `claude --resume <old>` of a session that went on under a new id
+      // runs the new one and registers it, so the terminal moves to that id
+      // at once; otherwise every click on the old row passed the open guard
+      // and started yet another copy of the same conversation.
+      const adopted = adoptedSessionId({
+        trackedSessionId: record.sessionId,
+        registeredSessionId: entry.sessionId,
+        isFork: Boolean(record.forkedFromSessionId),
+        resolveContinuation
+      });
+      const registeredSessionId = adopted.sessionId;
+      if (registeredSessionId !== record.sessionId) {
+        if (adopted.carryFrom) {
+          moveRecordToContinuation(record, registeredSessionId);
+        } else {
+          record.sessionId = registeredSessionId;
+          logLine(`${record.terminalId}: session ${registeredSessionId} (pid ${record.pid})`);
+        }
         changed = true;
-        logLine(`${record.terminalId}: session ${entry.sessionId} (pid ${record.pid})`);
         // Now that the conversation has an id, its own flags can be filed
         // under it — a fork writes them under its new id too.
         if (rememberSessionExtraArguments && record.sessionExtraArguments) {
-          rememberSessionExtraArguments(entry.sessionId, record.sessionExtraArguments);
+          rememberSessionExtraArguments(registeredSessionId, record.sessionExtraArguments);
         }
       }
       const status = typeof entry.status === "string" ? entry.status : null;
@@ -367,6 +402,23 @@ export function createTerminalRegistry({
     closeUntouchedIdleTerminals();
     checkForSuspendedProcesses();
     updatePoller();
+  }
+
+  // A pane whose session was sent to the background by the CLI: from now on
+  // it shows the continuation, so the list, the agent link and the "was
+  // open" offer all follow the new id instead of resuming the stale copy.
+  function moveRecordToContinuation(record, continuedSessionId) {
+    const previousSessionId = record.sessionId;
+    record.sessionId = continuedSessionId;
+    record.continuedFromSessionId = previousSessionId || null;
+    logLine(`${record.terminalId}: session ${previousSessionId} continued in ${continuedSessionId} (sent to the background by the CLI)`);
+    if (onSessionContinued && previousSessionId) {
+      try {
+        onSessionContinued(previousSessionId, continuedSessionId);
+      } catch (error) {
+        logLine(`could not carry ${previousSessionId} over to ${continuedSessionId}: ${error.message}`);
+      }
+    }
   }
 
   // Sends SIGCONT to the terminal's process group — the pty's child leads a
@@ -802,6 +854,16 @@ export function createTerminalRegistry({
     if (forkSession && !resumeSessionId) {
       throw new Error("A fork needs the session id it copies.");
     }
+    // A session that went on under another id is opened as that id: the
+    // CLI would run the continuation anyway, and the guard below must see
+    // the terminal that already shows it (lib/continuedIn.js).
+    if (resumeSessionId && !forkSession && resolveContinuation) {
+      const continuedIn = resolveContinuation(resumeSessionId);
+      if (continuedIn && continuedIn !== resumeSessionId) {
+        logLine(`resume of ${resumeSessionId}: it continued in ${continuedIn}, opening that one`);
+        resumeSessionId = continuedIn;
+      }
+    }
     // One conversation, one `claude`: a resume of a session that already has
     // a process shows that terminal (or refuses) instead of starting a
     // second writer on the same transcript (lib/openGuard.js).
@@ -809,12 +871,15 @@ export function createTerminalRegistry({
       logLine(`resume of ${resumeSessionId} refused: it is being opened right now`);
       return { refused: true, reason: "being-opened", sessionId: resumeSessionId };
     }
-    const guard = resumeOpenDecision({
-      sessionId: resumeSessionId,
-      forkSession,
-      records: Array.from(terminals.values()),
-      registryEntries: resumeSessionId && !forkSession ? registryEntriesForSession(resumeSessionId) : []
-    });
+    const guard = resumeOpenDecision(
+      conversationGuardInput({
+        sessionId: resumeSessionId,
+        forkSession,
+        records: Array.from(terminals.values()),
+        registryEntries: resumeSessionId && !forkSession ? registryEntriesForSession(null) : [],
+        resolveContinuation
+      })
+    );
     if (guard.action === "show" || guard.action === "restart") {
       logLine(`${guard.terminalId}: already has session ${resumeSessionId}, ${guard.action === "show" ? "showing it" : "starting its pane again"} instead of a second claude`);
       if (guard.action === "restart") {
@@ -827,6 +892,9 @@ export function createTerminalRegistry({
       logLine(`resume of ${resumeSessionId} refused: claude pid ${guard.pid} outside the app has it`);
       return { refused: true, reason: guard.reason, sessionId: resumeSessionId, pid: guard.pid };
     }
+    if (guard.action === "attach") {
+      logLine(`${resumeSessionId} is alive in the CLI's background daemon (pid ${guard.pid}): attaching with a plain --resume`);
+    }
     if (resumeSessionId && !forkSession) {
       sessionsBeingOpened.add(resumeSessionId);
     }
@@ -835,6 +903,7 @@ export function createTerminalRegistry({
         workingDirectory,
         resumeSessionId,
         forkSession,
+        attachOnly: guard.action === "attach",
         sessionName,
         agentId,
         taskPrompt,
@@ -853,6 +922,7 @@ export function createTerminalRegistry({
     workingDirectory,
     resumeSessionId,
     forkSession,
+    attachOnly = false,
     sessionName,
     agentId,
     taskPrompt,
@@ -902,7 +972,7 @@ export function createTerminalRegistry({
       agent && agent.extraClaudeArguments ? agent.extraClaudeArguments : "",
       sessionExtraArguments
     ]);
-    const { commandArguments, displayName } = buildClaudeArguments({
+    const built = buildClaudeArguments({
       resumeSessionId,
       forkSession,
       sessionName,
@@ -915,10 +985,24 @@ export function createTerminalRegistry({
       extraArguments: mergedExtraArguments,
       pluginArguments: readModPlan ? readModPlan().arguments : []
     });
+    // Attaching to a background session: nothing but `--resume <id>`. The
+    // session keeps the system prompt and flags it was started with; any
+    // of ours would make the CLI refuse to attach.
+    const commandArguments = attachOnly ? attachArguments(resumeSessionId) : built.commandArguments;
+    const displayName = attachOnly ? null : built.displayName;
+    if (attachOnly && promptFilePath) {
+      try {
+        fs.unlinkSync(promptFilePath);
+      } catch (error) {
+        // Nothing to clean up.
+      }
+      promptFilePath = null;
+    }
     const environment = buildTerminalEnvironment({
       baseEnvironment: terminalEnvironment(),
       terminalId,
-      commandDirectory
+      commandDirectory,
+      attachToBackground: attachOnly
     });
     const record = {
       terminalId,
@@ -951,7 +1035,8 @@ export function createTerminalRegistry({
       extraArguments: mergedExtraArguments,
       sessionExtraArguments,
       commandArguments,
-      kickoffState: cleanKickoffMessage ? "waiting" : null,
+      kickoffState: cleanKickoffMessage && !attachOnly ? "waiting" : null,
+      attachedToBackground: Boolean(attachOnly),
       // Set as soon as the CLI's registry entry says "idle": the prompt was
       // reached, so a later exit code 0 really is somebody's `/exit`.
       sawPrompt: false,
@@ -966,7 +1051,7 @@ export function createTerminalRegistry({
     };
     terminals.set(record.terminalId, record);
     startChildProcess(record);
-    if (cleanKickoffMessage) {
+    if (cleanKickoffMessage && !attachOnly) {
       if (dryRunSpawn) {
         record.kickoffState = null;
         logLine(`${record.terminalId}: DRY RUN kickoff message: ${cleanKickoffMessage}`);

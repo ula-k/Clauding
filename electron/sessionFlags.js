@@ -18,6 +18,7 @@
 // before the change is seen.
 import fs from "node:fs";
 import path from "node:path";
+import { carryKeyedValue } from "./lib/continuedIn.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_FLAGS_LENGTH = 500;
@@ -143,5 +144,18 @@ export function createSessionFlagsStore({ storagePath, onChange, log }) {
     }
   }
 
-  return { get, flagsFor, remember, forget, reloadFromDisk };
+  // The session went on under another id (lib/continuedIn.js): its flags
+  // are filed under that one.
+  function carry(fromSessionId, toSessionId) {
+    const carried = carryKeyedValue(state.sessionFlags, fromSessionId, toSessionId);
+    if (carried === state.sessionFlags) {
+      return false;
+    }
+    state.sessionFlags = carried;
+    save();
+    announce();
+    return true;
+  }
+
+  return { get, flagsFor, remember, forget, carry, reloadFromDisk };
 }

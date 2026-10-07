@@ -81,9 +81,31 @@ export function buildClaudeArguments({
 // The environment of one terminal: whatever terminalEnvironment() left of the
 // app's own environment, plus this terminal's id (the `clauding` command
 // reads it) and the folder holding that command in front of PATH.
-export function buildTerminalEnvironment({ baseEnvironment, terminalId, commandDirectory = null }) {
+//
+// CLAUDE_CODE_DISABLE_AGENT_VIEW=1 rides along with every `claude` the app
+// starts (new, resume, fork, kickoff). Without it the CLI's agent view is
+// on: ← on an empty prompt, Ctrl+Z or Ctrl+C twice sends the session to the
+// CLI's background daemon under a new id (lib/continuedIn.js) — the
+// conversation then vanished from the list and its agent link pointed at a
+// stale copy. Clauding keeps its sessions itself. The environment variable,
+// not `--settings`, because `--settings` makes a `--resume` refuse to attach
+// to a session that is already alive in the daemon.
+export const DISABLE_AGENT_VIEW_VARIABLE = "CLAUDE_CODE_DISABLE_AGENT_VIEW";
+
+//
+// The one exception is `attachToBackground`: a terminal opened onto a
+// session that is already alive in the daemon. With the variable set the CLI
+// refuses that attach ("'attach' is disabled", and a `--resume` of it says
+// "That session is running in the background"), so that terminal goes
+// without it — it is a plain `claude --resume <id>`, nothing else.
+export function buildTerminalEnvironment({ baseEnvironment, terminalId, commandDirectory = null, attachToBackground = false }) {
   const environment = { ...baseEnvironment };
   environment.CLAUDING_TERMINAL_ID = terminalId;
+  if (attachToBackground) {
+    delete environment[DISABLE_AGENT_VIEW_VARIABLE];
+  } else {
+    environment[DISABLE_AGENT_VIEW_VARIABLE] = "1";
+  }
   if (commandDirectory) {
     environment.PATH = [commandDirectory, environment.PATH || ""].filter(Boolean).join(path.delimiter);
   }

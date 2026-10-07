@@ -4,6 +4,8 @@
 const CHANNELS = {
   sessionsList: "sessions:list",
   sessionsGet: "sessions:get",
+  // One session by id, for a click whose row the loaded list does not hold.
+  sessionsLookup: "sessions:lookup",
   sessionsChanged: "sessions:changed",
   sessionsRename: "sessions:rename",
   sessionsDelete: "sessions:delete",

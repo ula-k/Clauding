@@ -42,7 +42,17 @@ export function SessionRowContent({ session, agent = null, tags = [], now }) {
       <span className="row-status-dot" />
       <AgentBadge agent={agent} />
       <span className="row-main">
-        <span className="row-title">{titleWithoutAgentEmoji(session.title, session.agent)}</span>
+        <span
+          className="row-title"
+          data-row-title-suffix={session.titleSuffix || undefined}
+          title={
+            session.titleSuffix
+              ? translate("row.sameTitleHint", { title: session.title, id: session.titleSuffix })
+              : undefined
+          }
+        >
+          {titleWithoutAgentEmoji(session.title, session.agent)}
+        </span>
         {session.needsAnswer && <span className="row-needs-answer">{translate("row.needsAnswer")}</span>}
         {session.wasOpen && (
           <span className="row-was-open" title={translate("row.wasOpenHint")} data-row-was-open={session.sessionId}>

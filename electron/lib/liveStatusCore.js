@@ -140,6 +140,8 @@ export function collectLiveStatusFrom({ jobEntries = [], processEntries = [] } =
       name: processEntry.name,
       jobId: processEntry.jobId || null,
       pid: processEntry.pid,
+      // "bg": alive in the CLI's background daemon, which a resume attaches to.
+      kind: processEntry.kind || null,
       needs: null,
       workingDirectory: processEntry.workingDirectory,
       updatedAt: processEntry.updatedAt

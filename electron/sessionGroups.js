@@ -53,6 +53,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { carryKeyedValue, carryListedId } from "./lib/continuedIn.js";
 
 const SAVE_DEBOUNCE_MILLISECONDS = 150;
 const MAXIMUM_NAME_LENGTH = 60;
@@ -565,6 +566,23 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
     return get();
   }
 
+  // The session went on under another id (Claude Code sent it to the
+  // background, lib/continuedIn.js): its group, color, tags and hiding
+  // follow it, so the one row left in the list looks the way it did.
+  function carrySession(fromSessionId, toSessionId) {
+    const before = JSON.stringify(state);
+    state.membership = carryKeyedValue(state.membership, fromSessionId, toSessionId);
+    state.colors = carryKeyedValue(state.colors, fromSessionId, toSessionId);
+    state.sessionTags = carryKeyedValue(state.sessionTags, fromSessionId, toSessionId);
+    state.hiddenSince = carryKeyedValue(state.hiddenSince, fromSessionId, toSessionId);
+    state.hidden = carryListedId(state.hidden, fromSessionId, toSessionId);
+    if (JSON.stringify(state) === before) {
+      return false;
+    }
+    announce();
+    return true;
+  }
+
   // What the poll saw this time round: `liveBySession` is a Map of
   // sessionId -> { busy, needsAnswer }. A hidden session comes back only on
   // something that happened *after* it was hidden — it needs an answer, or
@@ -621,6 +639,7 @@ export function createSessionGroupStore({ storagePath, onChange, log }) {
     setSessionsTag,
     setHidden,
     forgetSession,
+    carrySession,
     unhideOnActivity
   };
 }
